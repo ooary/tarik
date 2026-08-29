@@ -19,23 +19,23 @@ Build a low-memory desktop application that lets a user:
 
 ## Confirmed architecture decisions
 
-| Concern | Decision |
-|---|---|
-| Desktop shell | Tauri 2 |
-| Backend | Rust |
-| Analytical engine | Embedded DuckDB via the maintained Rust binding |
-| Frontend | React + TypeScript + Vite |
-| SQL editor | CodeMirror 6 |
-| Result rendering | Virtualized grid; never materialize the full result in React |
-| Query flow | XYFlow with deterministic automatic layout |
-| Operational metadata | SQLite |
-| Analytical tables | DuckDB |
-| Linked datasets | Original CSV/Parquet files; SQLite stores source metadata |
-| Historical queries | SQLite; diagnostic/runtime events go to rolling log files |
-| Large temporary results | App cache directory, not SQLite |
-| External integrations | Out of scope for the current product |
-| Credentials/keychain | Out of scope; no credential-store module yet |
-| Python | Not part of the core runtime |
+| Concern                 | Decision                                                     |
+| ----------------------- | ------------------------------------------------------------ |
+| Desktop shell           | Tauri 2                                                      |
+| Backend                 | Rust                                                         |
+| Analytical engine       | Embedded DuckDB via the maintained Rust binding              |
+| Frontend                | React + TypeScript + Vite                                    |
+| SQL editor              | CodeMirror 6                                                 |
+| Result rendering        | Virtualized grid; never materialize the full result in React |
+| Query flow              | XYFlow with deterministic automatic layout                   |
+| Operational metadata    | SQLite                                                       |
+| Analytical tables       | DuckDB                                                       |
+| Linked datasets         | Original CSV/Parquet files; SQLite stores source metadata    |
+| Historical queries      | SQLite; diagnostic/runtime events go to rolling log files    |
+| Large temporary results | App cache directory, not SQLite                              |
+| External integrations   | Out of scope for the current product                         |
+| Credentials/keychain    | Out of scope; no credential-store module yet                 |
+| Python                  | Not part of the core runtime                                 |
 
 ## Storage boundaries
 
@@ -212,18 +212,18 @@ npm run build
 
 Subagents may work in parallel only when their paths and dependencies do not overlap.
 
-| Area | Primary owned paths |
-|---|---|
-| Shell/design system | `src/app/`, `src/components/ui/`, global styles |
-| Metadata | `src-tauri/src/metadata/`, SQLite migrations |
-| DuckDB engine | `src-tauri/src/engine/` |
-| Sources/import | `src-tauri/src/sources/`, `src/features/sources/` |
-| Editor/session UI | `src/features/editor/`, `src/features/session/` |
-| Results | `src-tauri/src/results/`, `src/features/results/` |
-| Query flow | `src-tauri/src/plan/`, `src/features/query-flow/` |
-| Saved/history | `src/features/saved-queries/`, `src/features/history/` |
-| Export | `src-tauri/src/export/`, `src/features/export/` |
-| Observability | `src-tauri/src/observability/`, recovery UI |
+| Area                | Primary owned paths                                    |
+| ------------------- | ------------------------------------------------------ |
+| Shell/design system | `src/app/`, `src/components/ui/`, global styles        |
+| Metadata            | `src-tauri/src/metadata/`, SQLite migrations           |
+| DuckDB engine       | `src-tauri/src/engine/`                                |
+| Sources/import      | `src-tauri/src/sources/`, `src/features/sources/`      |
+| Editor/session UI   | `src/features/editor/`, `src/features/session/`        |
+| Results             | `src-tauri/src/results/`, `src/features/results/`      |
+| Query flow          | `src-tauri/src/plan/`, `src/features/query-flow/`      |
+| Saved/history       | `src/features/saved-queries/`, `src/features/history/` |
+| Export              | `src-tauri/src/export/`, `src/features/export/`        |
+| Observability       | `src-tauri/src/observability/`, recovery UI            |
 
 Shared files such as `package.json`, `Cargo.toml`, Tauri command registration, global types, and `TASK.md` require coordination. The task owner integrates changes to shared files.
 
@@ -432,7 +432,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Commit: `chore(repo): bootstrap tauri react workspace`
   - Implementation commit: recorded in Git history
 
-- [ ] **E0-T3 Add formatting, linting, test, and build automation**
+- [~] **E0-T3 Add formatting, linting, test, and build automation** — owner: quality-subagent
   - Depends on: E0-T2
   - Owns: formatter/linter configs, package scripts, CI workflow
   - Deliverables:
@@ -443,7 +443,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Tests: execute every required check locally.
   - Commit: `chore(ci): enforce project quality gates`
 
-- [ ] **E0-T4 Add ignore rules and application directory resolver**
+- [~] **E0-T4 Add ignore rules and application directory resolver** — owner: storage-subagent
   - Depends on: E0-T2
   - Owns: `.gitignore`, Rust app-path module
   - Deliverables:
@@ -1031,16 +1031,16 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
 
 # Cross-cutting test matrix
 
-| Layer | Required coverage |
-|---|---|
-| Pure Rust domain | IDs, state machines, option validation, filename/chunk calculation |
-| SQLite repositories | Fresh migrations, upgrades, transactions, retention, CRUD |
-| DuckDB integration | Project reopen, catalog, joins, import/link, cancellation, plans |
-| Filesystem integration | Missing paths, unusual names, permissions, cleanup safety |
-| Frontend unit | Stores/reducers, formatting, graph mapping, forms |
-| Frontend component | Keyboard/focus, loading/empty/error/success/cancel states |
-| End-to-end | Golden workflow, restart restore, missing link, large result, chunk export |
-| Performance | Bounded DOM, result cache, repeated execution lifecycle, streaming export |
+| Layer                  | Required coverage                                                          |
+| ---------------------- | -------------------------------------------------------------------------- |
+| Pure Rust domain       | IDs, state machines, option validation, filename/chunk calculation         |
+| SQLite repositories    | Fresh migrations, upgrades, transactions, retention, CRUD                  |
+| DuckDB integration     | Project reopen, catalog, joins, import/link, cancellation, plans           |
+| Filesystem integration | Missing paths, unusual names, permissions, cleanup safety                  |
+| Frontend unit          | Stores/reducers, formatting, graph mapping, forms                          |
+| Frontend component     | Keyboard/focus, loading/empty/error/success/cancel states                  |
+| End-to-end             | Golden workflow, restart restore, missing link, large result, chunk export |
+| Performance            | Bounded DOM, result cache, repeated execution lifecycle, streaming export  |
 
 ## Required export boundary cases
 
@@ -1061,19 +1061,19 @@ For chunk size `1,000,000`, verify outputs for:
 
 # Risks and guardrails
 
-| Risk | Guardrail |
-|---|---|
-| Millions of rows copied into frontend memory | Bounded backend pages plus row/column virtualization |
-| DuckDB query blocks Tauri runtime | Dedicated bounded worker(s) |
-| Repeated export scans | One query execution and streaming batch splitter; never LIMIT/OFFSET loops |
-| Broken link after source moves | Durable missing state and relink workflow |
-| SQL/path injection through generated DDL | Central identifier quoting and parameter/path handling with adversarial tests |
-| DuckDB plan format changes | Versioned fixtures, normalized adapter, truthful raw-text fallback |
-| Session loses latest edit | Monotonic/debounced snapshots and shutdown flush |
-| App metadata grows forever | Configurable query-history and log retention |
-| Logs expose user data | Structured identifiers and errors; no result rows; full SQL omitted by default |
-| Cache fills disk | Size/age limits and startup cleanup constrained to owned directory |
-| Subagents create integration conflicts | Path ownership, dependency gates, atomic commits |
+| Risk                                         | Guardrail                                                                      |
+| -------------------------------------------- | ------------------------------------------------------------------------------ |
+| Millions of rows copied into frontend memory | Bounded backend pages plus row/column virtualization                           |
+| DuckDB query blocks Tauri runtime            | Dedicated bounded worker(s)                                                    |
+| Repeated export scans                        | One query execution and streaming batch splitter; never LIMIT/OFFSET loops     |
+| Broken link after source moves               | Durable missing state and relink workflow                                      |
+| SQL/path injection through generated DDL     | Central identifier quoting and parameter/path handling with adversarial tests  |
+| DuckDB plan format changes                   | Versioned fixtures, normalized adapter, truthful raw-text fallback             |
+| Session loses latest edit                    | Monotonic/debounced snapshots and shutdown flush                               |
+| App metadata grows forever                   | Configurable query-history and log retention                                   |
+| Logs expose user data                        | Structured identifiers and errors; no result rows; full SQL omitted by default |
+| Cache fills disk                             | Size/age limits and startup cleanup constrained to owned directory             |
+| Subagents create integration conflicts       | Path ownership, dependency gates, atomic commits                               |
 
 ---
 
