@@ -10,3 +10,5 @@ public/*.ico
 public/*.icns
 src/App.css
 src/App.tsx
+src/styles/components.css
+src/styles/tokens.css

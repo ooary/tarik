@@ -1,0 +1,80 @@
+:root {
+  color-scheme: light dark;
+
+  --font-ui:
+    "IBM Plex Sans", "Noto Sans", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  --font-mono: "IBM Plex Mono", "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+
+  --radius-control: 5px;
+
+  --surface-app: #e9edeb;
+  --surface-raised: #fbfcfb;
+  --surface-sidebar: #f5f7f6;
+  --surface-editor: #ffffff;
+  --surface-tabs: #eef1ef;
+  --surface-gutter: #f8faf9;
+  --surface-status: #edf1ef;
+  --surface-table-head: #f4f6f5;
+  --surface-control: #ffffff;
+  --surface-hover: #e9eeeb;
+
+  --border-default: #cdd4d0;
+  --border-subtle: #dde2df;
+  --border-control: #c7cfca;
+
+  --text-primary: #202622;
+  --text-secondary: #48524d;
+  --text-muted: #68736d;
+  --text-faint: #929c96;
+  --code-text: #26312b;
+  --icon-muted: #77837d;
+
+  --accent-solid: #287553;
+  --accent-solid-hover: #1f6547;
+  --accent-soft: #dcebe3;
+  --accent-text: #1e6849;
+  --accent-contrast: #f8fcfa;
+  --focus-ring: #267653;
+  --status-ready: #30845e;
+  --status-error: #9d3e38;
+  --status-error-border: #e4bebb;
+  --status-error-surface: #fff4f3;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --surface-app: #111512;
+    --surface-raised: #1b201d;
+    --surface-sidebar: #171c19;
+    --surface-editor: #151a17;
+    --surface-tabs: #1c211e;
+    --surface-gutter: #171c19;
+    --surface-status: #181d1a;
+    --surface-table-head: #1b211e;
+    --surface-control: #222925;
+    --surface-hover: #252d28;
+
+    --border-default: #343c37;
+    --border-subtle: #2a312d;
+    --border-control: #414a45;
+
+    --text-primary: #e4e9e6;
+    --text-secondary: #bdc7c1;
+    --text-muted: #929e97;
+    --text-faint: #626d67;
+    --code-text: #d9e2dd;
+    --icon-muted: #849089;
+
+    --accent-solid: #4d9d77;
+    --accent-solid-hover: #5bac84;
+    --accent-soft: #233d31;
+    --accent-text: #82c4a1;
+    --accent-contrast: #101713;
+    --focus-ring: #75bd98;
+    --status-ready: #65b78f;
+    --status-error: #e58c84;
+    --status-error-border: #713d39;
+    --status-error-surface: #2c1c1b;
+  }
+}
