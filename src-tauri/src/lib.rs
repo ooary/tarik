@@ -45,7 +45,13 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             get_runtime_info,
-            get_app_directories
+            get_app_directories,
+            metadata::commands::get_workbench_preferences,
+            metadata::commands::set_workbench_preferences,
+            metadata::commands::upsert_recent_project,
+            metadata::commands::list_recent_projects,
+            metadata::commands::touch_recent_project,
+            metadata::commands::remove_recent_project
         ])
         .run(tauri::generate_context!())
         .expect("error while running Tarik");

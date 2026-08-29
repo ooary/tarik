@@ -509,7 +509,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Commit: `feat(shell): add resizable desktop workbench`
   - Implementation commit: `73f6773`
 
-- [ ] **E1-T3 Persist UI preferences through typed settings interface** — dependency-gated on E2-T2
+- [x] **E1-T3 Persist UI preferences through typed settings interface** — owner: lead-agent
   - Depends on: E1-T2, E2-T2
   - Owns: UI preference store and typed commands
   - Deliverables: theme, panel widths, bottom-panel height, and last active panel persistence.
@@ -517,6 +517,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: settings restore after application restart and invalid values fall back safely.
   - Tests: settings round-trip and invalid-value tests.
   - Commit: `feat(settings): persist workbench preferences`
+  - Implementation commit: included with E2-T2 integration
 
 ---
 
@@ -536,9 +537,9 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: a fresh DB reaches latest schema; repeated startup is idempotent.
   - Tests: fresh, upgrade, rollback-on-failure, and incompatible-version tests.
   - Commit: `feat(metadata): add sqlite migrations`
-  - Implementation commit: pending commit
+  - Implementation commit: `d5efc07`
 
-- [~] **E2-T2 Implement settings and recent-project repositories** — owner: lead-agent
+- [x] **E2-T2 Implement settings and recent-project repositories** — owner: lead-agent
   - Depends on: E2-T1
   - Owns: settings/projects metadata repositories
   - Deliverables:
@@ -548,8 +549,9 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: repository operations are transactional and project IDs are stable.
   - Tests: repository CRUD and ordering tests.
   - Commit: `feat(metadata): persist settings and recent projects`
+  - Implementation commit: pending commit
 
-- [ ] **E2-T3 Add session, tab, and draft schema**
+- [~] **E2-T3 Add session, tab, and draft schema** — owner: lead-agent
   - Depends on: E2-T1
   - Owns: session migrations/repositories
   - Deliverables:

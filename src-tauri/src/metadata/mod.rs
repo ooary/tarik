@@ -1,4 +1,7 @@
+pub mod commands;
 mod migrations;
+pub mod projects;
+pub mod settings;
 
 use std::{
     path::{Path, PathBuf},
@@ -26,6 +29,13 @@ pub enum MetadataError {
         name: &'static str,
         source: rusqlite::Error,
     },
+    #[error("invalid JSON stored for setting {key}: {source}")]
+    InvalidJson {
+        key: String,
+        source: serde_json::Error,
+    },
+    #[error("metadata invariant failed: {0}")]
+    Invariant(&'static str),
     #[error(transparent)]
     Sql(#[from] rusqlite::Error),
 }
