@@ -10,6 +10,7 @@ type RuntimeState =
   | { kind: "unavailable" };
 
 type Panel = "results" | "flow" | "profile";
+type PreviewTheme = "system" | "light" | "dark";
 
 const sqlPreview = `SELECT
   c.country,
@@ -24,6 +25,11 @@ ORDER BY revenue DESC;`;
 function SourceIcon({ kind }: { kind: "database" | "folder" | "table" }) {
   const Icon = kind === "database" ? DatabaseIcon : kind === "folder" ? FolderOpenIcon : TableIcon;
   return <Icon aria-hidden="true" className="source-icon" size={15} weight="regular" />;
+}
+
+function previewTheme(): PreviewTheme {
+  const value = new URLSearchParams(window.location.search).get("theme");
+  return value === "light" || value === "dark" ? value : "system";
 }
 
 function App() {
@@ -83,7 +89,7 @@ function App() {
   }, []);
 
   return (
-    <main className="app-shell">
+    <main className="app-shell" data-theme={previewTheme()}>
       <header className="app-header">
         <div className="brand-lockup">
           <button
