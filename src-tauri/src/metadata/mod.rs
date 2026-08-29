@@ -4,6 +4,7 @@ pub mod projects;
 pub mod queries;
 pub mod sessions;
 pub mod settings;
+pub mod sources;
 
 use std::{
     path::{Path, PathBuf},
@@ -12,7 +13,7 @@ use std::{
 
 use rusqlite::{Connection, OpenFlags};
 
-pub const LATEST_SCHEMA_VERSION: u32 = 3;
+pub const LATEST_SCHEMA_VERSION: u32 = 4;
 
 #[derive(Debug, thiserror::Error)]
 pub enum MetadataError {

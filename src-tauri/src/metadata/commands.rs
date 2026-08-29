@@ -8,6 +8,7 @@ use super::{
     queries::{ExecutionStatus, QueriesRepository, QueryHistoryEntry, SavedQuery},
     sessions::{QuerySessionSnapshot, SessionsRepository},
     settings::SettingsRepository,
+    sources::{ExportHistoryRecord, SourceRecord, SourceState, SourcesRepository},
     MetadataDb,
 };
 
@@ -65,6 +66,54 @@ pub fn list_recent_projects(database: State<'_, MetadataDb>) -> Result<Vec<Recen
 pub fn touch_recent_project(id: String, database: State<'_, MetadataDb>) -> Result<bool, String> {
     ProjectsRepository::new(database.inner().clone())
         .touch(&id)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn upsert_source(source: SourceRecord, database: State<'_, MetadataDb>) -> Result<(), String> {
+    SourcesRepository::new(database.inner().clone())
+        .upsert_source(&source)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn set_source_state(
+    id: String,
+    state: SourceState,
+    database: State<'_, MetadataDb>,
+) -> Result<bool, String> {
+    SourcesRepository::new(database.inner().clone())
+        .set_source_state(&id, state)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn get_source(
+    id: String,
+    database: State<'_, MetadataDb>,
+) -> Result<Option<SourceRecord>, String> {
+    SourcesRepository::new(database.inner().clone())
+        .get_source(&id)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn upsert_export_history(
+    export: ExportHistoryRecord,
+    database: State<'_, MetadataDb>,
+) -> Result<(), String> {
+    SourcesRepository::new(database.inner().clone())
+        .upsert_export(&export)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn get_export_history(
+    id: String,
+    database: State<'_, MetadataDb>,
+) -> Result<Option<ExportHistoryRecord>, String> {
+    SourcesRepository::new(database.inner().clone())
+        .get_export(&id)
         .map_err(|error| error.to_string())
 }
 

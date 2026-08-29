@@ -572,9 +572,9 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: successful, failed, and cancelled attempts are representable.
   - Tests: CRUD, filters, retention pruning, and cascade behavior.
   - Commit: `feat(metadata): add saved queries and execution history`
-  - Implementation commit: pending commit
+  - Implementation commit: `e9470f9`
 
-- [~] **E2-T5 Add source and export-history schema** — owner: lead-agent
+- [x] **E2-T5 Add source and export-history schema** — owner: lead-agent
   - Depends on: E2-T1
   - Owns: source/export migrations and repositories
   - Deliverables:
@@ -583,6 +583,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: paths are metadata only; no file content is stored in SQLite.
   - Tests: source state transitions and export history tests.
   - Commit: `feat(metadata): persist sources and export history`
+  - Implementation commit: pending commit
 
 ---
 

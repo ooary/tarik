@@ -1,0 +1,340 @@
+use serde::{Deserialize, Serialize};
+
+use super::{MetadataDb, MetadataError};
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SourceKind {
+    DuckdbTable,
+    LinkedParquet,
+    LinkedCsv,
+}
+
+impl SourceKind {
+    fn as_str(&self) -> &'static str {
+        match self {
+            Self::DuckdbTable => "duckdb_table",
+            Self::LinkedParquet => "linked_parquet",
+            Self::LinkedCsv => "linked_csv",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SourceState {
+    Ready,
+    Missing,
+    InvalidSchema,
+}
+
+impl SourceState {
+    fn as_str(&self) -> &'static str {
+        match self {
+            Self::Ready => "ready",
+            Self::Missing => "missing",
+            Self::InvalidSchema => "invalid_schema",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceRecord {
+    pub id: String,
+    pub project_id: String,
+    pub display_name: String,
+    pub kind: SourceKind,
+    pub state: SourceState,
+    pub source_path: Option<String>,
+    pub duckdb_name: String,
+    pub options: serde_json::Value,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ExportStatus {
+    Queued,
+    Running,
+    Succeeded,
+    Failed,
+    Cancelled,
+}
+
+impl ExportStatus {
+    fn as_str(&self) -> &'static str {
+        match self {
+            Self::Queued => "queued",
+            Self::Running => "running",
+            Self::Succeeded => "succeeded",
+            Self::Failed => "failed",
+            Self::Cancelled => "cancelled",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportPartSummary {
+    pub path: String,
+    pub rows: u64,
+    pub bytes: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportHistoryRecord {
+    pub id: String,
+    pub project_id: String,
+    pub status: ExportStatus,
+    pub format: String,
+    pub output_directory: String,
+    pub base_name: String,
+    pub rows_per_part: u64,
+    pub completed_parts: Vec<ExportPartSummary>,
+    pub error_message: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone)]
+pub struct SourcesRepository {
+    database: MetadataDb,
+}
+
+impl SourcesRepository {
+    pub fn new(database: MetadataDb) -> Self {
+        Self { database }
+    }
+
+    pub fn upsert_source(&self, source: &SourceRecord) -> Result<(), MetadataError> {
+        let options = serde_json::to_string(&source.options).map_err(|source_error| {
+            MetadataError::InvalidJson {
+                key: format!("source:{}:options", source.id),
+                source: source_error,
+            }
+        })?;
+        self.database.connection()?.execute(
+            "INSERT INTO sources(id, project_id, display_name, kind, state, source_path, duckdb_name,
+             options_json, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+             ON CONFLICT(id) DO UPDATE SET display_name = excluded.display_name, state = excluded.state,
+             source_path = excluded.source_path, duckdb_name = excluded.duckdb_name,
+             options_json = excluded.options_json, updated_at = excluded.updated_at",
+            (
+                &source.id,
+                &source.project_id,
+                &source.display_name,
+                source.kind.as_str(),
+                source.state.as_str(),
+                &source.source_path,
+                &source.duckdb_name,
+                options,
+                &source.created_at,
+                &source.updated_at,
+            ),
+        )?;
+        Ok(())
+    }
+
+    pub fn set_source_state(&self, id: &str, state: SourceState) -> Result<bool, MetadataError> {
+        Ok(self.database.connection()?.execute(
+            "UPDATE sources SET state = ?2, updated_at = datetime('now') WHERE id = ?1",
+            (id, state.as_str()),
+        )? > 0)
+    }
+
+    pub fn get_source(&self, id: &str) -> Result<Option<SourceRecord>, MetadataError> {
+        let connection = self.database.connection()?;
+        let result = connection.query_row(
+            "SELECT id, project_id, display_name, kind, state, source_path, duckdb_name,
+             options_json, created_at, updated_at FROM sources WHERE id = ?1",
+            [id],
+            read_source,
+        );
+        match result {
+            Ok(source) => Ok(Some(source)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(error) => Err(error.into()),
+        }
+    }
+
+    pub fn upsert_export(&self, export: &ExportHistoryRecord) -> Result<(), MetadataError> {
+        let parts = serde_json::to_string(&export.completed_parts).map_err(|source| {
+            MetadataError::InvalidJson {
+                key: format!("export:{}:parts", export.id),
+                source,
+            }
+        })?;
+        self.database.connection()?.execute(
+            "INSERT INTO export_history(id, project_id, status, format, output_directory, base_name,
+             rows_per_part, completed_parts_json, error_message, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+             ON CONFLICT(id) DO UPDATE SET status = excluded.status,
+             completed_parts_json = excluded.completed_parts_json, error_message = excluded.error_message,
+             updated_at = excluded.updated_at",
+            (
+                &export.id,
+                &export.project_id,
+                export.status.as_str(),
+                &export.format,
+                &export.output_directory,
+                &export.base_name,
+                export.rows_per_part,
+                parts,
+                &export.error_message,
+                &export.created_at,
+                &export.updated_at,
+            ),
+        )?;
+        Ok(())
+    }
+
+    pub fn get_export(&self, id: &str) -> Result<Option<ExportHistoryRecord>, MetadataError> {
+        let connection = self.database.connection()?;
+        let result = connection.query_row(
+            "SELECT id, project_id, status, format, output_directory, base_name, rows_per_part,
+             completed_parts_json, error_message, created_at, updated_at FROM export_history WHERE id = ?1",
+            [id],
+            read_export,
+        );
+        match result {
+            Ok(export) => Ok(Some(export)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(error) => Err(error.into()),
+        }
+    }
+}
+
+fn read_source(row: &rusqlite::Row<'_>) -> rusqlite::Result<SourceRecord> {
+    let kind: String = row.get(3)?;
+    let state: String = row.get(4)?;
+    let options_json: String = row.get(7)?;
+    Ok(SourceRecord {
+        id: row.get(0)?,
+        project_id: row.get(1)?,
+        display_name: row.get(2)?,
+        kind: match kind.as_str() {
+            "duckdb_table" => SourceKind::DuckdbTable,
+            "linked_parquet" => SourceKind::LinkedParquet,
+            "linked_csv" => SourceKind::LinkedCsv,
+            _ => return Err(rusqlite::Error::InvalidQuery),
+        },
+        state: match state.as_str() {
+            "ready" => SourceState::Ready,
+            "missing" => SourceState::Missing,
+            "invalid_schema" => SourceState::InvalidSchema,
+            _ => return Err(rusqlite::Error::InvalidQuery),
+        },
+        source_path: row.get(5)?,
+        duckdb_name: row.get(6)?,
+        options: serde_json::from_str(&options_json).map_err(|error| {
+            rusqlite::Error::FromSqlConversionFailure(
+                7,
+                rusqlite::types::Type::Text,
+                Box::new(error),
+            )
+        })?,
+        created_at: row.get(8)?,
+        updated_at: row.get(9)?,
+    })
+}
+
+fn read_export(row: &rusqlite::Row<'_>) -> rusqlite::Result<ExportHistoryRecord> {
+    let status: String = row.get(2)?;
+    let parts: String = row.get(7)?;
+    Ok(ExportHistoryRecord {
+        id: row.get(0)?,
+        project_id: row.get(1)?,
+        status: match status.as_str() {
+            "queued" => ExportStatus::Queued,
+            "running" => ExportStatus::Running,
+            "succeeded" => ExportStatus::Succeeded,
+            "failed" => ExportStatus::Failed,
+            "cancelled" => ExportStatus::Cancelled,
+            _ => return Err(rusqlite::Error::InvalidQuery),
+        },
+        format: row.get(3)?,
+        output_directory: row.get(4)?,
+        base_name: row.get(5)?,
+        rows_per_part: row.get(6)?,
+        completed_parts: serde_json::from_str(&parts).map_err(|error| {
+            rusqlite::Error::FromSqlConversionFailure(
+                7,
+                rusqlite::types::Type::Text,
+                Box::new(error),
+            )
+        })?,
+        error_message: row.get(8)?,
+        created_at: row.get(9)?,
+        updated_at: row.get(10)?,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use crate::metadata::projects::ProjectsRepository;
+
+    use super::*;
+
+    fn setup() -> (SourcesRepository, String) {
+        let database = MetadataDb::open_in_memory().unwrap();
+        let project = ProjectsRepository::new(database.clone())
+            .upsert("Retail", Path::new("/data/retail.duckdb"))
+            .unwrap();
+        (SourcesRepository::new(database), project.id)
+    }
+
+    #[test]
+    fn source_state_transitions_keep_only_metadata() {
+        let (repository, project_id) = setup();
+        let source = SourceRecord {
+            id: "source-1".into(),
+            project_id,
+            display_name: "orders".into(),
+            kind: SourceKind::LinkedParquet,
+            state: SourceState::Ready,
+            source_path: Some("/data/orders.parquet".into()),
+            duckdb_name: "orders".into(),
+            options: serde_json::json!({"glob": false}),
+            created_at: "2026-01-01T00:00:00Z".into(),
+            updated_at: "2026-01-01T00:00:00Z".into(),
+        };
+        repository.upsert_source(&source).unwrap();
+        repository
+            .set_source_state("source-1", SourceState::Missing)
+            .unwrap();
+
+        let loaded = repository.get_source("source-1").unwrap().unwrap();
+        assert_eq!(loaded.state, SourceState::Missing);
+        assert_eq!(loaded.source_path.as_deref(), Some("/data/orders.parquet"));
+    }
+
+    #[test]
+    fn export_history_tracks_completed_parts() {
+        let (repository, project_id) = setup();
+        let export = ExportHistoryRecord {
+            id: "export-1".into(),
+            project_id,
+            status: ExportStatus::Succeeded,
+            format: "parquet".into(),
+            output_directory: "/exports".into(),
+            base_name: "orders".into(),
+            rows_per_part: 1_000_000,
+            completed_parts: vec![ExportPartSummary {
+                path: "/exports/orders-part-00001.parquet".into(),
+                rows: 12,
+                bytes: 400,
+            }],
+            error_message: None,
+            created_at: "2026-01-01T00:00:00Z".into(),
+            updated_at: "2026-01-01T00:00:01Z".into(),
+        };
+        repository.upsert_export(&export).unwrap();
+
+        assert_eq!(repository.get_export("export-1").unwrap(), Some(export));
+    }
+}
