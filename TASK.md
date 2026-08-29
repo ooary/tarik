@@ -368,7 +368,7 @@ VERDICT: the design is viable if query/result/export paths remain streamed and
 
 # Delivery plan
 
-Status legend: `[ ]` ready, `[~]` in progress, `[x]` complete.
+Status legend: `[ ]` ready, `[~]` in progress, `[x]` complete, EPIC `REVIEW` waiting for user sign-off.
 
 ## EPIC execution and review order
 
@@ -403,6 +403,8 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
 ---
 
 ## EPIC E0 — Repository and engineering foundation
+
+**Status:** `REVIEW` - implementation complete, waiting for user sign-off before E1.
 
 **Outcome:** Reproducible Tauri workspace with enforced quality and Git hygiene.
 
@@ -444,7 +446,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Commit: `chore(ci): enforce project quality gates`
   - Implementation commit: `b11f8e0`
 
-- [~] **E0-T4 Add ignore rules and application directory resolver** — owner: storage-subagent
+- [x] **E0-T4 Add ignore rules and application directory resolver** — owner: storage-subagent
   - Depends on: E0-T2
   - Owns: `.gitignore`, Rust app-path module
   - Deliverables:
@@ -453,6 +455,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: startup creates required directories and returns structured path errors.
   - Tests: temp-directory path tests.
   - Commit: `chore(storage): define local app directories`
+  - Implementation commit: `e90e0e3`
 
 - [x] **E0-T5 Add Telegram-readable status contract and read-only status command** — owner: lead-agent
   - Depends on: E0-T1
