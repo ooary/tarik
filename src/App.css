@@ -1,0 +1,138 @@
+:root {
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #242927;
+  background: #f3f5f4;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+.foundation-shell {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: 32px;
+}
+
+.foundation-panel {
+  width: min(640px, 100%);
+  border: 1px solid #d5dad7;
+  border-radius: 12px;
+  background: #fbfcfb;
+  padding: clamp(28px, 6vw, 56px);
+  box-shadow: 0 16px 40px rgb(31 42 37 / 8%);
+}
+
+.product-name {
+  margin: 0 0 32px;
+  color: #3d765e;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+h1 {
+  max-width: 14ch;
+  margin: 0;
+  color: #1f2422;
+  font-size: clamp(32px, 7vw, 52px);
+  line-height: 1.02;
+  letter-spacing: -0.04em;
+}
+
+.foundation-copy {
+  max-width: 55ch;
+  margin: 24px 0 40px;
+  color: #5c6561;
+  font-size: 16px;
+  line-height: 1.6;
+}
+
+.runtime-details {
+  margin: 0;
+  border-top: 1px solid #dfe3e1;
+}
+
+.runtime-details div {
+  display: grid;
+  grid-template-columns: minmax(96px, 0.35fr) 1fr;
+  gap: 24px;
+  padding: 16px 0;
+  border-bottom: 1px solid #dfe3e1;
+}
+
+.runtime-details dt {
+  color: #6d7571;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.runtime-details dd {
+  margin: 0;
+  color: #29302d;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+@media (max-width: 480px) {
+  .foundation-shell {
+    padding: 16px;
+  }
+
+  .runtime-details div {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color: #dce2df;
+    background: #171b19;
+  }
+
+  .foundation-panel {
+    border-color: #353d39;
+    background: #202522;
+    box-shadow: 0 16px 40px rgb(4 7 5 / 22%);
+  }
+
+  .product-name {
+    color: #7eb698;
+  }
+
+  h1 {
+    color: #edf2ef;
+  }
+
+  .foundation-copy,
+  .runtime-details dt {
+    color: #aab3ae;
+  }
+
+  .runtime-details,
+  .runtime-details div {
+    border-color: #353d39;
+  }
+
+  .runtime-details dd {
+    color: #e1e7e3;
+  }
+}

@@ -418,7 +418,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Tests: review Markdown structure and run `git status`.
   - Commit: `docs(tasks): add epic delivery tracker`
 
-- [~] **E0-T2 Bootstrap Tauri 2 + React + TypeScript + Vite workspace** — owner: lead-agent
+- [x] **E0-T2 Bootstrap Tauri 2 + React + TypeScript + Vite workspace** — owner: lead-agent
   - Depends on: E0-T1
   - Owns: initial workspace, `package.json`, `src-tauri/Cargo.toml`, Tauri config
   - Deliverables:
@@ -430,6 +430,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
     - No Electron or Python runtime dependency exists.
   - Tests: smoke test Tauri command; frontend render test.
   - Commit: `chore(repo): bootstrap tauri react workspace`
+  - Implementation commit: recorded in Git history
 
 - [ ] **E0-T3 Add formatting, linting, test, and build automation**
   - Depends on: E0-T2
@@ -452,7 +453,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Tests: temp-directory path tests.
   - Commit: `chore(storage): define local app directories`
 
-- [~] **E0-T5 Add Telegram-readable status contract and read-only status command** — owner: lead-agent
+- [x] **E0-T5 Add Telegram-readable status contract and read-only status command** — owner: lead-agent
   - Depends on: E0-T1
   - Owns: `.tarik-agent/`
   - Deliverables:
@@ -467,6 +468,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
     - States include `working`, `completed`, `blocked`, `waiting_for_user_review`, and `unknown`.
   - Tests: shell smoke tests for missing, valid, and symlink status files.
   - Commit: `chore(agent): add read-only status contract`
+  - Implementation commit: `8ff6f27`
 
 ---
 
