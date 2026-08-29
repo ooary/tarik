@@ -1,6 +1,7 @@
 pub mod commands;
 mod migrations;
 pub mod projects;
+pub mod sessions;
 pub mod settings;
 
 use std::{
@@ -10,7 +11,7 @@ use std::{
 
 use rusqlite::{Connection, OpenFlags};
 
-pub const LATEST_SCHEMA_VERSION: u32 = 1;
+pub const LATEST_SCHEMA_VERSION: u32 = 2;
 
 #[derive(Debug, thiserror::Error)]
 pub enum MetadataError {
@@ -36,6 +37,8 @@ pub enum MetadataError {
     },
     #[error("metadata invariant failed: {0}")]
     Invariant(&'static str),
+    #[error("invalid query session: {0}")]
+    InvalidSession(&'static str),
     #[error(transparent)]
     Sql(#[from] rusqlite::Error),
 }

@@ -549,9 +549,9 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: repository operations are transactional and project IDs are stable.
   - Tests: repository CRUD and ordering tests.
   - Commit: `feat(metadata): persist settings and recent projects`
-  - Implementation commit: pending commit
+  - Implementation commit: `5675cf3`
 
-- [~] **E2-T3 Add session, tab, and draft schema** — owner: lead-agent
+- [x] **E2-T3 Add session, tab, and draft schema** — owner: lead-agent
   - Depends on: E2-T1
   - Owns: session migrations/repositories
   - Deliverables:
@@ -560,8 +560,9 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: partially written session snapshots cannot appear after failure.
   - Tests: ordering, active-tab uniqueness, and transaction rollback tests.
   - Commit: `feat(metadata): add durable query sessions`
+  - Implementation commit: pending commit
 
-- [ ] **E2-T4 Add saved-query and query-history schema**
+- [~] **E2-T4 Add saved-query and query-history schema** — owner: lead-agent
   - Depends on: E2-T1
   - Owns: saved query/history migrations and repositories
   - Deliverables:

@@ -8,11 +8,18 @@ struct Migration {
     sql: &'static str,
 }
 
-const MIGRATIONS: &[Migration] = &[Migration {
-    version: 1,
-    name: "metadata_foundation",
-    sql: include_str!("../../migrations/0001_metadata_foundation.sql"),
-}];
+const MIGRATIONS: &[Migration] = &[
+    Migration {
+        version: 1,
+        name: "metadata_foundation",
+        sql: include_str!("../../migrations/0001_metadata_foundation.sql"),
+    },
+    Migration {
+        version: 2,
+        name: "query_sessions",
+        sql: include_str!("../../migrations/0002_query_sessions.sql"),
+    },
+];
 
 pub(super) fn migrate(connection: &mut Connection) -> Result<(), MetadataError> {
     let current = schema_version(connection)?;

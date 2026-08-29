@@ -5,6 +5,7 @@ use tauri::State;
 
 use super::{
     projects::{ProjectsRepository, RecentProject},
+    sessions::{QuerySessionSnapshot, SessionsRepository},
     settings::SettingsRepository,
     MetadataDb,
 };
@@ -63,6 +64,26 @@ pub fn list_recent_projects(database: State<'_, MetadataDb>) -> Result<Vec<Recen
 pub fn touch_recent_project(id: String, database: State<'_, MetadataDb>) -> Result<bool, String> {
     ProjectsRepository::new(database.inner().clone())
         .touch(&id)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn save_query_session(
+    snapshot: QuerySessionSnapshot,
+    database: State<'_, MetadataDb>,
+) -> Result<(), String> {
+    SessionsRepository::new(database.inner().clone())
+        .save_snapshot(&snapshot)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn load_query_session(
+    session_id: String,
+    database: State<'_, MetadataDb>,
+) -> Result<Option<QuerySessionSnapshot>, String> {
+    SessionsRepository::new(database.inner().clone())
+        .load(&session_id)
         .map_err(|error| error.to_string())
 }
 
