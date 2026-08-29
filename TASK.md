@@ -404,7 +404,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
 
 ## EPIC E0 — Repository and engineering foundation
 
-**Status:** `REVIEW` - implementation complete, waiting for user sign-off before E1.
+**Status:** `APPROVED` - user sign-off received; E1 authorized.
 
 **Outcome:** Reproducible Tauri workspace with enforced quality and Git hygiene.
 
@@ -478,11 +478,13 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
 
 ## EPIC E1 — Desktop shell and interaction foundation
 
+**Status:** `REVIEW` - shell implementation complete, waiting for user visual and interaction sign-off.
+
 **Outcome:** Accessible workbench shell ready for feature modules.
 
 **Mandatory design gate:** Use the Product UI design protocol above. This EPIC cannot be marked approved without user review of the workbench composition, light/dark screenshots, keyboard focus, narrow-window behavior, and anti-slop pre-flight result.
 
-- [ ] **E1-T1 Establish visual tokens and accessible UI primitives**
+- [x] **E1-T1 Establish visual tokens and accessible UI primitives** — owner: lead-agent
   - Depends on: E0-T2
   - Owns: global styles, `src/components/ui/`
   - Deliverables:
@@ -493,8 +495,9 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: keyboard focus and WCAG AA contrast are visible in both themes.
   - Tests: component interaction and accessibility tests.
   - Commit: `feat(ui): establish workbench design system`
+  - Implementation commit: `a18becc`
 
-- [ ] **E1-T2 Build resizable workbench shell**
+- [x] **E1-T2 Build resizable workbench shell** — owner: lead-agent
   - Depends on: E1-T1
   - Owns: `src/app/`, shell layout components
   - Deliverables:
@@ -504,11 +507,13 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: layout remains usable at minimum supported window size.
   - Tests: layout and keyboard interaction tests.
   - Commit: `feat(shell): add resizable desktop workbench`
+  - Implementation commit: `73f6773`
 
-- [ ] **E1-T3 Persist UI preferences through typed settings interface**
+- [ ] **E1-T3 Persist UI preferences through typed settings interface** — dependency-gated on E2-T2
   - Depends on: E1-T2, E2-T2
   - Owns: UI preference store and typed commands
   - Deliverables: theme, panel widths, bottom-panel height, and last active panel persistence.
+  - E1 foundation: typed repository contract, defaults, and normalization exist in `src/app/preferences.ts`; durable SQLite implementation waits for E2-T2.
   - Acceptance: settings restore after application restart and invalid values fall back safely.
   - Tests: settings round-trip and invalid-value tests.
   - Commit: `feat(settings): persist workbench preferences`
