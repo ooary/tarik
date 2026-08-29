@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tarik.local/schemas/agent-status.json",
+  "title": "Tarik Agent Status",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "project",
+    "cwd",
+    "epic",
+    "epicName",
+    "task",
+    "state",
+    "summary",
+    "commit",
+    "workingTree",
+    "needsUserReview",
+    "error",
+    "logPath",
+    "updatedAt"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "project": { "const": "Tarik" },
+    "cwd": { "type": "string", "minLength": 1 },
+    "epic": { "type": "string", "pattern": "^E[0-9]+$" },
+    "epicName": { "type": "string", "minLength": 1 },
+    "task": { "type": ["string", "null"], "pattern": "^E[0-9]+-T[0-9]+$" },
+    "state": {
+      "type": "string",
+      "enum": ["working", "completed", "blocked", "waiting_for_user_review", "unknown", "failed"]
+    },
+    "summary": { "type": "string", "minLength": 1 },
+    "commit": { "type": ["string", "null"] },
+    "workingTree": { "type": "string", "enum": ["clean", "modified", "unknown"] },
+    "needsUserReview": { "type": "boolean" },
+    "error": { "type": ["string", "null"] },
+    "logPath": { "type": ["string", "null"] },
+    "updatedAt": { "type": "string", "format": "date-time" }
+  }
+}

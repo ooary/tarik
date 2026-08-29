@@ -418,7 +418,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Tests: review Markdown structure and run `git status`.
   - Commit: `docs(tasks): add epic delivery tracker`
 
-- [ ] **E0-T2 Bootstrap Tauri 2 + React + TypeScript + Vite workspace**
+- [~] **E0-T2 Bootstrap Tauri 2 + React + TypeScript + Vite workspace** — owner: lead-agent
   - Depends on: E0-T1
   - Owns: initial workspace, `package.json`, `src-tauri/Cargo.toml`, Tauri config
   - Deliverables:
@@ -451,6 +451,22 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: startup creates required directories and returns structured path errors.
   - Tests: temp-directory path tests.
   - Commit: `chore(storage): define local app directories`
+
+- [~] **E0-T5 Add Telegram-readable status contract and read-only status command** — owner: lead-agent
+  - Depends on: E0-T1
+  - Owns: `.tarik-agent/`
+  - Deliverables:
+    - Define versioned JSON fields for project, EPIC, task, state, summary, commit, review requirement, error, and timestamp.
+    - Provide an executable read-only command at `/home/ooary/Projects/Tarik/.tarik-agent/read-status`.
+    - Return valid JSON for missing status, normal status, and unsafe symlink status.
+    - Document polling and state-transition semantics for the Telegram agent.
+  - Acceptance:
+    - `read-status` never writes, executes project code, or follows a symlinked status file.
+    - Telegram agent can parse stdout as one JSON document using SSH.
+    - Runtime status updates do not dirty Git history.
+    - States include `working`, `completed`, `blocked`, `waiting_for_user_review`, and `unknown`.
+  - Tests: shell smoke tests for missing, valid, and symlink status files.
+  - Commit: `chore(agent): add read-only status contract`
 
 ---
 
