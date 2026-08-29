@@ -478,7 +478,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
 
 ## EPIC E1 — Desktop shell and interaction foundation
 
-**Status:** `APPROVED` - user authorized E2; E1-T3 persistence will complete after E2-T2.
+**Status:** `APPROVED` - all E1 tasks complete, including SQLite-backed preference persistence.
 
 **Outcome:** Accessible workbench shell ready for feature modules.
 
@@ -517,13 +517,13 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: settings restore after application restart and invalid values fall back safely.
   - Tests: settings round-trip and invalid-value tests.
   - Commit: `feat(settings): persist workbench preferences`
-  - Implementation commit: included with E2-T2 integration
+  - Implementation commit: `f408433`
 
 ---
 
 ## EPIC E2 — SQLite metadata and durable application state
 
-**Status:** `IN PROGRESS` - user authorized implementation.
+**Status:** `REVIEW` - implementation complete, waiting for user persistence review before E3.
 
 **Outcome:** Versioned, transactional metadata store for all operational state.
 
@@ -583,7 +583,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: paths are metadata only; no file content is stored in SQLite.
   - Tests: source state transitions and export history tests.
   - Commit: `feat(metadata): persist sources and export history`
-  - Implementation commit: pending commit
+  - Implementation commit: `1cc94e4`
 
 ---
 

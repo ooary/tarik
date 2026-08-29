@@ -96,10 +96,10 @@ impl QueriesRepository {
              FROM saved_queries WHERE project_id = ?1 AND (?2 = '%%' OR name LIKE ?2 OR sql_text LIKE ?2)
              ORDER BY updated_at DESC, name COLLATE NOCASE",
         )?;
-        statement
+        let queries = statement
             .query_map((project_id, pattern), read_saved_query)?
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(Into::into)
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(queries)
     }
 
     pub fn delete_saved(&self, id: &str) -> Result<bool, MetadataError> {
@@ -144,10 +144,10 @@ impl QueriesRepository {
              WHERE project_id = ?1 AND (?2 IS NULL OR status = ?2)
              ORDER BY executed_at DESC LIMIT ?3",
         )?;
-        statement
+        let history = statement
             .query_map((project_id, status, limit), read_history)?
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(Into::into)
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(history)
     }
 
     pub fn prune_history(&self, project_id: &str, keep: u32) -> Result<usize, MetadataError> {
