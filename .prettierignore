@@ -1,8 +1,12 @@
 dist
 node_modules
 src-tauri/target
+src-tauri/gen
+src-tauri/capabilities/*.json
 package-lock.json
 src-tauri/Cargo.lock
 public/*.png
 public/*.ico
 public/*.icns
+src/App.css
+src/App.tsx
