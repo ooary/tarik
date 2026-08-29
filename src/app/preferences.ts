@@ -24,6 +24,23 @@ export interface WorkbenchPreferencesRepository {
   save(preferences: WorkbenchPreferences): Promise<void>;
 }
 
+export type WorkbenchPreferencesLoader = () => Promise<WorkbenchPreferences | null>;
+export type WorkbenchPreferencesSaver = (preferences: WorkbenchPreferences) => Promise<void>;
+
+export function createWorkbenchPreferencesRepository(
+  loadPreferences: WorkbenchPreferencesLoader,
+  savePreferences: WorkbenchPreferencesSaver,
+): WorkbenchPreferencesRepository {
+  return {
+    async load() {
+      return normalizeWorkbenchPreferences(await loadPreferences());
+    },
+    save(preferences) {
+      return savePreferences(normalizeWorkbenchPreferences(preferences));
+    },
+  };
+}
+
 export function normalizeWorkbenchPreferences(
   value: Partial<WorkbenchPreferences> | null | undefined,
 ): WorkbenchPreferences {

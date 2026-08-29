@@ -1,10 +1,12 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
-import { getRuntimeInfo } from "./lib/commands";
+import { getRuntimeInfo, getWorkbenchPreferences, setWorkbenchPreferences } from "./lib/commands";
 
 vi.mock("./lib/commands", () => ({
   getRuntimeInfo: vi.fn(),
+  getWorkbenchPreferences: vi.fn(),
+  setWorkbenchPreferences: vi.fn(),
 }));
 
 const runtimeInfoMock = vi.mocked(getRuntimeInfo);
@@ -12,6 +14,8 @@ const runtimeInfoMock = vi.mocked(getRuntimeInfo);
 describe("Tarik workbench shell", () => {
   beforeEach(() => {
     runtimeInfoMock.mockReset();
+    vi.mocked(getWorkbenchPreferences).mockResolvedValue(null);
+    vi.mocked(setWorkbenchPreferences).mockResolvedValue(undefined);
     runtimeInfoMock.mockResolvedValue({
       appName: "Tarik",
       appVersion: "0.1.0",

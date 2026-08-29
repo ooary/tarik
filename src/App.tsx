@@ -2,7 +2,17 @@ import * as Tabs from "@radix-ui/react-tabs";
 import { CaretDownIcon, CaretUpIcon, DatabaseIcon, DotsThreeIcon, FileIcon, FolderOpenIcon, ListIcon, PlusIcon, PlayIcon, TableIcon, XIcon } from "@phosphor-icons/react";
 import { useEffect, useRef, useState } from "react";
 import "./App.css";
-import { getRuntimeInfo, type RuntimeInfo } from "./lib/commands";
+import {
+  createWorkbenchPreferencesRepository,
+  defaultWorkbenchPreferences,
+  type WorkbenchPreferences,
+} from "./app/preferences";
+import {
+  getRuntimeInfo,
+  getWorkbenchPreferences,
+  setWorkbenchPreferences,
+  type RuntimeInfo,
+} from "./lib/commands";
 
 type RuntimeState =
   | { kind: "loading" }
@@ -32,13 +42,22 @@ function previewTheme(): PreviewTheme {
   return value === "light" || value === "dark" ? value : "system";
 }
 
+const preferencesRepository = createWorkbenchPreferencesRepository(
+  getWorkbenchPreferences,
+  setWorkbenchPreferences,
+);
+
 function App() {
   const workspaceRef = useRef<HTMLDivElement>(null);
   const queryWorkspaceRef = useRef<HTMLElement>(null);
   const [runtime, setRuntime] = useState<RuntimeState>({ kind: "loading" });
-  const [activePanel, setActivePanel] = useState<Panel>("results");
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [bottomOpen, setBottomOpen] = useState(true);
+  const [preferencesReady, setPreferencesReady] = useState(false);
+  const [preferences, setPreferences] = useState<WorkbenchPreferences>(defaultWorkbenchPreferences);
+  const { activeOutputPanel: activePanel, bottomPanelOpen: bottomOpen, sidebarOpen } = preferences;
+
+  function updatePreferences(patch: Partial<WorkbenchPreferences>) {
+    setPreferences((current) => ({ ...current, ...patch }));
+  }
 
   function resizeSidebar(event: React.PointerEvent<HTMLDivElement>) {
     if (!workspaceRef.current) return;
@@ -46,6 +65,7 @@ function App() {
     const move = (moveEvent: PointerEvent) => {
       const width = Math.min(360, Math.max(220, moveEvent.clientX));
       workspace.style.setProperty("--sidebar-width", `${width}px`);
+      updatePreferences({ sidebarWidth: width });
     };
     const stop = () => {
       document.removeEventListener("pointermove", move);
@@ -62,6 +82,7 @@ function App() {
     const move = (moveEvent: PointerEvent) => {
       const height = Math.min(560, Math.max(180, window.innerHeight - moveEvent.clientY));
       queryWorkspace.style.setProperty("--bottom-height", `${height}px`);
+      updatePreferences({ bottomPanelHeight: height });
     };
     const stop = () => {
       document.removeEventListener("pointermove", move);
@@ -74,6 +95,16 @@ function App() {
 
   useEffect(() => {
     let active = true;
+
+    preferencesRepository
+      .load()
+      .then((stored) => {
+        if (active) setPreferences(stored);
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (active) setPreferencesReady(true);
+      });
 
     getRuntimeInfo()
       .then((info) => {
@@ -88,14 +119,34 @@ function App() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!preferencesReady) return;
+    const timeout = window.setTimeout(() => {
+      preferencesRepository.save(preferences).catch(() => undefined);
+    }, 250);
+    return () => window.clearTimeout(timeout);
+  }, [preferences, preferencesReady]);
+
+  useEffect(() => {
+    if (!workspaceRef.current || !queryWorkspaceRef.current) return;
+    workspaceRef.current.style.setProperty("--sidebar-width", `${preferences.sidebarWidth}px`);
+    queryWorkspaceRef.current.style.setProperty(
+      "--bottom-height",
+      `${preferences.bottomPanelHeight}px`,
+    );
+  }, [preferences.bottomPanelHeight, preferences.sidebarWidth]);
+
   return (
-    <main className="app-shell" data-theme={previewTheme()}>
+    <main
+      className="app-shell"
+      data-theme={previewTheme() === "system" ? preferences.theme : previewTheme()}
+    >
       <header className="app-header">
         <div className="brand-lockup">
           <button
             aria-label={sidebarOpen ? "Collapse source explorer" : "Expand source explorer"}
             className="icon-button header-menu"
-            onClick={() => setSidebarOpen((open) => !open)}
+            onClick={() => updatePreferences({ sidebarOpen: !sidebarOpen })}
             type="button"
           >
             <ListIcon aria-hidden="true" size={17} weight="regular" />
@@ -195,17 +246,17 @@ function App() {
           <div aria-hidden="true" className={`bottom-resize-handle ${bottomOpen ? "" : "bottom-resize-hidden"}`} onPointerDown={resizeBottom} />
           <div className={`bottom-panel ${bottomOpen ? "bottom-panel-open" : "bottom-panel-closed"}`}>
             <div className="results-heading">
-              <Tabs.Root onValueChange={(value) => setActivePanel(value as Panel)} value={activePanel}>
+              <Tabs.Root onValueChange={(value) => updatePreferences({ activeOutputPanel: value as Panel })} value={activePanel}>
                 <Tabs.List aria-label="Query output" className="result-tabs">
-                  <Tabs.Trigger className="result-tab" onClick={() => setActivePanel("results")} value="results">Results <span className="tab-count">24,318</span></Tabs.Trigger>
-                  <Tabs.Trigger className="result-tab" onClick={() => setActivePanel("flow")} value="flow">Flow</Tabs.Trigger>
-                  <Tabs.Trigger className="result-tab" onClick={() => setActivePanel("profile")} value="profile">Profile</Tabs.Trigger>
+                  <Tabs.Trigger className="result-tab" onClick={() => updatePreferences({ activeOutputPanel: "results" })} value="results">Results <span className="tab-count">24,318</span></Tabs.Trigger>
+                  <Tabs.Trigger className="result-tab" onClick={() => updatePreferences({ activeOutputPanel: "flow" })} value="flow">Flow</Tabs.Trigger>
+                  <Tabs.Trigger className="result-tab" onClick={() => updatePreferences({ activeOutputPanel: "profile" })} value="profile">Profile</Tabs.Trigger>
                 </Tabs.List>
               </Tabs.Root>
               <div className="results-actions">
                 <span className="result-duration">Completed in 1.82s</span>
                 <button className="toolbar-button" type="button">Export</button>
-                <button aria-label={bottomOpen ? "Collapse result panel" : "Expand result panel"} className="icon-button" onClick={() => setBottomOpen((open) => !open)} type="button">{bottomOpen ? <CaretDownIcon aria-hidden="true" size={16} /> : <CaretUpIcon aria-hidden="true" size={16} />}</button>
+                <button aria-label={bottomOpen ? "Collapse result panel" : "Expand result panel"} className="icon-button" onClick={() => updatePreferences({ bottomPanelOpen: !bottomOpen })} type="button">{bottomOpen ? <CaretDownIcon aria-hidden="true" size={16} /> : <CaretUpIcon aria-hidden="true" size={16} />}</button>
               </div>
             </div>
 

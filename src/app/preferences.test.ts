@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { defaultWorkbenchPreferences, normalizeWorkbenchPreferences } from "./preferences";
+import {
+  createWorkbenchPreferencesRepository,
+  defaultWorkbenchPreferences,
+  normalizeWorkbenchPreferences,
+} from "./preferences";
 
 describe("workbench preference boundary", () => {
   it("returns safe defaults for missing values", () => {
@@ -20,6 +24,20 @@ describe("workbench preference boundary", () => {
       bottomPanelHeight: 560,
       activeOutputPanel: "results",
     });
+  });
+
+  it("normalizes values at the repository boundary", async () => {
+    const saved: unknown[] = [];
+    const repository = createWorkbenchPreferencesRepository(
+      async () => ({ ...defaultWorkbenchPreferences, sidebarWidth: 999 }),
+      async (preferences) => {
+        saved.push(preferences);
+      },
+    );
+
+    expect((await repository.load()).sidebarWidth).toBe(360);
+    await repository.save({ ...defaultWorkbenchPreferences, bottomPanelHeight: 20 });
+    expect(saved).toEqual([{ ...defaultWorkbenchPreferences, bottomPanelHeight: 180 }]);
   });
 
   it("preserves valid preferences", () => {
