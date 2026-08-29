@@ -560,9 +560,9 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: partially written session snapshots cannot appear after failure.
   - Tests: ordering, active-tab uniqueness, and transaction rollback tests.
   - Commit: `feat(metadata): add durable query sessions`
-  - Implementation commit: pending commit
+  - Implementation commit: `6bf0de6`
 
-- [~] **E2-T4 Add saved-query and query-history schema** — owner: lead-agent
+- [x] **E2-T4 Add saved-query and query-history schema** — owner: lead-agent
   - Depends on: E2-T1
   - Owns: saved query/history migrations and repositories
   - Deliverables:
@@ -572,8 +572,9 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: successful, failed, and cancelled attempts are representable.
   - Tests: CRUD, filters, retention pruning, and cascade behavior.
   - Commit: `feat(metadata): add saved queries and execution history`
+  - Implementation commit: pending commit
 
-- [ ] **E2-T5 Add source and export-history schema**
+- [~] **E2-T5 Add source and export-history schema** — owner: lead-agent
   - Depends on: E2-T1
   - Owns: source/export migrations and repositories
   - Deliverables:

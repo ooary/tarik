@@ -19,6 +19,11 @@ const MIGRATIONS: &[Migration] = &[
         name: "query_sessions",
         sql: include_str!("../../migrations/0002_query_sessions.sql"),
     },
+    Migration {
+        version: 3,
+        name: "saved_queries_history",
+        sql: include_str!("../../migrations/0003_saved_queries_history.sql"),
+    },
 ];
 
 pub(super) fn migrate(connection: &mut Connection) -> Result<(), MetadataError> {

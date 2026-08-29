@@ -53,7 +53,13 @@ pub fn run() {
             metadata::commands::touch_recent_project,
             metadata::commands::remove_recent_project,
             metadata::commands::save_query_session,
-            metadata::commands::load_query_session
+            metadata::commands::load_query_session,
+            metadata::commands::upsert_saved_query,
+            metadata::commands::list_saved_queries,
+            metadata::commands::delete_saved_query,
+            metadata::commands::add_query_history,
+            metadata::commands::list_query_history,
+            metadata::commands::prune_query_history
         ])
         .run(tauri::generate_context!())
         .expect("error while running Tarik");
