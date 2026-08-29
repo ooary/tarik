@@ -173,6 +173,42 @@ button:active {
   font-weight: 590;
 }
 
+.theme-choices {
+  display: grid;
+  gap: 7px;
+}
+
+.theme-choice {
+  display: grid;
+  gap: 3px;
+  min-height: 54px;
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-control);
+  padding: 8px 11px;
+  color: var(--text-primary);
+  background: var(--surface-control);
+  text-align: left;
+  cursor: pointer;
+}
+
+.theme-choice:hover {
+  background: var(--surface-hover);
+}
+
+.theme-choice[aria-pressed="true"] {
+  border-color: var(--accent-solid);
+  background: var(--accent-soft);
+}
+
+.theme-choice span {
+  font-weight: 650;
+}
+
+.theme-choice small {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
 .engine-status {
   display: inline-flex;
   align-items: center;

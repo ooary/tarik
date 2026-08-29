@@ -2,6 +2,7 @@ import * as Tabs from "@radix-ui/react-tabs";
 import { CaretDownIcon, CaretUpIcon, DatabaseIcon, DotsThreeIcon, FileIcon, FolderOpenIcon, ListIcon, PlusIcon, PlayIcon, TableIcon, XIcon } from "@phosphor-icons/react";
 import { useEffect, useRef, useState } from "react";
 import "./App.css";
+import { Dialog } from "./components/ui";
 import {
   createWorkbenchPreferencesRepository,
   defaultWorkbenchPreferences,
@@ -162,7 +163,30 @@ function App() {
 
         <div className="header-actions">
           <span className="engine-status"><span aria-hidden="true" className="status-mark" /> DuckDB ready</span>
-          <button className="text-button" type="button">Settings</button>
+          <Dialog
+            description="Choose how Tarik appears on this device. This setting is stored locally."
+            title="Appearance"
+            trigger={<button className="text-button" type="button">Settings</button>}
+          >
+            <div aria-label="Theme" className="theme-choices" role="group">
+              {(["system", "light", "dark"] as const).map((theme) => (
+                <button
+                  aria-pressed={preferences.theme === theme}
+                  className="theme-choice"
+                  key={theme}
+                  onClick={() => updatePreferences({ theme })}
+                  type="button"
+                >
+                  <span>{theme[0].toUpperCase() + theme.slice(1)}</span>
+                  <small>
+                    {theme === "system"
+                      ? "Follow the operating system"
+                      : `Always use the ${theme} theme`}
+                  </small>
+                </button>
+              ))}
+            </div>
+          </Dialog>
         </div>
       </header>
 

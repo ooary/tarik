@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import { getRuntimeInfo, getWorkbenchPreferences, setWorkbenchPreferences } from "./lib/commands";
@@ -56,6 +56,19 @@ describe("Tarik workbench shell", () => {
     fireEvent.click(screen.getByRole("button", { name: "Collapse result panel" }));
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Expand result panel" })).toBeInTheDocument();
+  });
+
+  it("stores a selected theme through the settings repository", async () => {
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    fireEvent.click(await screen.findByRole("button", { name: /Always use the dark theme/ }));
+
+    await waitFor(() =>
+      expect(setWorkbenchPreferences).toHaveBeenCalledWith(
+        expect.objectContaining({ theme: "dark" }),
+      ),
+    );
   });
 
   it("shows a browser-safe connection state when Tauri is unavailable", async () => {
