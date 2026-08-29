@@ -15,6 +15,35 @@ dist-ssr
 # Agent status is mutable runtime state. Keep the contract and reader tracked.
 .tarik-agent/status.json
 
+# Rust / Tauri build outputs
+src-tauri/target/
+target/
+
+# Local analytical databases and datasets
+*.duckdb
+*.duckdb.wal
+*.sqlite
+*.sqlite3
+*.db
+*.parquet
+*.csv
+
+# Tarik-owned runtime and user-generated output
+cache/
+logs/
+exports/
+*.arrow
+*.ipc
+*.part
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+
+# Coverage
+coverage/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

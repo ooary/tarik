@@ -1,3 +1,5 @@
+mod paths;
+
 use serde::Serialize;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -21,10 +23,25 @@ fn get_runtime_info() -> RuntimeInfo {
     runtime_info()
 }
 
+#[tauri::command]
+fn get_app_directories<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+) -> Result<paths::AppDirectories, String> {
+    paths::resolve_directories(&app).map_err(|error| error.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![get_runtime_info])
+        .setup(|app| {
+            paths::resolve_directories(app.handle())
+                .map(|_| ())
+                .map_err(|error| Box::new(error) as Box<dyn std::error::Error>)
+        })
+        .invoke_handler(tauri::generate_handler![
+            get_runtime_info,
+            get_app_directories
+        ])
         .run(tauri::generate_context!())
         .expect("error while running Tarik");
 }
