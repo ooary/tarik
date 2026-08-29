@@ -49,6 +49,49 @@ button:active {
   transform: translateY(1px);
 }
 
+.startup-error {
+  display: grid;
+  min-height: 100dvh;
+  place-items: center;
+  padding: 24px;
+  color: var(--text-primary);
+  background: var(--surface-app);
+}
+
+.startup-error > div {
+  width: min(560px, 100%);
+  border: 1px solid var(--status-error-border);
+  border-radius: var(--radius-control);
+  padding: 20px;
+  background: var(--status-error-surface);
+}
+
+.startup-error strong {
+  color: var(--status-error);
+  font-size: 16px;
+}
+
+.startup-error p {
+  color: var(--text-secondary);
+  line-height: 1.55;
+}
+
+.startup-error code,
+.startup-error pre {
+  display: block;
+  overflow: auto;
+  border-radius: var(--radius-control);
+  padding: 10px;
+  color: var(--code-text);
+  background: var(--surface-editor);
+  font-family: var(--font-mono);
+}
+
+.startup-error details {
+  margin-top: 16px;
+  color: var(--text-secondary);
+}
+
 .app-shell {
   display: grid;
   grid-template-rows: 48px minmax(0, 1fr) 26px;

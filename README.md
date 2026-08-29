@@ -26,6 +26,9 @@ The status file is operational state and is intentionally ignored by Git. Do not
 npm install
 npm run dev
 npm run tauri dev
+
+# If an older development process still owns port 1420:
+npm run tauri:dev:clean
 ```
 
 See `TASK.md` for the full architecture, task dependencies, manual EPIC review gates, and required atomic Git workflow.
