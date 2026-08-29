@@ -478,7 +478,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
 
 ## EPIC E1 — Desktop shell and interaction foundation
 
-**Status:** `REVIEW` - shell implementation complete, waiting for user visual and interaction sign-off.
+**Status:** `APPROVED` - user authorized E2; E1-T3 persistence will complete after E2-T2.
 
 **Outcome:** Accessible workbench shell ready for feature modules.
 
@@ -522,9 +522,11 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
 
 ## EPIC E2 — SQLite metadata and durable application state
 
+**Status:** `IN PROGRESS` - user authorized implementation.
+
 **Outcome:** Versioned, transactional metadata store for all operational state.
 
-- [ ] **E2-T1 Create SQLite connection and migration framework**
+- [x] **E2-T1 Create SQLite connection and migration framework** — owner: lead-agent
   - Depends on: E0-T4
   - Owns: `src-tauri/src/metadata/`, migrations
   - Deliverables:
@@ -534,8 +536,9 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: a fresh DB reaches latest schema; repeated startup is idempotent.
   - Tests: fresh, upgrade, rollback-on-failure, and incompatible-version tests.
   - Commit: `feat(metadata): add sqlite migrations`
+  - Implementation commit: pending commit
 
-- [ ] **E2-T2 Implement settings and recent-project repositories**
+- [~] **E2-T2 Implement settings and recent-project repositories** — owner: lead-agent
   - Depends on: E2-T1
   - Owns: settings/projects metadata repositories
   - Deliverables:

@@ -1,6 +1,8 @@
+mod metadata;
 mod paths;
 
 use serde::Serialize;
+use tauri::Manager;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -34,9 +36,12 @@ fn get_app_directories<R: tauri::Runtime>(
 pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
-            paths::resolve_directories(app.handle())
-                .map(|_| ())
-                .map_err(|error| Box::new(error) as Box<dyn std::error::Error>)
+            let directories = paths::resolve_directories(app.handle())
+                .map_err(|error| Box::new(error) as Box<dyn std::error::Error>)?;
+            let database = metadata::MetadataDb::open(directories.data_dir.join("tarik.sqlite"))
+                .map_err(|error| Box::new(error) as Box<dyn std::error::Error>)?;
+            app.manage(database);
+            Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             get_runtime_info,
