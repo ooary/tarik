@@ -432,7 +432,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Commit: `chore(repo): bootstrap tauri react workspace`
   - Implementation commit: recorded in Git history
 
-- [~] **E0-T3 Add formatting, linting, test, and build automation** — owner: quality-subagent
+- [x] **E0-T3 Add formatting, linting, test, and build automation** — owner: quality-subagent
   - Depends on: E0-T2
   - Owns: formatter/linter configs, package scripts, CI workflow
   - Deliverables:
@@ -442,6 +442,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: a deliberately malformed fixture proves checks fail, then fixture is removed.
   - Tests: execute every required check locally.
   - Commit: `chore(ci): enforce project quality gates`
+  - Implementation commit: `b11f8e0`
 
 - [~] **E0-T4 Add ignore rules and application directory resolver** — owner: storage-subagent
   - Depends on: E0-T2
