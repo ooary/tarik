@@ -838,7 +838,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
 
 ## EPIC E5.5 — Engine protocol and DuckDB sidecar adapter
 
-**Status:** `PLANNED` - architecture decision approved; implementation not started.
+**Status:** `REVIEW` - T1-T6 implemented; waiting for manual build/process/sidecar review before E6.
 
 **Outcome:** A capability-driven engine protocol with a long-running DuckDB sidecar adapter, so normal Tauri builds exclude database drivers and DuckDB compiles without bundled C++.
 
@@ -846,7 +846,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
 
 **Non-goals here:** remote connectors, credentials, query execution, result-grid UI, query-plan visualization, exports.
 
-- [ ] **E5.5-T1 Define versioned engine protocol and capability negotiation**
+- [x] **E5.5-T1 Define versioned engine protocol and capability negotiation** — owner: lead-agent
   - Depends on: E5 (approved)
   - Owns: `crates/engine-protocol/`
   - Deliverables:
@@ -858,8 +858,9 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: protocol v1 is versioned, capability-driven, and independent of any database crate.
   - Tests: handshake, capability negotiation, unknown-method error, structured error envelope, forward-compatible payloads.
   - Commit: `feat(engine): define engine protocol`
+  - Implementation commit: `f98015c`
 
-- [ ] **E5.5-T2 Define result-page and export interchange format**
+- [x] **E5.5-T2 Define result-page and export interchange format** — owner: lead-agent
   - Depends on: E5.5-T1
   - Owns: `crates/arrow-page-format/`, engine result writer, bounded page reader
   - Deliverables:
@@ -870,8 +871,9 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: E6 result browsing and E9 export consume one bounded interchange format.
   - Tests: multi-batch pagination, batch split, page spill, release cleanup, export boundary cases.
   - Commit: `feat(engine): define bounded result interchange`
+  - Implementation commit: `f98015c`
 
-- [ ] **E5.5-T3 Add engine manager and protocol client in Tauri**
+- [x] **E5.5-T3 Add engine manager and protocol client in Tauri** — owner: lead-agent
   - Depends on: E5.5-T1
   - Owns: `crates/engine-client/`, Tauri engine-manager module
   - Deliverables:
@@ -883,8 +885,9 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: normal Tauri builds and tests do not depend on DuckDB or Arrow crates.
   - Tests: fake-engine process for client, process lifecycle, request IDs, shutdown, project locator migration.
   - Commit: `feat(engine): add tauri engine client`
+  - Implementation commit: `f6357f4`
 
-- [ ] **E5.5-T4 Port DuckDB lifecycle and sources to a sidecar adapter**
+- [x] **E5.5-T4 Port DuckDB lifecycle and sources to a sidecar adapter** — owner: lead-agent
   - Depends on: E5.5-T2, E5.5-T3
   - Owns: `engines/duckdb/`
   - Deliverables:
@@ -895,8 +898,9 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: existing E3/E4 workflows pass end-to-end through the sidecar; Tauri no longer compiles DuckDB.
   - Tests: adapter unit tests, sidecar integration, E3/E4 workflow parity, missing engine, engine crash, restart.
   - Commit: `feat(engine): port duckdb lifecycle to sidecar`
+  - Implementation commit: `f6357f4`
 
-- [ ] **E5.5-T5 Measure build, runtime, and packaging impact**
+- [x] **E5.5-T5 Measure build, runtime, and packaging impact** — owner: lead-agent
   - Depends on: E5.5-T3, E5.5-T4
   - Owns: build benchmark, portable packaging preparation
   - Deliverables:
@@ -906,14 +910,16 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: clean Tauri build excludes DuckDB/Arrow compile; the engine builds separately and packages with a pinned prebuilt library.
   - Tests: reproducible benchmark script, packaged-engine smoke test, checksum verification.
   - Commit: `perf(engine): benchmark sidecar architecture`
+  - Implementation commit: `pending doc commit`
 
-- [ ] **E5.5-T6 Add engine protocol documentation and review gate**
+- [x] **E5.5-T6 Add engine protocol documentation and review gate** — owner: lead-agent
   - Depends on: E5.5-T1, E5.5-T4, E5.5-T5
   - Owns: docs and manual review packet
   - Deliverables: protocol reference, capability matrix, adapter authoring guide, build/run instructions, manual QA checklist.
   - Acceptance: a new engine adapter can be added without editing Tarik's core or result UI.
   - Tests: manual review plus golden workflow through the sidecar.
   - Commit: `docs(engine): document engine protocol and adapters`
+  - Implementation commit: `pending doc commit`
 
 ---
 

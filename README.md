@@ -24,11 +24,19 @@ The status file is operational state and is intentionally ignored by Git. Do not
 
 ```bash
 npm install
+
+# Build the DuckDB engine sidecar first. It links the official prebuilt
+# libduckdb (DUCKDB_DOWNLOAD_LIB=1 in .cargo/config.toml), so no bundled
+# C++ compilation happens.
+cargo build -p tarik-engine-duckdb
+
 npm run dev
 npm run tauri dev
 
 # If an older development process still owns port 1420:
 npm run tauri:dev:clean
 ```
+
+The desktop app does not compile DuckDB or Arrow. All DuckDB work runs in the `tarik-engine-duckdb` sidecar process; build it before `tauri dev`.
 
 See `TASK.md` for the full architecture, task dependencies, manual EPIC review gates, and required atomic Git workflow.
