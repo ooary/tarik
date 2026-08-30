@@ -22,7 +22,12 @@ describe("SqlEditor", () => {
   it("builds schema, table, and column completion data", () => {
     expect(
       buildSqlCompletionSchema([
-        { schema: "analytics", label: "order lines", type: "table", columns: ["order id", "amount"] },
+        {
+          schema: "analytics",
+          label: "order lines",
+          type: "table",
+          columns: ["order id", "amount"],
+        },
       ]),
     ).toEqual({ analytics: { "order lines": ["order id", "amount"] } });
   });

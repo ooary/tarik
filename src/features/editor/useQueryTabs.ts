@@ -86,14 +86,12 @@ export function useQueryTabs(projectId: string) {
           setRestored(true);
           return;
         }
-        const restoredTabs = snapshot.tabs.map(
-          (tab): WorkbenchTab => ({
-            id: tab.id,
-            title: tab.title,
-            sql: tab.sqlText,
-            dirty: false,
-          }),
-        );
+        const restoredTabs = snapshot.tabs.map((tab): WorkbenchTab => ({
+          id: tab.id,
+          title: tab.title,
+          sql: tab.sqlText,
+          dirty: false,
+        }));
         const restoredActive = snapshot.tabs.find((tab) => tab.isActive)?.id ?? restoredTabs[0].id;
         setTabs(restoredTabs);
         setActiveTabId(restoredActive);
@@ -218,46 +216,40 @@ export function useQueryTabs(projectId: string) {
     [markChanged],
   );
 
-  const enqueueSave = useCallback(
-    (snapshot: QuerySessionSnapshot, savedRevision: number) => {
-      if (queuedRevision.current === savedRevision) return drainPromise.current;
-      queuedRevision.current = savedRevision;
-      pendingSave.current = { snapshot, revision: savedRevision };
-      if (saveInFlight.current) return drainPromise.current;
+  const enqueueSave = useCallback((snapshot: QuerySessionSnapshot, savedRevision: number) => {
+    if (queuedRevision.current === savedRevision) return drainPromise.current;
+    queuedRevision.current = savedRevision;
+    pendingSave.current = { snapshot, revision: savedRevision };
+    if (saveInFlight.current) return drainPromise.current;
 
-      saveInFlight.current = true;
-      drainPromise.current = (async () => {
-        while (pendingSave.current) {
-          const next = pendingSave.current;
-          pendingSave.current = null;
-          try {
-            await saveQuerySession(next.snapshot);
-            if (revision.current === next.revision) {
-              setTabs((current) => current.map((tab) => ({ ...tab, dirty: false })));
-            }
-            setSaveError(null);
-          } catch (error) {
-            if (!pendingSave.current) pendingSave.current = next;
-            queuedRevision.current = -1;
-            setSaveError(`Draft save failed: ${String(error)}`);
-            break;
+    saveInFlight.current = true;
+    drainPromise.current = (async () => {
+      while (pendingSave.current) {
+        const next = pendingSave.current;
+        pendingSave.current = null;
+        try {
+          await saveQuerySession(next.snapshot);
+          if (revision.current === next.revision) {
+            setTabs((current) => current.map((tab) => ({ ...tab, dirty: false })));
           }
+          setSaveError(null);
+        } catch (error) {
+          if (!pendingSave.current) pendingSave.current = next;
+          queuedRevision.current = -1;
+          setSaveError(`Draft save failed: ${String(error)}`);
+          break;
         }
-      })().finally(() => {
-        saveInFlight.current = false;
-      });
-      return drainPromise.current;
-    },
-    [],
-  );
+      }
+    })().finally(() => {
+      saveInFlight.current = false;
+    });
+    return drainPromise.current;
+  }, []);
 
   const flush = useCallback(() => {
     if (!projectId || revision.current === 0) return Promise.resolve();
     const current = latest.current;
-    return enqueueSave(
-      snapshotFor(projectId, current.tabs, current.activeTabId),
-      revision.current,
-    );
+    return enqueueSave(snapshotFor(projectId, current.tabs, current.activeTabId), revision.current);
   }, [enqueueSave, projectId]);
 
   useEffect(() => {
