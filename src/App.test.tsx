@@ -17,12 +17,14 @@ import {
   linkParquetSource,
   listRecentProjects,
   listSources,
+  loadQuerySession,
   openProject,
   removeLinkedSource,
   removeProject,
   repairLinkedSource,
   renameProject,
   reopenRecentProject,
+  saveQuerySession,
   setWorkbenchPreferences,
 } from "./lib/commands";
 
@@ -42,12 +44,14 @@ vi.mock("./lib/commands", () => ({
   linkParquetSource: vi.fn(),
   listRecentProjects: vi.fn(),
   listSources: vi.fn(),
+  loadQuerySession: vi.fn(),
   openProject: vi.fn(),
   removeLinkedSource: vi.fn(),
   removeProject: vi.fn(),
   repairLinkedSource: vi.fn(),
   renameProject: vi.fn(),
   reopenRecentProject: vi.fn(),
+  saveQuerySession: vi.fn(),
   setWorkbenchPreferences: vi.fn(),
 }));
 
@@ -73,6 +77,8 @@ describe("Tarik workbench shell", () => {
     vi.mocked(setWorkbenchPreferences).mockResolvedValue(undefined);
     vi.mocked(getActiveProject).mockResolvedValue(null);
     vi.mocked(inspectProjectCatalog).mockResolvedValue({ objects: [], columns: [] });
+    vi.mocked(loadQuerySession).mockResolvedValue(null);
+    vi.mocked(saveQuerySession).mockResolvedValue(undefined);
     vi.mocked(listRecentProjects).mockResolvedValue([]);
     vi.mocked(listSources).mockResolvedValue([]);
     vi.mocked(cancelSourceOperation).mockResolvedValue(true);
@@ -289,7 +295,7 @@ describe("Tarik workbench shell", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Open" }));
 
-    expect(await screen.findByText("orders")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText("orders")).toBeInTheDocument());
     expect(screen.getByText("2 cols")).toBeInTheDocument();
     expect(screen.getByText("~1.2K rows")).toBeInTheDocument();
     expect(screen.getByTitle("Estimated: 1,200 rows")).toBeInTheDocument();
@@ -391,6 +397,37 @@ describe("Tarik workbench shell", () => {
     expect(await screen.findByText("1K rows")).toBeInTheDocument();
     expect(screen.queryByText("~900 rows")).not.toBeInTheDocument();
     expect(screen.getByTitle("Exact cached: 1,000 rows")).toBeInTheDocument();
+  });
+
+  it("opens a safely quoted table preview from the source context menu", async () => {
+    vi.mocked(getActiveProject).mockResolvedValue({
+      id: "project-1",
+      name: "Local analysis",
+      duckdbPath: "/data/project.duckdb",
+    });
+    vi.mocked(inspectProjectCatalog).mockResolvedValue({
+      objects: [
+        {
+          database: "local",
+          schema: "analytics",
+          name: "order lines",
+          kind: "table",
+          estimatedRowCount: 12,
+        },
+      ],
+      columns: [],
+    });
+    render(<App />);
+
+    const table = await screen.findByTitle("analytics.order lines");
+    fireEvent.contextMenu(table.closest("button")!);
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Preview rows" }));
+
+    await waitFor(() =>
+      expect(document.querySelector(".cm-content")).toHaveTextContent(
+        'FROM "analytics"."order lines"',
+      ),
+    );
   });
 
   it("collapses and expands the source explorer", () => {

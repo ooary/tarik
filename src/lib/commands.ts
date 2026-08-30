@@ -278,3 +278,31 @@ export function removeLinkedSource(
 ): Promise<boolean> {
   return invokeCommand<boolean>("remove_linked_source", { sourceId });
 }
+
+export interface QueryTabSnapshot {
+  id: string;
+  title: string;
+  sqlText: string;
+  position: number;
+  isActive: boolean;
+}
+
+export interface QuerySessionSnapshot {
+  id: string;
+  projectId: string;
+  tabs: QueryTabSnapshot[];
+}
+
+export function saveQuerySession(
+  snapshot: QuerySessionSnapshot,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<void> {
+  return invokeCommand<void>("save_query_session", { snapshot });
+}
+
+export function loadQuerySession(
+  sessionId: string,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<QuerySessionSnapshot | null> {
+  return invokeCommand<QuerySessionSnapshot | null>("load_query_session", { sessionId });
+}

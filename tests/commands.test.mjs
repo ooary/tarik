@@ -137,6 +137,25 @@ test("source inspection, link, import, repair, and removal use typed commands", 
   );
 });
 
+test("session snapshots use typed metadata commands", async () => {
+  const { saveQuerySession, loadQuerySession } = await loadCommandsModule();
+  const snapshot = {
+    id: "session-1",
+    projectId: "project-1",
+    tabs: [{ id: "tab-1", title: "Query", sqlText: "SELECT 1", position: 0, isActive: true }],
+  };
+  const calls = [];
+  const invoke = async (command, args) => {
+    calls.push({ command, args });
+    return command === "load_query_session" ? snapshot : undefined;
+  };
+
+  await saveQuerySession(snapshot, invoke);
+  assert.deepEqual(await loadQuerySession("session-1", invoke), snapshot);
+  assert.equal(calls[0].command, "save_query_session");
+  assert.equal(calls[1].command, "load_query_session");
+});
+
 test("getAppDirectories invokes the typed path command", async () => {
   const { getAppDirectories } = await loadCommandsModule();
   const expected = {
