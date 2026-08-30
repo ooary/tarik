@@ -1,7 +1,8 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { SourceInspection } from "../../lib/commands";
-import { formatCompactCount, ImportDialog } from "./ImportDialog";
+import { ImportDialog } from "./ImportDialog";
+import { formatCompactCount } from "./format";
 
 const csvInspection: SourceInspection = {
   path: "/data/orders.csv",

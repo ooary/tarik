@@ -255,7 +255,15 @@ describe("Tarik workbench shell", () => {
   it("opens a populated DuckDB from the native selection boundary", async () => {
     vi.spyOn(window, "prompt").mockReturnValue("Existing");
     vi.mocked(inspectProjectCatalog).mockResolvedValue({
-      objects: [{ database: "existing", schema: "main", name: "orders", kind: "table" }],
+      objects: [
+        {
+          database: "existing",
+          schema: "main",
+          name: "orders",
+          kind: "table",
+          estimatedRowCount: 1_200,
+        },
+      ],
       columns: [
         {
           database: "existing",
@@ -283,6 +291,8 @@ describe("Tarik workbench shell", () => {
 
     expect(await screen.findByText("orders")).toBeInTheDocument();
     expect(screen.getByText("2 cols")).toBeInTheDocument();
+    expect(screen.getByText("~1.2K rows")).toBeInTheDocument();
+    expect(screen.getByTitle("Estimated: 1,200 rows")).toBeInTheDocument();
     expect(chooseDuckDbFile).toHaveBeenCalled();
     expect(openProject).toHaveBeenCalledWith("Existing", "/data/existing.duckdb");
   });
@@ -332,6 +342,55 @@ describe("Tarik workbench shell", () => {
     await waitFor(() =>
       expect(repairLinkedSource).toHaveBeenCalledWith("source-2", "/data/replacement.parquet"),
     );
+  });
+
+  it("prefers cached exact import rows over catalog estimates", async () => {
+    vi.mocked(getActiveProject).mockResolvedValue({
+      id: "project-1",
+      name: "Local analysis",
+      duckdbPath: "/data/project.duckdb",
+    });
+    vi.mocked(inspectProjectCatalog).mockResolvedValue({
+      objects: [
+        {
+          database: "local",
+          schema: "main",
+          name: "orders",
+          kind: "table",
+          estimatedRowCount: 900,
+        },
+      ],
+      columns: [
+        {
+          database: "local",
+          schema: "main",
+          object: "orders",
+          name: "id",
+          dataType: "BIGINT",
+          position: 0,
+          nullable: false,
+        },
+      ],
+    });
+    vi.mocked(listSources).mockResolvedValue([
+      {
+        id: "source-1",
+        projectId: "project-1",
+        displayName: "orders",
+        kind: "duckdb_table",
+        state: "ready",
+        sourcePath: "/data/orders.csv",
+        duckdbName: "orders",
+        options: { rowCount: 1_000, rowCountExact: true },
+        createdAt: "1",
+        updatedAt: "1",
+      },
+    ]);
+    render(<App />);
+
+    expect(await screen.findByText("1K rows")).toBeInTheDocument();
+    expect(screen.queryByText("~900 rows")).not.toBeInTheDocument();
+    expect(screen.getByTitle("Exact cached: 1,000 rows")).toBeInTheDocument();
   });
 
   it("collapses and expands the source explorer", () => {

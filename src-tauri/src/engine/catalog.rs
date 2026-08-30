@@ -5,10 +5,10 @@ use super::{CatalogColumn, CatalogObject, CatalogObjectKind, EngineError, Projec
 
 pub(super) fn inspect(connection: &Connection) -> Result<ProjectCatalog, EngineError> {
     let mut objects_statement = connection.prepare(
-        "SELECT database_name, schema_name, table_name, 'TABLE'
+        "SELECT database_name, schema_name, table_name, 'TABLE', estimated_size
          FROM duckdb_tables()
          UNION ALL
-         SELECT database_name, schema_name, view_name, 'VIEW'
+         SELECT database_name, schema_name, view_name, 'VIEW', NULL::BIGINT
          FROM duckdb_views()
          WHERE internal = false
          ORDER BY database_name, schema_name, table_name",
@@ -25,6 +25,7 @@ pub(super) fn inspect(connection: &Connection) -> Result<ProjectCatalog, EngineE
                 } else {
                     CatalogObjectKind::Table
                 },
+                estimated_row_count: row.get(4)?,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
@@ -83,6 +84,7 @@ mod tests {
             object.schema == "analytics"
                 && object.name == "order lines"
                 && object.kind == CatalogObjectKind::Table
+                && object.estimated_row_count == Some(0)
         }));
         assert!(catalog.objects.iter().any(|object| {
             object.schema == "analytics"

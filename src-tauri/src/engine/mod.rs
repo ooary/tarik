@@ -23,6 +23,7 @@ pub struct CatalogObject {
     pub schema: String,
     pub name: String,
     pub kind: CatalogObjectKind,
+    pub estimated_row_count: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -422,6 +422,25 @@ button:disabled {
   font-size: 11px;
 }
 
+.row-meta-group {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--text-muted);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.row-meta-group span + span {
+  padding-left: 7px;
+  border-left: 1px solid var(--border-subtle);
+  font-family: var(--font-mono);
+}
+
+.catalog-object-row {
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+}
+
 .source-icon {
   color: var(--icon-muted);
 }

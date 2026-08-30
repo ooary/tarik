@@ -3,6 +3,7 @@ import { CaretDownIcon, CaretUpIcon, DatabaseIcon, DotsThreeIcon, FileIcon, List
 import { useEffect, useRef, useState } from "react";
 import "./App.css";
 import { ContextMenu, Dialog } from "./components/ui";
+import { formatCompactCount } from "./features/sources/format";
 import { ImportDialog, type SourceAction } from "./features/sources/ImportDialog";
 import {
   createWorkbenchPreferencesRepository,
@@ -450,11 +451,35 @@ function App() {
                         column.schema === object.schema &&
                         column.object === object.name,
                     ).length;
+                    const sourceMetadata = sources.find(
+                      (source) => source.duckdbName === object.name,
+                    );
+                    const cachedRows =
+                      typeof sourceMetadata?.options.rowCount === "number"
+                        ? sourceMetadata.options.rowCount
+                        : null;
+                    const cachedExact = sourceMetadata?.options.rowCountExact === true;
+                    const rowCount = cachedRows ?? object.estimatedRowCount;
+                    const rowLabel =
+                      rowCount === null
+                        ? null
+                        : `${cachedExact ? "" : "~"}${formatCompactCount(rowCount)} rows`;
+                    const exactTitle =
+                      rowCount === null
+                        ? undefined
+                        : `${cachedExact ? "Exact cached" : "Estimated"}: ${rowCount.toLocaleString()} rows`;
                     return (
-                      <button className="tree-row tree-row-child" key={`${object.database}.${object.schema}.${object.name}`} type="button">
+                      <button
+                        className="tree-row tree-row-child catalog-object-row"
+                        key={`${object.database}.${object.schema}.${object.name}`}
+                        type="button"
+                      >
                         <SourceIcon kind="table" />
                         <span title={`${object.schema}.${object.name}`}>{object.name}</span>
-                        <span className="row-meta">{object.kind === "view" ? "view" : `${count} cols`}</span>
+                        <span className="row-meta-group">
+                          <span>{object.kind === "view" ? "view" : `${count} cols`}</span>
+                          {rowLabel && <span title={exactTitle}>{rowLabel}</span>}
+                        </span>
                       </button>
                     );
                   })

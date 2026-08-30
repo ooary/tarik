@@ -15,7 +15,9 @@
     "format:check": "prettier --check --ignore-path .prettierignore --ignore-unknown .",
     "test": "node --test tests/*.test.mjs",
     "test:ui": "vitest run",
-    "test:ui:watch": "vitest"
+    "test:ui:watch": "vitest",
+    "dev:webview-reset": "rm -rf ~/.local/share/com.tarik.desktop",
+    "sweep": "cargo sweep --time 30 --manifest-path src-tauri/Cargo.toml"
   },
   "dependencies": {
     "@phosphor-icons/react": "^2.1.10",

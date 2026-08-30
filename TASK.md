@@ -758,6 +758,18 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Commit: `fix(import): add controlled types and row summary`
   - Implementation commit: `c355ce2`
 
+- [~] **E4-T7 Show cheap cached/estimated row totals in Explorer** — owner: lead-agent
+  - Depends on: E3-T4, E4-T4, E4-T6
+  - Deliverables:
+    - Display table name, column total, and compact row total without issuing automatic `COUNT(*)` queries.
+    - Prefer cached exact row counts recorded after Tarik import or Parquet inspection.
+    - Fall back to DuckDB `duckdb_tables().estimated_size` for existing physical tables and prefix estimates with `~`.
+    - Keep arbitrary views as `view` without executing them for cardinality.
+    - Expose full exact/estimated values in accessible title text.
+  - Acceptance: Explorer refresh uses catalog/source metadata only; exact cached values override estimates.
+  - Tests: cached exact import count, catalog estimate, unknown view count, compact formatting.
+  - Commit: `feat(catalog): show cached row totals`
+
 ---
 
 ## EPIC E5 — SQL editor and restorable sessions
@@ -1069,10 +1081,11 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Tests: automated E2E suite on supported CI environment.
   - Commit: `test(e2e): cover core tarik workflows`
 
-- [ ] **E11-T2 Establish performance and memory budgets**
+- [~] **E11-T2 Establish performance and memory budgets** — build-loop optimization foundation in progress
   - Depends on: E6-T5, E9-T3
   - Owns: benchmark harness and performance docs
   - Deliverables:
+    - Maintain a project-local stable Linux development profile using Clang, mold, and sccache; document warm/cold measurements and optional Bacon/nextest workflow without changing release codegen.
     - Measure idle, large-result browsing, repeated-query, import, and export memory.
     - Define bounded page/cache/worker defaults from measurements.
     - Record dataset shape and machine details with every benchmark.

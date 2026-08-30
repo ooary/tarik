@@ -37,6 +37,7 @@ export interface CatalogObject {
   schema: string;
   name: string;
   kind: CatalogObjectKind;
+  estimatedRowCount: number | null;
 }
 
 export interface CatalogColumn {
