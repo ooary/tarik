@@ -28,7 +28,7 @@ npm install
 # Build the DuckDB engine sidecar first. It links the official prebuilt
 # libduckdb (DUCKDB_DOWNLOAD_LIB=1 in .cargo/config.toml), so no bundled
 # C++ compilation happens.
-cargo build -p tarik-engine-duckdb
+cargo build -p tarik-engine-duckdb   # or: ./scripts/build-engine.sh (also places libduckdb beside the binary)
 
 npm run dev
 npm run tauri dev

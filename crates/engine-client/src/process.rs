@@ -56,7 +56,7 @@ impl EngineProcess {
 
         loop {
             let Some(Ok(response_line)) = self.stdout.next() else {
-                return Err(ClientError::ChannelClosed);
+                return Err(self.closed_with_detail());
             };
             let response: ResponseEnvelope = serde_json::from_str(&response_line)
                 .map_err(|error| ClientError::Protocol(format!("{error:?}")))?;
@@ -73,6 +73,23 @@ impl EngineProcess {
                 });
             }
             return response.result.ok_or(ClientError::ChannelClosed);
+        }
+    }
+
+    fn closed_with_detail(&mut self) -> ClientError {
+        let exit = self
+            .child
+            .try_wait()
+            .ok()
+            .flatten()
+            .map(|status| status.to_string())
+            .unwrap_or_else(|| "still running but channel closed".to_string());
+        ClientError::Engine {
+            code: "engine.exited".into(),
+            message: format!(
+                "engine process closed its channel before responding (exit: {exit}). \
+                 Check that the engine binary exists and its DuckDB runtime library is beside it."
+            ),
         }
     }
 
