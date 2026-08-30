@@ -159,6 +159,12 @@ describe("QueryWorkspace", () => {
     fireEvent.click(screen.getByRole("button", { name: /Run query/ }));
     await waitFor(() => expect(getResultPage).toHaveBeenCalledWith("res-1", 0));
     expect(await screen.findByRole("grid", { name: "Query results" })).toBeInTheDocument();
+    // Regression: the grid must show real headers and row cells, not only the
+    // "Rows x-y of z" toolbar count.
+    expect(await screen.findByText("country")).toBeInTheDocument();
+    expect(await screen.findByText("orders")).toBeInTheDocument();
+    expect(await screen.findByText("Singapore")).toBeInTheDocument();
+    expect(await screen.findByText("6842")).toBeInTheDocument();
     expect(container.querySelector(".result-duration")).toHaveTextContent("Completed in 1.8s");
   });
 

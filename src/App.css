@@ -823,7 +823,8 @@ tbody tr:hover {
 }
 
 .result-grid {
-  height: calc(100% - 42px);
+  min-height: 0;
+  height: 100%;
   overflow: auto;
   outline: none;
 }
@@ -834,7 +835,7 @@ tbody tr:hover {
 }
 
 .result-grid-header {
-  position: sticky;
+  position: sticky !important;
   top: 0;
   z-index: 2;
   background: var(--surface-raised);
