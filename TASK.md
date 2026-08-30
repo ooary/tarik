@@ -948,7 +948,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
     - Frontend: `useQueryExecution` hook keeps lightweight per-tab state, polls every 250 ms, and the results panel shows empty/queued/running/failed/cancelled/completed states plus a Cancel action. The static fake fixture (`24,318` rows) is removed.
     - Engine status currently reports `rowsAffected` from DuckDB DML count results; `rows_produced` while running reflects batches already fetched. Engine-side cancel tests land with E6-T2.
 
-- [ ] **E6-T2 Implement query cancellation and cleanup**
+- [x] **E6-T2 Implement query cancellation and cleanup** — owner: lead-agent
   - Depends on: E6-T1, E5.5-T3
   - Owns: query cancellation backend/UI
   - Deliverables:
@@ -958,6 +958,10 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: cancelled engine session remains usable for a later query.
   - Tests: cancel queued, active, already-finished, and repeated cancellation.
   - Commit: `feat(query): support safe cancellation`
+  - Notes:
+    - `query.cancel` removes queued jobs immediately; running jobs are interrupted through DuckDB's thread-safe `InterruptHandle`. An interrupt surfaces either as a panic in the Arrow fetch path or as a DuckDB `INTERRUPT` error; the worker maps both to a clean cancelled terminal when a cancel was requested, and any unexpected panic becomes `query.interrupted`.
+    - `session.close` first cancels the session's queued/running jobs so closing cannot strand work. Result-page cleanup on cancellation lands with E6-T3, which owns page artifacts.
+    - Integration tests cover queued-cancel removal, active interrupt with the session remaining usable afterwards, already-finished cancel, and repeated cancellation.
 
 - [ ] **E6-T3 Wire bounded result paging through the engine client**
   - Depends on: E6-T1, E5.5-T2, E0-T4

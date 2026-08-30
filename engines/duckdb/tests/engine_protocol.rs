@@ -260,7 +260,11 @@ fn query_execute_reports_structured_sql_errors() {
 }
 
 fn poll_terminal(engine: &mut Engine, execution_id: &str) -> Value {
-    for _ in 0..200 {
+    poll_terminal_with_timeout(engine, execution_id, 200)
+}
+
+fn poll_terminal_with_timeout(engine: &mut Engine, execution_id: &str, attempts: usize) -> Value {
+    for _ in 0..attempts {
         let status = engine.request("query.status", json!({ "executionId": execution_id }))
             ["result"]
             .clone();
@@ -273,4 +277,92 @@ fn poll_terminal(engine: &mut Engine, execution_id: &str) -> Value {
         std::thread::sleep(std::time::Duration::from_millis(10));
     }
     panic!("execution {execution_id} did not reach a terminal state");
+}
+
+const LONG_QUERY: &str = "SELECT count(*) FROM range(1_000_000_000_000) t(i);";
+
+#[test]
+fn cancel_covers_queued_active_and_session_reuse() {
+    let mut engine = spawn_engine();
+    let database = temp_path("cancel", ".duckdb");
+    engine.assert_ok(
+        "session.open",
+        json!({
+            "sessionId": "cs",
+            "locator": { "engineId": "duckdb", "payload": { "path": database } }
+        }),
+    );
+
+    // 1. A long-running query occupies the session worker.
+    let enqueued = engine.assert_ok(
+        "query.execute",
+        json!({ "sessionId": "cs", "executionId": "c1", "sql": LONG_QUERY }),
+    );
+    assert_eq!(enqueued["state"], "queued");
+
+    // 2. A second submission on the same session queues behind the first.
+    engine.assert_ok(
+        "query.execute",
+        json!({ "sessionId": "cs", "executionId": "c2", "sql": "SELECT 41 + 1 AS answer;" }),
+    );
+    let queued_status =
+        engine.request("query.status", json!({ "executionId": "c2" }))["result"].clone();
+    assert_eq!(queued_status["state"], "queued");
+
+    // 3. Cancelling the queued job removes it before it starts.
+    let cancelled =
+        engine.request("query.cancel", json!({ "executionId": "c2" }))["result"].clone();
+    assert_eq!(cancelled["state"], "cancelled");
+
+    // 4. Cancelling the active job interrupts DuckDB and becomes terminal.
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    let interrupted =
+        engine.request("query.cancel", json!({ "executionId": "c1" }))["result"].clone();
+    assert_eq!(interrupted["state"], "running");
+    let status = poll_terminal_with_timeout(&mut engine, "c1", 400);
+    assert_eq!(status["state"], "cancelled");
+    assert_eq!(status["error"], serde_json::Value::Null);
+
+    // 5. The same session accepts and completes a later query.
+    engine.assert_ok(
+        "query.execute",
+        json!({ "sessionId": "cs", "executionId": "c3", "sql": "SELECT 6 * 7 AS answer;" }),
+    );
+    let status = poll_terminal_with_timeout(&mut engine, "c3", 400);
+    assert_eq!(status["state"], "succeeded");
+    assert_eq!(status["rowsProduced"], 1);
+
+    engine.child.kill().ok();
+    let _ = std::fs::remove_file(&database);
+}
+
+#[test]
+fn repeat_cancel_on_terminal_job_is_idempotent() {
+    let mut engine = spawn_engine();
+    let database = temp_path("cancel2", ".duckdb");
+    engine.assert_ok(
+        "session.open",
+        json!({
+            "sessionId": "cs",
+            "locator": { "engineId": "duckdb", "payload": { "path": database } }
+        }),
+    );
+
+    engine.assert_ok(
+        "query.execute",
+        json!({ "sessionId": "cs", "executionId": "k1", "sql": "SELECT 1;" }),
+    );
+    let status = poll_terminal(&mut engine, "k1");
+    assert_eq!(status["state"], "succeeded");
+
+    // Cancelling an already-finished job returns its terminal state, and
+    // repeated cancels keep returning it unchanged.
+    for _ in 0..2 {
+        let repeat =
+            engine.request("query.cancel", json!({ "executionId": "k1" }))["result"].clone();
+        assert_eq!(repeat["state"], "succeeded");
+    }
+
+    engine.child.kill().ok();
+    let _ = std::fs::remove_file(&database);
 }

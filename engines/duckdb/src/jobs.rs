@@ -339,13 +339,20 @@ fn run_job(registry: &JobRegistry, execution_id: &str, sql: &str, connection: &m
             );
         }
         Ok(Err(error)) => {
-            registry.mark_terminal(
-                execution_id,
-                ExecutionState::Failed,
-                Some(ErrorEnvelope::new(error.code(), error.to_string())),
-                None,
-                None,
-            );
+            // An interrupt can surface either as a panic in the Arrow fetch
+            // path or as a DuckDB error; both become a clean cancel when we
+            // asked for it.
+            if registry.is_cancel_requested(execution_id) {
+                registry.mark_terminal(execution_id, ExecutionState::Cancelled, None, None, None);
+            } else {
+                registry.mark_terminal(
+                    execution_id,
+                    ExecutionState::Failed,
+                    Some(ErrorEnvelope::new(error.code(), error.to_string())),
+                    None,
+                    None,
+                );
+            }
         }
         Err(payload) => {
             // A requested cancel is a clean cancelled terminal; any other
