@@ -1,12 +1,22 @@
 use std::{
     path::PathBuf,
-    sync::mpsc::{self, Receiver, SyncSender, TrySendError},
+    sync::{
+        mpsc::{self, Receiver, SyncSender, TrySendError},
+        Arc, Mutex,
+    },
     thread::{self, JoinHandle},
 };
 
 use duckdb::Connection;
 
 use super::{catalog, EngineError, EngineProfile, ProjectCatalog};
+use crate::{
+    metadata::sources::SourceRecord,
+    sources::{
+        operations::{self, SourceMutationResult},
+        CsvOptions, ImportOptions, SourceInspection,
+    },
+};
 
 const JOB_QUEUE_CAPACITY: usize = 16;
 
@@ -17,6 +27,32 @@ enum Job {
     },
     InspectCatalog {
         reply: SyncSender<Result<ProjectCatalog, EngineError>>,
+    },
+    InspectSource {
+        path: PathBuf,
+        csv: Option<CsvOptions>,
+        reply: SyncSender<Result<SourceInspection, EngineError>>,
+    },
+    LinkParquet {
+        project_id: String,
+        path: PathBuf,
+        view_name: String,
+        reply: SyncSender<Result<SourceMutationResult, EngineError>>,
+    },
+    ImportTable {
+        project_id: String,
+        path: PathBuf,
+        options: ImportOptions,
+        reply: SyncSender<Result<SourceMutationResult, EngineError>>,
+    },
+    RepairLink {
+        source: SourceRecord,
+        replacement: PathBuf,
+        reply: SyncSender<Result<SourceMutationResult, EngineError>>,
+    },
+    DropLink {
+        source: SourceRecord,
+        reply: SyncSender<Result<(), EngineError>>,
     },
     #[cfg(test)]
     ExecuteBatch {
@@ -33,6 +69,7 @@ enum Job {
 
 pub struct DuckDbWorker {
     sender: SyncSender<Job>,
+    interrupt: Arc<Mutex<Option<Arc<duckdb::InterruptHandle>>>>,
     thread: Option<JoinHandle<()>>,
 }
 
@@ -40,9 +77,11 @@ impl DuckDbWorker {
     pub fn start(path: PathBuf) -> Result<Self, EngineError> {
         let (sender, receiver) = mpsc::sync_channel(JOB_QUEUE_CAPACITY);
         let (started_tx, started_rx) = mpsc::sync_channel(1);
+        let interrupt = Arc::new(Mutex::new(None));
+        let worker_interrupt = interrupt.clone();
         let thread = thread::Builder::new()
             .name("tarik-duckdb-worker".into())
-            .spawn(move || run_worker(path, receiver, started_tx))
+            .spawn(move || run_worker(path, receiver, started_tx, worker_interrupt))
             .map_err(EngineError::Thread)?;
 
         started_rx
@@ -50,6 +89,7 @@ impl DuckDbWorker {
             .map_err(|_| EngineError::WorkerStopped)??;
         Ok(Self {
             sender,
+            interrupt,
             thread: Some(thread),
         })
     }
@@ -60,6 +100,71 @@ impl DuckDbWorker {
 
     pub fn inspect_catalog(&self) -> Result<ProjectCatalog, EngineError> {
         self.request(|reply| Job::InspectCatalog { reply })
+    }
+
+    pub fn inspect_source(
+        &self,
+        path: PathBuf,
+        csv: Option<CsvOptions>,
+    ) -> Result<SourceInspection, EngineError> {
+        self.request(|reply| Job::InspectSource { path, csv, reply })
+    }
+
+    pub fn link_parquet(
+        &self,
+        project_id: String,
+        path: PathBuf,
+        view_name: String,
+    ) -> Result<SourceMutationResult, EngineError> {
+        self.request(|reply| Job::LinkParquet {
+            project_id,
+            path,
+            view_name,
+            reply,
+        })
+    }
+
+    pub fn import_table(
+        &self,
+        project_id: String,
+        path: PathBuf,
+        options: ImportOptions,
+    ) -> Result<SourceMutationResult, EngineError> {
+        self.request(|reply| Job::ImportTable {
+            project_id,
+            path,
+            options,
+            reply,
+        })
+    }
+
+    pub fn repair_link(
+        &self,
+        source: SourceRecord,
+        replacement: PathBuf,
+    ) -> Result<SourceMutationResult, EngineError> {
+        self.request(|reply| Job::RepairLink {
+            source,
+            replacement,
+            reply,
+        })
+    }
+
+    pub fn drop_link(&self, source: SourceRecord) -> Result<(), EngineError> {
+        self.request(|reply| Job::DropLink { source, reply })
+    }
+
+    pub fn interrupt(&self) -> Result<bool, EngineError> {
+        let handle = self
+            .interrupt
+            .lock()
+            .map_err(|_| EngineError::InterruptLock)?;
+        if let Some(handle) = handle.as_ref() {
+            handle.interrupt();
+            Ok(true)
+        } else {
+            Ok(false)
+        }
     }
 
     #[cfg(test)]
@@ -102,6 +207,7 @@ fn run_worker(
     path: PathBuf,
     receiver: Receiver<Job>,
     started: SyncSender<Result<(), EngineError>>,
+    interrupt: Arc<Mutex<Option<Arc<duckdb::InterruptHandle>>>>,
 ) {
     let connection = match Connection::open(&path) {
         Ok(connection) => connection,
@@ -110,6 +216,12 @@ fn run_worker(
             return;
         }
     };
+    if let Ok(mut slot) = interrupt.lock() {
+        *slot = Some(connection.interrupt_handle());
+    } else {
+        let _ = started.send(Err(EngineError::InterruptLock));
+        return;
+    }
     if started.send(Ok(())).is_err() {
         return;
     }
@@ -121,6 +233,47 @@ fn run_worker(
             }
             Job::InspectCatalog { reply } => {
                 let _ = reply.send(catalog::inspect(&connection));
+            }
+            Job::InspectSource { path, csv, reply } => {
+                let _ = reply.send(
+                    crate::sources::inspect(&path, csv.as_ref()).map_err(EngineError::Source),
+                );
+            }
+            Job::LinkParquet {
+                project_id,
+                path,
+                view_name,
+                reply,
+            } => {
+                let _ = reply.send(
+                    operations::link_parquet(&connection, &project_id, &path, &view_name)
+                        .map_err(EngineError::Source),
+                );
+            }
+            Job::ImportTable {
+                project_id,
+                path,
+                options,
+                reply,
+            } => {
+                let _ = reply.send(
+                    operations::import_table(&connection, &project_id, &path, &options)
+                        .map_err(EngineError::Source),
+                );
+            }
+            Job::RepairLink {
+                source,
+                replacement,
+                reply,
+            } => {
+                let _ = reply.send(
+                    operations::repair_link(&connection, &source, &replacement)
+                        .map_err(EngineError::Source),
+                );
+            }
+            Job::DropLink { source, reply } => {
+                let _ = reply
+                    .send(operations::drop_link(&connection, &source).map_err(EngineError::Source));
             }
             #[cfg(test)]
             Job::ExecuteBatch { sql, reply } => {

@@ -3719,6 +3719,7 @@ name = "tarik"
 version = "0.1.0"
 dependencies = [
  "duckdb",
+ "glob",
  "rusqlite",
  "serde",
  "serde_json",

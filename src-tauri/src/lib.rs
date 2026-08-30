@@ -2,6 +2,7 @@ mod engine;
 mod metadata;
 mod paths;
 mod projects;
+mod sources;
 
 use serde::Serialize;
 use tauri::Manager;
@@ -70,6 +71,8 @@ pub fn run() {
             metadata::commands::list_query_history,
             metadata::commands::prune_query_history,
             metadata::commands::upsert_source,
+            metadata::commands::list_sources,
+            metadata::commands::remove_source,
             metadata::commands::set_source_state,
             metadata::commands::get_source,
             metadata::commands::upsert_export_history,
@@ -82,7 +85,13 @@ pub fn run() {
             projects::commands::close_project,
             projects::commands::get_active_project,
             projects::commands::apply_engine_profile,
-            projects::commands::inspect_project_catalog
+            projects::commands::inspect_project_catalog,
+            projects::commands::inspect_source_file,
+            projects::commands::link_parquet_source,
+            projects::commands::import_source_table,
+            projects::commands::cancel_source_operation,
+            projects::commands::repair_linked_source,
+            projects::commands::remove_linked_source
         ])
         .run(tauri::generate_context!())
         .expect("error while running Tarik");

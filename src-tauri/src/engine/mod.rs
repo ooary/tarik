@@ -57,10 +57,14 @@ pub enum EngineError {
     WorkerStopped,
     #[error("DuckDB worker panicked")]
     WorkerPanicked,
+    #[error("DuckDB interrupt handle lock is unavailable")]
+    InterruptLock,
     #[error("could not create DuckDB worker thread: {0}")]
     Thread(std::io::Error),
     #[error("invalid engine profile: {0}")]
     InvalidProfile(&'static str),
+    #[error(transparent)]
+    Source(#[from] crate::sources::SourceError),
     #[error(transparent)]
     DuckDb(#[from] duckdb::Error),
 }

@@ -1,7 +1,11 @@
 use serde::Deserialize;
 use tauri::State;
 
-use crate::engine::{EngineProfile, EngineProfileName, ProjectCatalog};
+use crate::{
+    engine::{EngineProfile, EngineProfileName, ProjectCatalog},
+    metadata::{sources::SourcesRepository, MetadataDb},
+    sources::{operations::SourceMutationResult, CsvOptions, ImportOptions, SourceInspection},
+};
 
 use super::{ActiveProject, ProjectManager, ProjectRemoval};
 
@@ -98,6 +102,89 @@ pub async fn apply_engine_profile(
         })
     })
     .await
+}
+
+#[tauri::command]
+pub async fn inspect_source_file(
+    path: String,
+    csv: Option<CsvOptions>,
+    manager: State<'_, ProjectManager>,
+) -> Result<SourceInspection, String> {
+    let manager = manager.inner().clone();
+    blocking(move || manager.inspect_source(path.into(), csv)).await
+}
+
+#[tauri::command]
+pub async fn link_parquet_source(
+    path: String,
+    view_name: String,
+    manager: State<'_, ProjectManager>,
+    database: State<'_, MetadataDb>,
+) -> Result<SourceMutationResult, String> {
+    let manager = manager.inner().clone();
+    let result = blocking(move || manager.link_parquet(path.into(), view_name)).await?;
+    SourcesRepository::new(database.inner().clone())
+        .upsert_source(&result.source)
+        .map_err(|error| error.to_string())?;
+    Ok(result)
+}
+
+#[tauri::command]
+pub async fn import_source_table(
+    path: String,
+    options: ImportOptions,
+    manager: State<'_, ProjectManager>,
+    database: State<'_, MetadataDb>,
+) -> Result<SourceMutationResult, String> {
+    let manager = manager.inner().clone();
+    let result = blocking(move || manager.import_table(path.into(), options)).await?;
+    SourcesRepository::new(database.inner().clone())
+        .upsert_source(&result.source)
+        .map_err(|error| error.to_string())?;
+    Ok(result)
+}
+
+#[tauri::command]
+pub fn cancel_source_operation(manager: State<'_, ProjectManager>) -> Result<bool, String> {
+    manager.interrupt().map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub async fn repair_linked_source(
+    source_id: String,
+    replacement: String,
+    manager: State<'_, ProjectManager>,
+    database: State<'_, MetadataDb>,
+) -> Result<SourceMutationResult, String> {
+    let repository = SourcesRepository::new(database.inner().clone());
+    let source = repository
+        .get_source(&source_id)
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| format!("source was not found: {source_id}"))?;
+    let manager = manager.inner().clone();
+    let result = blocking(move || manager.repair_link(source, replacement.into())).await?;
+    repository
+        .upsert_source(&result.source)
+        .map_err(|error| error.to_string())?;
+    Ok(result)
+}
+
+#[tauri::command]
+pub async fn remove_linked_source(
+    source_id: String,
+    manager: State<'_, ProjectManager>,
+    database: State<'_, MetadataDb>,
+) -> Result<bool, String> {
+    let repository = SourcesRepository::new(database.inner().clone());
+    let source = repository
+        .get_source(&source_id)
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| format!("source was not found: {source_id}"))?;
+    let manager = manager.inner().clone();
+    blocking(move || manager.drop_link(source)).await?;
+    repository
+        .remove_source(&source_id)
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]

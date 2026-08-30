@@ -27,4 +27,5 @@ rusqlite = { version = "0.37", features = ["bundled"] }
 uuid = { version = "1", features = ["v4"] }
 duckdb = { version = "1.10505.0", features = ["bundled"] }
 tauri-plugin-dialog = "2"
+glob = "0.3"
 

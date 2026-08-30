@@ -77,6 +77,23 @@ pub fn upsert_source(source: SourceRecord, database: State<'_, MetadataDb>) -> R
 }
 
 #[tauri::command]
+pub fn list_sources(
+    project_id: String,
+    database: State<'_, MetadataDb>,
+) -> Result<Vec<SourceRecord>, String> {
+    SourcesRepository::new(database.inner().clone())
+        .list_sources(&project_id)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn remove_source(id: String, database: State<'_, MetadataDb>) -> Result<bool, String> {
+    SourcesRepository::new(database.inner().clone())
+        .remove_source(&id)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 pub fn set_source_state(
     id: String,
     state: SourceState,

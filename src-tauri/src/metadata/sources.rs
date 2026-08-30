@@ -145,6 +145,27 @@ impl SourcesRepository {
         )? > 0)
     }
 
+    pub fn list_sources(&self, project_id: &str) -> Result<Vec<SourceRecord>, MetadataError> {
+        let connection = self.database.connection()?;
+        let mut statement = connection.prepare(
+            "SELECT id, project_id, display_name, kind, state, source_path, duckdb_name,
+             options_json, created_at, updated_at FROM sources
+             WHERE project_id = ?1 ORDER BY display_name COLLATE NOCASE",
+        )?;
+        let sources = statement
+            .query_map([project_id], read_source)?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(sources)
+    }
+
+    pub fn remove_source(&self, id: &str) -> Result<bool, MetadataError> {
+        Ok(self
+            .database
+            .connection()?
+            .execute("DELETE FROM sources WHERE id = ?1", [id])?
+            > 0)
+    }
+
     pub fn get_source(&self, id: &str) -> Result<Option<SourceRecord>, MetadataError> {
         let connection = self.database.connection()?;
         let result = connection.query_row(

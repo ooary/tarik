@@ -15,6 +15,7 @@ use crate::{
         projects::{ProjectOwnership, ProjectsRepository, RecentProject},
         MetadataDb,
     },
+    sources::{operations::SourceMutationResult, CsvOptions, ImportOptions, SourceInspection},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -111,6 +112,7 @@ impl ProjectManager {
         ))?;
         let recent =
             ProjectsRepository::new(self.metadata.clone()).upsert(name, path, ownership)?;
+        self.refresh_source_health(&recent.id)?;
         let info = ActiveProject {
             id: recent.id,
             name: recent.name,
@@ -273,6 +275,83 @@ impl ProjectManager {
         Ok(project.worker.inspect_catalog()?)
     }
 
+    fn refresh_source_health(&self, project_id: &str) -> Result<(), ProjectError> {
+        let repository = crate::metadata::sources::SourcesRepository::new(self.metadata.clone());
+        for source in repository.list_sources(project_id)? {
+            let state = crate::sources::operations::check_link_health(&source);
+            if state != source.state {
+                repository.set_source_state(&source.id, state)?;
+            }
+        }
+        Ok(())
+    }
+
+    pub fn inspect_source(
+        &self,
+        path: PathBuf,
+        csv: Option<CsvOptions>,
+    ) -> Result<SourceInspection, ProjectError> {
+        let active = self.lock()?;
+        let project = active.as_ref().ok_or(ProjectError::NoActiveProject)?;
+        Ok(project.worker.inspect_source(path, csv)?)
+    }
+
+    pub fn link_parquet(
+        &self,
+        path: PathBuf,
+        view_name: String,
+    ) -> Result<SourceMutationResult, ProjectError> {
+        let active = self.lock()?;
+        let project = active.as_ref().ok_or(ProjectError::NoActiveProject)?;
+        Ok(project
+            .worker
+            .link_parquet(project.info.id.clone(), path, view_name)?)
+    }
+
+    pub fn import_table(
+        &self,
+        path: PathBuf,
+        options: ImportOptions,
+    ) -> Result<SourceMutationResult, ProjectError> {
+        let active = self.lock()?;
+        let project = active.as_ref().ok_or(ProjectError::NoActiveProject)?;
+        Ok(project
+            .worker
+            .import_table(project.info.id.clone(), path, options)?)
+    }
+
+    pub fn repair_link(
+        &self,
+        source: crate::metadata::sources::SourceRecord,
+        replacement: PathBuf,
+    ) -> Result<SourceMutationResult, ProjectError> {
+        let active = self.lock()?;
+        let project = active.as_ref().ok_or(ProjectError::NoActiveProject)?;
+        if source.project_id != project.info.id {
+            return Err(ProjectError::SourceProjectMismatch);
+        }
+        Ok(project.worker.repair_link(source, replacement)?)
+    }
+
+    pub fn interrupt(&self) -> Result<bool, ProjectError> {
+        let active = self.lock()?;
+        let project = active.as_ref().ok_or(ProjectError::NoActiveProject)?;
+        Ok(project.worker.interrupt()?)
+    }
+
+    pub fn drop_link(
+        &self,
+        source: crate::metadata::sources::SourceRecord,
+    ) -> Result<(), ProjectError> {
+        let active = self.lock()?;
+        let project = active.as_ref().ok_or(ProjectError::NoActiveProject)?;
+        if source.project_id != project.info.id {
+            return Err(ProjectError::SourceProjectMismatch);
+        }
+        project.worker.drop_link(source)?;
+        Ok(())
+    }
+
     fn lock(&self) -> Result<MutexGuard<'_, Option<OpenProject>>, ProjectError> {
         self.active.lock().map_err(|_| ProjectError::Lock)
     }
@@ -352,6 +431,8 @@ pub enum ProjectError {
     NoActiveProject,
     #[error("project name cannot be empty")]
     InvalidName,
+    #[error("source does not belong to the active project")]
+    SourceProjectMismatch,
     #[error("project path is not a file: {0}")]
     NotAFile(PathBuf),
     #[error("recent project was not found: {0}")]

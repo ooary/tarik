@@ -589,7 +589,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
 
 ## EPIC E3 — DuckDB project and engine lifecycle
 
-**Status:** `REVIEW` - all E3 tasks complete, including ownership-safe rename/delete/forget; waiting for final user sign-off before E4.
+**Status:** `APPROVED` - user authorized E4.
 
 **Outcome:** Safe project-scoped DuckDB engine with bounded worker concurrency.
 
@@ -680,9 +680,11 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
 
 ## EPIC E4 — Local sources and import workflow
 
+**Status:** `REVIEW` - implementation complete, waiting for user CSV/Parquet workflow review before E5.
+
 **Outcome:** Beginner-safe Parquet linking and CSV/Parquet imports.
 
-- [ ] **E4-T1 Build source inspection boundary**
+- [x] **E4-T1 Build source inspection boundary** — owner: lead-agent
   - Depends on: E3-T2
   - Owns: `src-tauri/src/sources/inspect.rs`
   - Deliverables:
@@ -692,8 +694,9 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: malformed/unsupported/missing files produce recoverable errors.
   - Tests: fixture matrix for valid and invalid CSV/Parquet.
   - Commit: `feat(sources): inspect local datasets`
+  - Implementation commit: pending commit
 
-- [ ] **E4-T2 Link a Parquet file or glob as a named DuckDB view**
+- [x] **E4-T2 Link a Parquet file or glob as a named DuckDB view** — owner: lead-agent
   - Depends on: E4-T1, E2-T5, E3-T4
   - Owns: source linking backend and source explorer integration
   - Deliverables:
@@ -703,8 +706,9 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: linked view can join imported tables; no data is copied.
   - Tests: spaces/quotes in paths, glob, join, duplicate name, missing file.
   - Commit: `feat(sources): link parquet datasets`
+  - Implementation commit: pending commit
 
-- [ ] **E4-T3 Build CSV import wizard**
+- [x] **E4-T3 Build CSV import wizard** — owner: lead-agent
   - Depends on: E4-T1, E1-T2
   - Owns: CSV import UI and options types
   - Deliverables:
@@ -714,8 +718,9 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: user confirms trusted options before data copy begins.
   - Tests: wizard navigation, overrides, validation, cancellation.
   - Commit: `feat(import): add csv import wizard`
+  - Implementation commit: pending commit
 
-- [ ] **E4-T4 Import CSV and Parquet as DuckDB tables**
+- [x] **E4-T4 Import CSV and Parquet as DuckDB tables** — owner: lead-agent
   - Depends on: E4-T1, E2-T5, E3-T2
   - Owns: source import backend
   - Deliverables:
@@ -725,14 +730,16 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: imported source remains queryable after original file moves.
   - Tests: import/reopen, cancel cleanup, duplicate table, disk/write failure.
   - Commit: `feat(import): import datasets into duckdb`
+  - Implementation commit: pending commit
 
-- [ ] **E4-T5 Detect and repair missing linked sources**
+- [x] **E4-T5 Detect and repair missing linked sources** — owner: lead-agent
   - Depends on: E4-T2
   - Owns: source health backend/UI
   - Deliverables: missing state, locate replacement, verify compatible schema, remove source.
   - Acceptance: broken source does not prevent unrelated project use.
   - Tests: move, relink, incompatible replacement, remove.
   - Commit: `feat(sources): repair missing linked files`
+  - Implementation commit: pending commit
 
 ---
 
