@@ -589,7 +589,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
 
 ## EPIC E3 — DuckDB project and engine lifecycle
 
-**Status:** `REVIEW` - manual QA fixes complete; project rename/delete is explicitly tracked as E3-T6 before final E3 approval.
+**Status:** `REVIEW` - all E3 tasks complete, including ownership-safe rename/delete/forget; waiting for final user sign-off before E4.
 
 **Outcome:** Safe project-scoped DuckDB engine with bounded worker concurrency.
 
@@ -656,7 +656,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Commit: `feat(projects): complete native project discovery workflow`
   - Implementation commit: `61de982`
 
-- [ ] **E3-T6 Add safe project rename, forget, and delete workflows**
+- [x] **E3-T6 Add safe project rename, forget, and delete workflows** — owner: lead-agent
   - Depends on: E3-T1, E3-T5
   - Owns: project ownership metadata, project repository, filesystem lifecycle, project actions UI
   - Deliverables:
@@ -674,6 +674,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
     - Destructive confirmation states the exact managed project name and path.
   - Tests: managed rename/reopen, display-only external rename, managed delete cascade, external forget preservation, active-worker shutdown, collision, locked/permission failure, rollback.
   - Commit: `feat(projects): add safe rename and delete workflows`
+  - Implementation commit: pending commit
 
 ---
 

@@ -207,14 +207,18 @@ fn read_history(row: &rusqlite::Row<'_>) -> rusqlite::Result<QueryHistoryEntry> 
 mod tests {
     use std::path::Path;
 
-    use crate::metadata::projects::ProjectsRepository;
+    use crate::metadata::projects::{ProjectOwnership, ProjectsRepository};
 
     use super::*;
 
     fn setup() -> (QueriesRepository, MetadataDb, String) {
         let database = MetadataDb::open_in_memory().unwrap();
         let project = ProjectsRepository::new(database.clone())
-            .upsert("Retail", Path::new("/data/retail.duckdb"))
+            .upsert(
+                "Retail",
+                Path::new("/data/retail.duckdb"),
+                ProjectOwnership::External,
+            )
             .unwrap();
         (
             QueriesRepository::new(database.clone()),

@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use super::{
-    projects::{ProjectsRepository, RecentProject},
+    projects::{ProjectOwnership, ProjectsRepository, RecentProject},
     queries::{ExecutionStatus, QueriesRepository, QueryHistoryEntry, SavedQuery},
     sessions::{QuerySessionSnapshot, SessionsRepository},
     settings::SettingsRepository,
@@ -51,7 +51,7 @@ pub fn upsert_recent_project(
     database: State<'_, MetadataDb>,
 ) -> Result<RecentProject, String> {
     ProjectsRepository::new(database.inner().clone())
-        .upsert(&name, Path::new(&duckdb_path))
+        .upsert(&name, Path::new(&duckdb_path), ProjectOwnership::External)
         .map_err(|error| error.to_string())
 }
 

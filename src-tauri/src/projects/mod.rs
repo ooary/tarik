@@ -11,7 +11,10 @@ use uuid::Uuid;
 
 use crate::{
     engine::{DuckDbWorker, EngineProfile, EngineProfileName, ProjectCatalog},
-    metadata::{projects::ProjectsRepository, MetadataDb},
+    metadata::{
+        projects::{ProjectOwnership, ProjectsRepository, RecentProject},
+        MetadataDb,
+    },
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -53,7 +56,7 @@ impl ProjectManager {
             source,
         })?;
         let database_path = project_directory.join(format!("{}.duckdb", project_file_stem(name)));
-        match self.open_path(name, &database_path) {
+        match self.open_path(name, &database_path, ProjectOwnership::Managed) {
             Ok(project) => Ok(project),
             Err(error) => {
                 let _ = fs::remove_dir_all(project_directory);
@@ -66,17 +69,26 @@ impl ProjectManager {
         if !path.is_file() {
             return Err(ProjectError::NotAFile(path.to_path_buf()));
         }
-        self.open_path(validate_name(name)?, path)
+        self.open_path(validate_name(name)?, path, ProjectOwnership::External)
     }
 
     pub fn reopen(&self, project_id: &str) -> Result<ActiveProject, ProjectError> {
         let recent = ProjectsRepository::new(self.metadata.clone())
             .find(project_id)?
             .ok_or_else(|| ProjectError::UnknownProject(project_id.to_owned()))?;
-        self.open(&recent.name, Path::new(&recent.duckdb_path))
+        self.open_path(
+            &recent.name,
+            Path::new(&recent.duckdb_path),
+            recent.ownership,
+        )
     }
 
-    fn open_path(&self, name: &str, path: &Path) -> Result<ActiveProject, ProjectError> {
+    fn open_path(
+        &self,
+        name: &str,
+        path: &Path,
+        ownership: ProjectOwnership,
+    ) -> Result<ActiveProject, ProjectError> {
         let mut active = self.lock()?;
         if active.is_some() {
             return Err(ProjectError::AlreadyOpen);
@@ -97,7 +109,8 @@ impl ProjectManager {
             EngineProfileName::Balanced,
             &self.temp_root,
         ))?;
-        let recent = ProjectsRepository::new(self.metadata.clone()).upsert(name, path)?;
+        let recent =
+            ProjectsRepository::new(self.metadata.clone()).upsert(name, path, ownership)?;
         let info = ActiveProject {
             id: recent.id,
             name: recent.name,
@@ -119,6 +132,128 @@ impl ProjectManager {
             }
             None => Ok(false),
         }
+    }
+
+    pub fn rename(&self, project_id: &str, new_name: &str) -> Result<RecentProject, ProjectError> {
+        let new_name = validate_name(new_name)?;
+        let repository = ProjectsRepository::new(self.metadata.clone());
+        let project = repository
+            .find(project_id)?
+            .ok_or_else(|| ProjectError::UnknownProject(project_id.to_owned()))?;
+        self.close_if_active(project_id)?;
+
+        match project.ownership {
+            ProjectOwnership::External => {
+                if !repository.rename_display(project_id, new_name)? {
+                    return Err(ProjectError::UnknownProject(project_id.to_owned()));
+                }
+            }
+            ProjectOwnership::Managed => {
+                let old_path = PathBuf::from(&project.duckdb_path);
+                let parent = self.managed_parent(&old_path)?;
+                let new_path = parent.join(format!("{}.duckdb", project_file_stem(new_name)));
+                if new_path != old_path && new_path.exists() {
+                    return Err(ProjectError::DestinationExists(new_path));
+                }
+                if new_path != old_path {
+                    fs::rename(&old_path, &new_path).map_err(|source| ProjectError::Rename {
+                        from: old_path.clone(),
+                        to: new_path.clone(),
+                        source,
+                    })?;
+                }
+                if let Err(error) = repository.update_name_and_path(project_id, new_name, &new_path)
+                {
+                    if new_path != old_path {
+                        fs::rename(&new_path, &old_path).map_err(|rollback| {
+                            ProjectError::RenameRollback {
+                                original: error.to_string(),
+                                from: new_path,
+                                to: old_path,
+                                source: rollback,
+                            }
+                        })?;
+                    }
+                    return Err(error.into());
+                }
+            }
+        }
+        repository
+            .find(project_id)?
+            .ok_or_else(|| ProjectError::UnknownProject(project_id.to_owned()))
+    }
+
+    pub fn remove(&self, project_id: &str) -> Result<ProjectRemoval, ProjectError> {
+        let repository = ProjectsRepository::new(self.metadata.clone());
+        let project = repository
+            .find(project_id)?
+            .ok_or_else(|| ProjectError::UnknownProject(project_id.to_owned()))?;
+        self.close_if_active(project_id)?;
+
+        match project.ownership {
+            ProjectOwnership::External => {
+                repository.remove(project_id)?;
+                Ok(ProjectRemoval::Forgotten)
+            }
+            ProjectOwnership::Managed => {
+                let path = PathBuf::from(&project.duckdb_path);
+                let directory = self.managed_parent(&path)?.to_path_buf();
+                let staging_root = self.projects_root.join(".deleting");
+                fs::create_dir_all(&staging_root).map_err(|source| {
+                    ProjectError::CreateDirectory {
+                        path: staging_root.clone(),
+                        source,
+                    }
+                })?;
+                let staged = staging_root.join(project_id);
+                if staged.exists() {
+                    return Err(ProjectError::DestinationExists(staged));
+                }
+                fs::rename(&directory, &staged).map_err(|source| ProjectError::Rename {
+                    from: directory.clone(),
+                    to: staged.clone(),
+                    source,
+                })?;
+                if let Err(error) = repository.remove(project_id) {
+                    fs::rename(&staged, &directory).map_err(|rollback| {
+                        ProjectError::RenameRollback {
+                            original: error.to_string(),
+                            from: staged,
+                            to: directory,
+                            source: rollback,
+                        }
+                    })?;
+                    return Err(error.into());
+                }
+                fs::remove_dir_all(&staged).map_err(|source| ProjectError::DeleteStaged {
+                    path: staged,
+                    source,
+                })?;
+                Ok(ProjectRemoval::Deleted)
+            }
+        }
+    }
+
+    fn close_if_active(&self, project_id: &str) -> Result<(), ProjectError> {
+        let should_close = self
+            .lock()?
+            .as_ref()
+            .is_some_and(|open| open.info.id == project_id);
+        if should_close {
+            self.close()?;
+        }
+        Ok(())
+    }
+
+    fn managed_parent<'a>(&self, database_path: &'a Path) -> Result<&'a Path, ProjectError> {
+        let parent = database_path
+            .parent()
+            .ok_or_else(|| ProjectError::UnsafeManagedPath(database_path.to_path_buf()))?;
+        let expected_parent = parent.parent();
+        if expected_parent != Some(self.projects_root.as_path()) {
+            return Err(ProjectError::UnsafeManagedPath(database_path.to_path_buf()));
+        }
+        Ok(parent)
     }
 
     pub fn active(&self) -> Result<Option<ActiveProject>, ProjectError> {
@@ -202,6 +337,13 @@ fn validate_name(name: &str) -> Result<&str, ProjectError> {
     Ok(name)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProjectRemoval {
+    Deleted,
+    Forgotten,
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum ProjectError {
     #[error("a DuckDB project is already open")]
@@ -214,6 +356,30 @@ pub enum ProjectError {
     NotAFile(PathBuf),
     #[error("recent project was not found: {0}")]
     UnknownProject(String),
+    #[error("managed project path is outside the Tarik projects directory: {0}")]
+    UnsafeManagedPath(PathBuf),
+    #[error("project destination already exists: {0}")]
+    DestinationExists(PathBuf),
+    #[error("could not rename project from {from} to {to}: {source}")]
+    Rename {
+        from: PathBuf,
+        to: PathBuf,
+        source: std::io::Error,
+    },
+    #[error("could not roll back project rename from {from} to {to} after {original}: {source}")]
+    RenameRollback {
+        original: String,
+        from: PathBuf,
+        to: PathBuf,
+        source: std::io::Error,
+    },
+    #[error(
+        "project metadata was removed, but staged files could not be deleted at {path}: {source}"
+    )]
+    DeleteStaged {
+        path: PathBuf,
+        source: std::io::Error,
+    },
     #[error("could not create project directory {path}: {source}")]
     CreateDirectory {
         path: PathBuf,
@@ -272,6 +438,85 @@ mod tests {
             .iter()
             .any(|object| object.name == "persisted"));
         manager.close().unwrap();
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn managed_rename_closes_worker_moves_file_and_reopens() {
+        let (manager, root) = fixture();
+        let project = manager.create("Retail").unwrap();
+
+        let renamed = manager.rename(&project.id, "Finance 2026").unwrap();
+        assert_eq!(renamed.ownership, ProjectOwnership::Managed);
+        assert_ne!(renamed.duckdb_path, project.duckdb_path);
+        assert!(Path::new(&renamed.duckdb_path).is_file());
+        assert_eq!(
+            Path::new(&renamed.duckdb_path).file_name().unwrap(),
+            "finance-2026.duckdb"
+        );
+        assert!(!project.duckdb_path.exists());
+        manager.reopen(&project.id).unwrap();
+        manager.close().unwrap();
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn external_rename_and_forget_preserve_user_file() {
+        let (manager, root) = fixture();
+        fs::create_dir_all(&root).unwrap();
+        let external_path = root.join("user-owned.duckdb");
+        Connection::open(&external_path).unwrap();
+        let external = manager.open("Warehouse", &external_path).unwrap();
+
+        let renamed = manager.rename(&external.id, "Finance Warehouse").unwrap();
+        assert_eq!(renamed.ownership, ProjectOwnership::External);
+        assert_eq!(renamed.duckdb_path, external_path.to_string_lossy());
+        assert!(external_path.is_file());
+        assert_eq!(
+            manager.remove(&external.id).unwrap(),
+            ProjectRemoval::Forgotten
+        );
+        assert!(external_path.is_file());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn managed_delete_closes_worker_and_cascades_metadata() {
+        let (manager, root) = fixture();
+        let managed = manager.create("Disposable").unwrap();
+        let directory = managed.duckdb_path.parent().unwrap().to_path_buf();
+
+        assert_eq!(
+            manager.remove(&managed.id).unwrap(),
+            ProjectRemoval::Deleted
+        );
+        assert!(!directory.exists());
+        assert!(ProjectsRepository::new(manager.metadata.clone())
+            .find(&managed.id)
+            .unwrap()
+            .is_none());
+        assert!(manager.active().unwrap().is_none());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn managed_rename_rejects_filename_collision_without_changing_metadata() {
+        let (manager, root) = fixture();
+        let managed = manager.create("Retail").unwrap();
+        manager.close().unwrap();
+        let collision = managed.duckdb_path.parent().unwrap().join("finance.duckdb");
+        Connection::open(&collision).unwrap();
+
+        assert!(matches!(
+            manager.rename(&managed.id, "Finance"),
+            Err(ProjectError::DestinationExists(_))
+        ));
+        let current = ProjectsRepository::new(manager.metadata.clone())
+            .find(&managed.id)
+            .unwrap()
+            .unwrap();
+        assert_eq!(current.name, "Retail");
+        assert!(managed.duckdb_path.exists());
         let _ = fs::remove_dir_all(root);
     }
 

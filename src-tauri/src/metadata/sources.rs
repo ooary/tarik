@@ -276,14 +276,18 @@ fn read_export(row: &rusqlite::Row<'_>) -> rusqlite::Result<ExportHistoryRecord>
 mod tests {
     use std::path::Path;
 
-    use crate::metadata::projects::ProjectsRepository;
+    use crate::metadata::projects::{ProjectOwnership, ProjectsRepository};
 
     use super::*;
 
     fn setup() -> (SourcesRepository, String) {
         let database = MetadataDb::open_in_memory().unwrap();
         let project = ProjectsRepository::new(database.clone())
-            .upsert("Retail", Path::new("/data/retail.duckdb"))
+            .upsert(
+                "Retail",
+                Path::new("/data/retail.duckdb"),
+                ProjectOwnership::External,
+            )
             .unwrap();
         (SourcesRepository::new(database), project.id)
     }

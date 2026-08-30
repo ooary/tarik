@@ -65,6 +65,8 @@ test("project lifecycle and catalog use typed commands", async () => {
     openProject,
     reopenRecentProject,
     listRecentProjects,
+    renameProject,
+    removeProject,
     closeProject,
     getActiveProject,
     inspectProjectCatalog,
@@ -82,13 +84,17 @@ test("project lifecycle and catalog use typed commands", async () => {
   assert.deepEqual(await openProject("Retail", "/data/retail.duckdb", invoke), project);
   assert.deepEqual(await reopenRecentProject("p1", invoke), project);
   assert.deepEqual(await listRecentProjects(invoke), project);
+  assert.deepEqual(await renameProject("p1", "Renamed", invoke), project);
+  assert.deepEqual(await removeProject("p1", invoke), project);
   assert.equal(await closeProject(invoke), true);
   assert.deepEqual(await getActiveProject(invoke), project);
   assert.deepEqual(await inspectProjectCatalog(invoke), { objects: [], columns: [] });
   assert.equal(calls[0].command, "create_project");
   assert.equal(calls[1].command, "open_project");
   assert.equal(calls[2].command, "reopen_recent_project");
-  assert.equal(calls[6].command, "inspect_project_catalog");
+  assert.equal(calls[4].command, "rename_project");
+  assert.equal(calls[5].command, "remove_project");
+  assert.equal(calls[8].command, "inspect_project_catalog");
 });
 
 test("getAppDirectories invokes the typed path command", async () => {

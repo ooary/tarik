@@ -18,6 +18,8 @@ import {
   inspectProjectCatalog,
   listRecentProjects,
   openProject,
+  removeProject,
+  renameProject,
   reopenRecentProject,
   setWorkbenchPreferences,
   type ActiveProject,
@@ -223,6 +225,38 @@ function App() {
     }
   }
 
+  async function renameLocalProject(recent: RecentProject) {
+    const newName = window.prompt("New project name", recent.name)?.trim();
+    if (!newName || newName === recent.name) return;
+    setProjectError(null);
+    try {
+      await renameProject(recent.id, newName);
+      setProject(null);
+      setCatalog({ objects: [], columns: [] });
+      setRecentProjects(await listRecentProjects());
+    } catch (error) {
+      setProjectError(String(error));
+    }
+  }
+
+  async function removeLocalProject(recent: RecentProject) {
+    const action = recent.ownership === "managed" ? "delete" : "forget";
+    const detail =
+      recent.ownership === "managed"
+        ? `This permanently deletes Tarik-managed project \"${recent.name}\" and its directory:\n${recent.duckdbPath}`
+        : `This forgets \"${recent.name}\" from Tarik. The external DuckDB file is preserved:\n${recent.duckdbPath}`;
+    if (!window.confirm(`${action[0].toUpperCase() + action.slice(1)} project?\n\n${detail}`)) return;
+    setProjectError(null);
+    try {
+      await removeProject(recent.id);
+      setProject(null);
+      setCatalog({ objects: [], columns: [] });
+      setRecentProjects(await listRecentProjects());
+    } catch (error) {
+      setProjectError(String(error));
+    }
+  }
+
   return (
     <main
       className="app-shell"
@@ -335,17 +369,33 @@ function App() {
                   <>
                     <div className="tree-section-title tree-section-spaced">Recent projects</div>
                     {recentProjects.map((recent) => (
-                      <button
-                        className="tree-row"
-                        key={recent.id}
-                        onClick={() => reopenLocalProject(recent)}
-                        title={recent.duckdbPath}
-                        type="button"
-                      >
-                        <SourceIcon kind="database" />
-                        <span>{recent.name}</span>
-                        <span className="row-meta">Open</span>
-                      </button>
+                      <div className="recent-project" key={recent.id}>
+                        <button
+                          className="tree-row"
+                          onClick={() => reopenLocalProject(recent)}
+                          title={recent.duckdbPath}
+                          type="button"
+                        >
+                          <SourceIcon kind="database" />
+                          <span>{recent.name}</span>
+                          <span className="row-meta">Open</span>
+                        </button>
+                        <div className="recent-action-row">
+                          <span title={recent.duckdbPath}>
+                            {recent.ownership === "managed" ? "Managed" : "External"}
+                          </span>
+                          <button onClick={() => renameLocalProject(recent)} type="button">
+                            Rename
+                          </button>
+                          <button
+                            className={recent.ownership === "managed" ? "danger-action" : ""}
+                            onClick={() => removeLocalProject(recent)}
+                            type="button"
+                          >
+                            {recent.ownership === "managed" ? "Delete" : "Forget"}
+                          </button>
+                        </div>
+                      </div>
                     ))}
                   </>
                 )}

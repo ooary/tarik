@@ -382,6 +382,43 @@ button:disabled {
   color: var(--status-error);
 }
 
+.recent-project {
+  margin-bottom: 5px;
+}
+
+.recent-action-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 5px;
+  padding: 1px 7px 3px 33px;
+  color: var(--text-faint);
+  font-size: 10px;
+}
+
+.recent-action-row span {
+  margin-right: auto;
+}
+
+.recent-action-row button {
+  border-radius: 3px;
+  padding: 3px 5px;
+  color: var(--text-muted);
+  background: transparent;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.recent-action-row button:hover {
+  color: var(--text-primary);
+  background: var(--surface-hover);
+}
+
+.recent-action-row .danger-action:hover {
+  color: var(--status-error);
+  background: var(--status-error-surface);
+}
+
 .tree-row {
   display: grid;
   width: 100%;

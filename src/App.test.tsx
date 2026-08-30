@@ -11,6 +11,8 @@ import {
   inspectProjectCatalog,
   listRecentProjects,
   openProject,
+  removeProject,
+  renameProject,
   reopenRecentProject,
   setWorkbenchPreferences,
 } from "./lib/commands";
@@ -25,6 +27,8 @@ vi.mock("./lib/commands", () => ({
   inspectProjectCatalog: vi.fn(),
   listRecentProjects: vi.fn(),
   openProject: vi.fn(),
+  removeProject: vi.fn(),
+  renameProject: vi.fn(),
   reopenRecentProject: vi.fn(),
   setWorkbenchPreferences: vi.fn(),
 }));
@@ -39,6 +43,15 @@ describe("Tarik workbench shell", () => {
     vi.mocked(getActiveProject).mockResolvedValue(null);
     vi.mocked(inspectProjectCatalog).mockResolvedValue({ objects: [], columns: [] });
     vi.mocked(listRecentProjects).mockResolvedValue([]);
+    vi.mocked(removeProject).mockResolvedValue("deleted");
+    vi.mocked(renameProject).mockResolvedValue({
+      id: "project-1",
+      name: "Renamed",
+      duckdbPath: "/data/renamed.duckdb",
+      ownership: "managed",
+      createdAt: "2026-01-01T00:00:00Z",
+      lastOpenedAt: "2026-01-01T00:00:01Z",
+    });
     vi.mocked(chooseDuckDbFile).mockResolvedValue("/data/existing.duckdb");
     vi.mocked(reopenRecentProject).mockResolvedValue({
       id: "project-1",
@@ -92,6 +105,7 @@ describe("Tarik workbench shell", () => {
         id: "project-1",
         name: "Local analysis",
         duckdbPath: "/data/local-analysis.duckdb",
+        ownership: "managed",
         createdAt: "2026-01-01T00:00:00Z",
         lastOpenedAt: "2026-01-01T00:00:00Z",
       },
@@ -102,6 +116,53 @@ describe("Tarik workbench shell", () => {
 
     expect(await screen.findByText("Connected to Local analysis")).toBeInTheDocument();
     expect(reopenRecentProject).toHaveBeenCalledWith("project-1");
+  });
+
+  it("renames and deletes a managed recent project with exact confirmation", async () => {
+    const recent = {
+      id: "project-1",
+      name: "Local analysis",
+      duckdbPath: "/managed/local-analysis.duckdb",
+      ownership: "managed" as const,
+      createdAt: "2026-01-01T00:00:00Z",
+      lastOpenedAt: "2026-01-01T00:00:00Z",
+    };
+    vi.mocked(listRecentProjects).mockResolvedValue([recent]);
+    const prompt = vi.spyOn(window, "prompt").mockReturnValue("Renamed");
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Rename" }));
+    await waitFor(() => expect(renameProject).toHaveBeenCalledWith("project-1", "Renamed"));
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    await waitFor(() => expect(removeProject).toHaveBeenCalledWith("project-1"));
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining("/managed/local-analysis.duckdb"));
+    prompt.mockRestore();
+    confirm.mockRestore();
+  });
+
+  it("forgets external project metadata while showing file preservation", async () => {
+    const external = {
+      id: "external-1",
+      name: "Warehouse",
+      duckdbPath: "/user/warehouse.duckdb",
+      ownership: "external" as const,
+      createdAt: "2026-01-01T00:00:00Z",
+      lastOpenedAt: "2026-01-01T00:00:00Z",
+    };
+    vi.mocked(listRecentProjects).mockResolvedValue([external]);
+    vi.mocked(removeProject).mockResolvedValue("forgotten");
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Forget" }));
+
+    await waitFor(() => expect(removeProject).toHaveBeenCalledWith("external-1"));
+    expect(confirm).toHaveBeenCalledWith(
+      expect.stringContaining("external DuckDB file is preserved"),
+    );
+    expect(screen.queryByRole("button", { name: "Delete" })).not.toBeInTheDocument();
+    confirm.mockRestore();
   });
 
   it("opens a populated DuckDB from the native selection boundary", async () => {

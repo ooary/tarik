@@ -77,6 +77,8 @@ pub fn run() {
             projects::commands::create_project,
             projects::commands::open_project,
             projects::commands::reopen_recent_project,
+            projects::commands::rename_project,
+            projects::commands::remove_project,
             projects::commands::close_project,
             projects::commands::get_active_project,
             projects::commands::apply_engine_profile,

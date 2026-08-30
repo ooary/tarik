@@ -20,10 +20,15 @@ export interface ActiveProject {
   duckdbPath: string;
 }
 
+export type ProjectOwnership = "managed" | "external";
+
 export interface RecentProject extends ActiveProject {
+  ownership: ProjectOwnership;
   createdAt: string;
   lastOpenedAt: string;
 }
+
+export type ProjectRemoval = "deleted" | "forgotten";
 
 export type CatalogObjectKind = "table" | "view";
 
@@ -98,6 +103,21 @@ export function listRecentProjects(
   invokeCommand: InvokeCommand = invoke,
 ): Promise<RecentProject[]> {
   return invokeCommand<RecentProject[]>("list_recent_projects");
+}
+
+export function renameProject(
+  projectId: string,
+  newName: string,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<RecentProject> {
+  return invokeCommand<RecentProject>("rename_project", { projectId, newName });
+}
+
+export function removeProject(
+  projectId: string,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<ProjectRemoval> {
+  return invokeCommand<ProjectRemoval>("remove_project", { projectId });
 }
 
 export function chooseDuckDbFile(): Promise<string | null> {

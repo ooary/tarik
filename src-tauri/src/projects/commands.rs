@@ -3,7 +3,7 @@ use tauri::State;
 
 use crate::engine::{EngineProfile, EngineProfileName, ProjectCatalog};
 
-use super::{ActiveProject, ProjectManager};
+use super::{ActiveProject, ProjectManager, ProjectRemoval};
 
 async fn blocking<T: Send + 'static>(
     operation: impl FnOnce() -> Result<T, super::ProjectError> + Send + 'static,
@@ -40,6 +40,25 @@ pub async fn reopen_recent_project(
 ) -> Result<ActiveProject, String> {
     let manager = manager.inner().clone();
     blocking(move || manager.reopen(&project_id)).await
+}
+
+#[tauri::command]
+pub async fn rename_project(
+    project_id: String,
+    new_name: String,
+    manager: State<'_, ProjectManager>,
+) -> Result<crate::metadata::projects::RecentProject, String> {
+    let manager = manager.inner().clone();
+    blocking(move || manager.rename(&project_id, &new_name)).await
+}
+
+#[tauri::command]
+pub async fn remove_project(
+    project_id: String,
+    manager: State<'_, ProjectManager>,
+) -> Result<ProjectRemoval, String> {
+    let manager = manager.inner().clone();
+    blocking(move || manager.remove(&project_id)).await
 }
 
 #[tauri::command]

@@ -125,7 +125,7 @@ fn validate(snapshot: &QuerySessionSnapshot) -> Result<(), MetadataError> {
 mod tests {
     use std::path::Path;
 
-    use crate::metadata::projects::ProjectsRepository;
+    use crate::metadata::projects::{ProjectOwnership, ProjectsRepository};
 
     use super::*;
 
@@ -156,7 +156,11 @@ mod tests {
     fn snapshot_round_trip_preserves_order_and_active_tab() {
         let database = MetadataDb::open_in_memory().unwrap();
         let project = ProjectsRepository::new(database.clone())
-            .upsert("Retail", Path::new("/data/retail.duckdb"))
+            .upsert(
+                "Retail",
+                Path::new("/data/retail.duckdb"),
+                ProjectOwnership::External,
+            )
             .unwrap();
         let repository = SessionsRepository::new(database);
         let expected = session(project.id);
@@ -170,7 +174,11 @@ mod tests {
     fn replacement_is_atomic_when_new_tabs_violate_database_constraint() {
         let database = MetadataDb::open_in_memory().unwrap();
         let project = ProjectsRepository::new(database.clone())
-            .upsert("Retail", Path::new("/data/retail.duckdb"))
+            .upsert(
+                "Retail",
+                Path::new("/data/retail.duckdb"),
+                ProjectOwnership::External,
+            )
             .unwrap();
         let repository = SessionsRepository::new(database.clone());
         let original = session(project.id);
@@ -187,7 +195,11 @@ mod tests {
     fn invalid_active_state_is_rejected_before_write() {
         let database = MetadataDb::open_in_memory().unwrap();
         let project = ProjectsRepository::new(database.clone())
-            .upsert("Retail", Path::new("/data/retail.duckdb"))
+            .upsert(
+                "Retail",
+                Path::new("/data/retail.duckdb"),
+                ProjectOwnership::External,
+            )
             .unwrap();
         let repository = SessionsRepository::new(database);
         let mut invalid = session(project.id);
