@@ -19,23 +19,26 @@ Build a low-memory desktop application that lets a user:
 
 ## Confirmed architecture decisions
 
-| Concern                 | Decision                                                     |
-| ----------------------- | ------------------------------------------------------------ |
-| Desktop shell           | Tauri 2                                                      |
-| Backend                 | Rust                                                         |
-| Analytical engine       | Embedded DuckDB via the maintained Rust binding              |
-| Frontend                | React + TypeScript + Vite                                    |
-| SQL editor              | CodeMirror 6                                                 |
-| Result rendering        | Virtualized grid; never materialize the full result in React |
-| Query flow              | XYFlow with deterministic automatic layout                   |
-| Operational metadata    | SQLite                                                       |
-| Analytical tables       | DuckDB                                                       |
-| Linked datasets         | Original CSV/Parquet files; SQLite stores source metadata    |
-| Historical queries      | SQLite; diagnostic/runtime events go to rolling log files    |
-| Large temporary results | App cache directory, not SQLite                              |
-| External integrations   | Out of scope for the current product                         |
-| Credentials/keychain    | Out of scope; no credential-store module yet                 |
-| Python                  | Not part of the core runtime                                 |
+| Concern                 | Decision                                                                |
+| ----------------------- | ----------------------------------------------------------------------- |
+| Desktop shell           | Tauri 2                                                                 |
+| Backend                 | Rust control plane plus independently built Rust engine sidecars        |
+| Analytical engine       | Engine-agnostic sidecar protocol; DuckDB is the first adapter           |
+| Engine runtime          | Long-running process; DuckDB uses a pinned prebuilt dynamic library     |
+| Frontend                | React + TypeScript + Vite                                               |
+| SQL editor              | CodeMirror 6                                                            |
+| Result rendering        | Virtualized grid; never materialize the full result in React            |
+| Result transport        | Metadata plus bounded pages; Arrow/IPC stays inside engine/cache layers |
+| Query flow              | XYFlow with deterministic automatic layout                              |
+| Operational metadata    | SQLite                                                                  |
+| Analytical tables       | DuckDB                                                                  |
+| Linked datasets         | Original CSV/Parquet files; SQLite stores source metadata               |
+| Historical queries      | SQLite; diagnostic/runtime events go to rolling log files               |
+| Large temporary results | App cache directory, not SQLite                                         |
+| External integrations   | Out of scope for the current product                                    |
+| Credentials/keychain    | Out of scope; no credential-store module yet                            |
+| Python                  | Not part of the core runtime                                            |
+| Engine extensibility    | Common capabilities plus namespaced engine-specific operations          |
 
 ## Storage boundaries
 
@@ -96,6 +99,12 @@ The MVP is complete when a user can:
 ---
 
 # Working agreement for agents
+
+## Advisory references
+
+- `from_claude-rust-tauri-dev-setup.md`: user-shared Rust/Tauri development and build-loop notes. Tracked locally but ignored by Prettier and Git; not application source.
+- `advise-from-claude/duckdb-rust-tauri.md`: comparison notes on avoiding `bundled` DuckDB compilation. Reviewed and incorporated into E5.5.
+- `advise-from-claude/arrow-file-io-implementation.md`: Arrow-based file I/O notes. Its bounded-page and export ideas inform E5.5-T2 and later E6/E9 work; Tarik keeps DuckDB as its SQL engine.
 
 ## Task lifecycle
 
@@ -212,18 +221,19 @@ npm run build
 
 Subagents may work in parallel only when their paths and dependencies do not overlap.
 
-| Area                | Primary owned paths                                    |
-| ------------------- | ------------------------------------------------------ |
-| Shell/design system | `src/app/`, `src/components/ui/`, global styles        |
-| Metadata            | `src-tauri/src/metadata/`, SQLite migrations           |
-| DuckDB engine       | `src-tauri/src/engine/`                                |
-| Sources/import      | `src-tauri/src/sources/`, `src/features/sources/`      |
-| Editor/session UI   | `src/features/editor/`, `src/features/session/`        |
-| Results             | `src-tauri/src/results/`, `src/features/results/`      |
-| Query flow          | `src-tauri/src/plan/`, `src/features/query-flow/`      |
-| Saved/history       | `src/features/saved-queries/`, `src/features/history/` |
-| Export              | `src-tauri/src/export/`, `src/features/export/`        |
-| Observability       | `src-tauri/src/observability/`, recovery UI            |
+| Area                   | Primary owned paths                                                             |
+| ---------------------- | ------------------------------------------------------------------------------- |
+| Shell/design system    | `src/app/`, `src/components/ui/`, global styles                                 |
+| Metadata               | `src-tauri/src/metadata/`, SQLite migrations                                    |
+| Engine protocol/client | `crates/engine-protocol/`, `crates/engine-client/`, Tauri engine-manager module |
+| DuckDB engine adapter  | `engines/duckdb/`                                                               |
+| Sources/import         | `src-tauri/src/sources/`, `src/features/sources/`                               |
+| Editor/session UI      | `src/features/editor/`, `src/features/session/`                                 |
+| Results                | `src-tauri/src/results/`, `src/features/results/`                               |
+| Query flow             | `src-tauri/src/plan/`, `src/features/query-flow/`                               |
+| Saved/history          | `src/features/saved-queries/`, `src/features/history/`                          |
+| Export                 | `src-tauri/src/export/`, `src/features/export/`                                 |
+| Observability          | `src-tauri/src/observability/`, recovery UI                                     |
 
 Shared files such as `package.json`, `Cargo.toml`, Tauri command registration, global types, and `TASK.md` require coordination. The task owner integrates changes to shared files.
 
@@ -284,7 +294,7 @@ GRAPH:
   │ 🔒 selected path → ProjectPath
   ▼
   open_project (1)
-  │ R: DuckDbWorker, MetadataDb
+  │ R: EngineManager, MetadataDb
   │ E: InvalidDatabase ↯escape(return to project picker)
   ▼
   restore_session (1)
@@ -296,11 +306,11 @@ GRAPH:
   │ 🔒 selected path/options → SourceDefinition
   ▼
   inspect_source (1)
-  │ R: DuckDbWorker, FileSystem
+  │ R: EngineClient, FileSystem
   │ E: ParseError ↯escape(show schema correction UI)
   ▼
   link_or_import (1)
-    R: DuckDbWorker, MetadataDb, FileSystem
+    R: EngineClient, MetadataDb, FileSystem
     E: MissingFile ↯escape(relocate or remove source)
 
   edit_query (N)
@@ -308,18 +318,18 @@ GRAPH:
   │ 🔒 editor text → QuerySnapshot
   ▼
   execute_query (1)
-  │ R: QueryWorker, DuckDbConnection, MetadataDb
+  │ R: EngineClient, MetadataDb
   │ E: QueryError ↯escape(structured editor error and history entry)
   │ E: Interrupted ↯escape(cancelled state and history entry)
   ├──────────────► stream_batches (N)
-  │                 R: DuckDbCursor, ResultCache
+  │                 R: EngineResultCursor, ResultCache
   │                 E: DiskError ↯escape(release cursor, preserve valid pages)
   │                 ▼
   │               render_visible_page (N)
   │                 R: ResultId, bounded page cache
   │
   └──────────────► capture_plan (1)
-                    R: DuckDbConnection, PlanAdapter
+                    R: EngineClient, PlanAdapter
                     E: UnsupportedPlan ↯escape(show raw textual plan)
                     ▼
                   render_flow (1)
@@ -328,7 +338,7 @@ GRAPH:
   QuerySnapshot
   ▼
   export_query (1)
-  │ R: ExportWorker, DuckDbConnection, FileSystem
+  │ R: ExportWorker, EngineClient, FileSystem
   ▼
   write_chunks (N)
     R: CSV/Parquet writer
@@ -350,13 +360,14 @@ BEHAVIOR: ⛈structured logging wraps commands · ⛈progress wraps import/expor
           ⛈cancellation wraps execution/export · ⛈bounded LRU wraps result pages ·
           ⛈autosave debounce wraps session persistence
 
-SCOPE: MetadataDb acquire@app → release@app · DuckDbConnection acquire@project →
-       release@project-close · query cursor acquire@execution →
-       release@result-close/error/cancel · output file acquire@chunk →
-       release@chunk-complete/error/cancel · result cache acquire@result →
-       release@tab-close/startup-cleanup
+SCOPE: MetadataDb acquire@app → release@app · engine process acquire@engine-manager →
+       release@app-exit · engine session acquire@project-open → release@project-close ·
+       result cursor acquire@execution → release@result-close/error/cancel ·
+       output file acquire@chunk → release@chunk-complete/error/cancel ·
+       result cache acquire@result → release@tab-close/startup-cleanup
 
-TEST LAYERS: temporary SQLite · temporary DuckDB · temporary filesystem ·
+TEST LAYERS: temporary SQLite · in-process engine adapter for protocol tests ·
+             fake engine process for client tests · temporary filesystem ·
              deterministic plan fixtures · fake clock · same graph, no hidden globals
 
 VERDICT: the design is viable if query/result/export paths remain streamed and
@@ -379,6 +390,7 @@ E2  SQLite metadata         -> manual persistence review
 E3  DuckDB lifecycle        -> manual project lifecycle review
 E4  Sources/import          -> mandatory workflow review
 E5  Editor/sessions         -> mandatory visual and restart review
+E5.5 Engine protocol/adapters -> mandatory build-time, process, and compatibility review
 E6  Query/results           -> mandatory large-result and memory review
 E7  Query flow              -> mandatory visual and beginner-usability review
 E8  Saved/history           -> manual persistence and usability review
@@ -775,7 +787,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
 
 ## EPIC E5 — SQL editor and restorable sessions
 
-**Status:** `REVIEW` - implementation complete, waiting for manual SQL editor/session review before E6.
+**Status:** `APPROVED` - user sign-off received; engine protocol work authorized.
 
 **Outcome:** Fast multi-tab SQL workspace that never loses drafts during normal use.
 
@@ -824,39 +836,122 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
 
 ---
 
+## EPIC E5.5 — Engine protocol and DuckDB sidecar adapter
+
+**Status:** `PLANNED` - architecture decision approved; implementation not started.
+
+**Outcome:** A capability-driven engine protocol with a long-running DuckDB sidecar adapter, so normal Tauri builds exclude database drivers and DuckDB compiles without bundled C++.
+
+**Rationale:** Keep DuckDB as Tarik's SQL engine and Arrow for bounded result interchange, but move them out of the Tauri dependency graph. E6 and later EPICs then build against the engine protocol instead of an embedded connection. This also prepares PostgreSQL/MySQL/BigQuery adapters later without UI rewrites.
+
+**Non-goals here:** remote connectors, credentials, query execution, result-grid UI, query-plan visualization, exports.
+
+- [ ] **E5.5-T1 Define versioned engine protocol and capability negotiation**
+  - Depends on: E5 (approved)
+  - Owns: `crates/engine-protocol/`
+  - Deliverables:
+    - Handshake with `engineId`, `engineName`, `engineVersion`, `protocolVersion`, `capabilities`.
+    - Generic operations: `session.open/close`, `catalog.inspect`, `query.execute/cancel`, `result.get_page/release`, `plan.explain`, `engine.shutdown`.
+    - Namespaced engine-specific operations such as `duckdb.source.link_parquet`.
+    - Structured error envelopes with stable error codes.
+    - Forward compatibility for unknown fields and capabilities.
+  - Acceptance: protocol v1 is versioned, capability-driven, and independent of any database crate.
+  - Tests: handshake, capability negotiation, unknown-method error, structured error envelope, forward-compatible payloads.
+  - Commit: `feat(engine): define engine protocol`
+
+- [ ] **E5.5-T2 Define result-page and export interchange format**
+  - Depends on: E5.5-T1
+  - Owns: `crates/arrow-page-format/`, engine result writer, bounded page reader
+  - Deliverables:
+    - Result metadata plus bounded pages; full datasets never cross Tauri IPC.
+    - Arrow IPC or Parquet artifacts written by the engine and read in bounded pages.
+    - Explicit `result.release` lifecycle and cache-directory ownership.
+    - CSV/Parquet export writers over the same batch stream.
+  - Acceptance: E6 result browsing and E9 export consume one bounded interchange format.
+  - Tests: multi-batch pagination, batch split, page spill, release cleanup, export boundary cases.
+  - Commit: `feat(engine): define bounded result interchange`
+
+- [ ] **E5.5-T3 Add engine manager and protocol client in Tauri**
+  - Depends on: E5.5-T1
+  - Owns: `crates/engine-client/`, Tauri engine-manager module
+  - Deliverables:
+    - Start the configured engine binary, handshake, health check, and shutdown.
+    - Typed request/response client with request IDs and cancellation.
+    - Capability-driven command surface in the frontend.
+    - Project `engine_id` + `locator_json` in SQLite via migration.
+    - At most one active engine session per project.
+  - Acceptance: normal Tauri builds and tests do not depend on DuckDB or Arrow crates.
+  - Tests: fake-engine process for client, process lifecycle, request IDs, shutdown, project locator migration.
+  - Commit: `feat(engine): add tauri engine client`
+
+- [ ] **E5.5-T4 Port DuckDB lifecycle and sources to a sidecar adapter**
+  - Depends on: E5.5-T2, E5.5-T3
+  - Owns: `engines/duckdb/`
+  - Deliverables:
+    - Move E3 project lifecycle, E4 inspection, link, import, repair, and catalog logic into the DuckDB adapter.
+    - Preserve identical behavior and error messages for existing E3/E4 tests.
+    - DuckDB adapter uses a pinned prebuilt dynamic library rather than `bundled` C++ compilation.
+    - Engine discovery by manifest (id, executable, protocol version, display name).
+  - Acceptance: existing E3/E4 workflows pass end-to-end through the sidecar; Tauri no longer compiles DuckDB.
+  - Tests: adapter unit tests, sidecar integration, E3/E4 workflow parity, missing engine, engine crash, restart.
+  - Commit: `feat(engine): port duckdb lifecycle to sidecar`
+
+- [ ] **E5.5-T5 Measure build, runtime, and packaging impact**
+  - Depends on: E5.5-T3, E5.5-T4
+  - Owns: build benchmark, portable packaging preparation
+  - Deliverables:
+    - Compare clean/warm Tauri build, engine build, binary size, startup, and memory before/after.
+    - Define engine binary placement and runtime library discovery for Linux and Windows portable archives.
+    - Record DuckDB dynamic-library provenance and checksum.
+  - Acceptance: clean Tauri build excludes DuckDB/Arrow compile; the engine builds separately and packages with a pinned prebuilt library.
+  - Tests: reproducible benchmark script, packaged-engine smoke test, checksum verification.
+  - Commit: `perf(engine): benchmark sidecar architecture`
+
+- [ ] **E5.5-T6 Add engine protocol documentation and review gate**
+  - Depends on: E5.5-T1, E5.5-T4, E5.5-T5
+  - Owns: docs and manual review packet
+  - Deliverables: protocol reference, capability matrix, adapter authoring guide, build/run instructions, manual QA checklist.
+  - Acceptance: a new engine adapter can be added without editing Tarik's core or result UI.
+  - Tests: manual review plus golden workflow through the sidecar.
+  - Commit: `docs(engine): document engine protocol and adapters`
+
+---
+
 ## EPIC E6 — Query execution and bounded result browsing
+
+**Status:** BLOCKED on E5.5 (engine protocol, sidecar adapter, and bounded interchange must exist first).
 
 **Outcome:** Cancellable execution with large-result browsing that has a defined memory ceiling.
 
-- [ ] **E6-T1 Define typed query execution protocol**
-  - Depends on: E3-T2, E2-T4
+- [ ] **E6-T1 Define typed query execution lifecycle**
+  - Depends on: E5.5-T1, E5.5-T3, E2-T4
   - Owns: `src-tauri/src/query/`, shared frontend command types
   - Deliverables:
-    - Execute immutable SQL snapshot with project/tab/execution IDs.
+    - Execute immutable SQL snapshot with project/tab/execution IDs through the engine client.
     - Queued/running/succeeded/failed/cancelled events.
-    - Structured DuckDB error location/message where available.
+    - Structured engine error location/message where available.
   - Acceptance: every terminal execution state creates one durable history entry.
-  - Tests: state machine and history integration tests.
+  - Tests: state machine, engine-client integration, history integration.
   - Commit: `feat(query): add typed execution lifecycle`
 
 - [ ] **E6-T2 Implement query cancellation and cleanup**
-  - Depends on: E6-T1
+  - Depends on: E6-T1, E5.5-T3
   - Owns: query cancellation backend/UI
   - Deliverables:
-    - Cancel queued or active query.
-    - Interrupt connection safely.
+    - Cancel queued or active query through the engine client.
+    - Engine adapter interrupts its session safely.
     - Release cursor/cache on cancellation.
-  - Acceptance: cancelled worker remains usable for a later query.
+  - Acceptance: cancelled engine session remains usable for a later query.
   - Tests: cancel queued, active, already-finished, and repeated cancellation.
   - Commit: `feat(query): support safe cancellation`
 
-- [ ] **E6-T3 Stream query output into bounded result pages**
-  - Depends on: E6-T1, E0-T4
-  - Owns: `src-tauri/src/results/`
+- [ ] **E6-T3 Wire bounded result paging through the engine client**
+  - Depends on: E6-T1, E5.5-T2, E0-T4
+  - Owns: `src-tauri/src/results/`, bounded page reader
   - Deliverables:
-    - Bounded batches/page cache with configurable maximum.
+    - Consume Arrow IPC/Parquet pages produced by the engine.
+    - Bounded page cache with configurable maximum and spill to cache directory.
     - Result metadata returned separately from page data.
-    - Spill eligible pages to cache directory when required.
     - Explicit result release command.
   - Acceptance: backend never collects the full result solely for UI display.
   - Tests: multi-batch query, eviction, spill/readback, close cleanup, query error.
@@ -890,7 +985,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
 **Outcome:** Explain and Profile plans become understandable node graphs.
 
 - [ ] **E7-T1 Capture stable DuckDB Explain/Profile fixtures**
-  - Depends on: E6-T1
+  - Depends on: E6-T1, E5.5-T4
   - Owns: plan fixtures and compatibility notes
   - Deliverables:
     - Fixtures for scan, pushed filter, projection, join, aggregate, sort, limit, union, CTE, and window.
@@ -900,7 +995,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Commit: `test(plan): add duckdb plan fixtures`
 
 - [ ] **E7-T2 Parse DuckDB plans into a normalized graph**
-  - Depends on: E7-T1
+  - Depends on: E7-T1, E5.5-T4
   - Owns: `src-tauri/src/plan/`
   - Deliverables:
     - Stable `QueryPlan`, `PlanNode`, and edge types.
@@ -982,7 +1077,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
 **Outcome:** Exact row-count CSV/Parquet chunks with progress, cancellation, and safe partial failure.
 
 - [ ] **E9-T1 Define and validate export options**
-  - Depends on: E6-T1
+  - Depends on: E6-T1, E5.5-T2
   - Owns: export domain types and validation
   - Deliverables:
     - Format, output directory, base name, rows per part, overwrite policy.
@@ -993,10 +1088,10 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Commit: `feat(export): define chunk export options`
 
 - [ ] **E9-T2 Implement one-pass exact row chunk writer**
-  - Depends on: E9-T1, E3-T2
-  - Owns: `src-tauri/src/export/`
+  - Depends on: E9-T1, E5.5-T2
+  - Owns: `src-tauri/src/export/`, engine batch stream
   - Deliverables:
-    - Execute once, stream batches, split crossing batches, rotate files at exact row count.
+    - Execute once, stream batches from the engine, split crossing batches, rotate files at exact row count.
     - Never use repeated `LIMIT/OFFSET` queries.
     - CSV header in every part when enabled.
     - Deterministic `part-00001` naming.
@@ -1051,7 +1146,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Commit: `feat(diagnostics): add app failure recovery surfaces`
 
 - [ ] **E10-T3 Clean stale caches and incomplete exports safely**
-  - Depends on: E6-T3, E9-T3
+  - Depends on: E5.5-T2, E6-T3, E9-T3
   - Owns: cache cleanup service
   - Deliverables:
     - Startup cleanup for abandoned result cache entries.
@@ -1062,12 +1157,12 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Commit: `chore(storage): clean stale temporary artifacts`
 
 - [ ] **E10-T4 Add graceful application shutdown coordinator**
-  - Depends on: E3-T2, E5-T3, E6-T2, E9-T3
+  - Depends on: E5.5-T3, E5-T3, E6-T2, E9-T3
   - Owns: app shutdown composition
   - Deliverables:
     - Flush current drafts.
     - Cancel/finish active jobs according to explicit policy.
-    - Close files, cursors, DuckDB, SQLite, and logger in order.
+    - Stop engine processes, then close files, cursors, SQLite, and logger in order.
   - Acceptance: forced test shutdown leaves databases reopenable and no owned temp file locked.
   - Tests: shutdown during edit, query, and export.
   - Commit: `feat(app): coordinate graceful shutdown`
@@ -1223,7 +1318,7 @@ For chunk size `1,000,000`, verify outputs for:
 # Open decisions — resolve before affected task starts
 
 - [x] **D1:** Linux remains the development platform; Windows 10/11 x64 portable ZIP is the first additional release target. No Windows installer is required.
-- [x] **D2:** Pin `duckdb` Rust binding `1.10505.0` with the bundled engine. It supports the required embedded lifecycle and optional Arrow/Parquet features; binary Arrow transport remains a separate D3 measurement.
+- [x] **D2:** Pin `duckdb` Rust binding `1.10505.0`. Normal development no longer uses `bundled`; the DuckDB adapter links a pinned prebuilt dynamic library. Binary Arrow transport is resolved as `crates/arrow-page-format` in E5.5-T2 instead of a separate measurement task.
 - [ ] **D3:** Choose the Arrow batch transport strategy across Tauri IPC after measuring JSON vs binary transfer overhead.
 - [ ] **D4:** Define default result page size, cache size, and worker count from E11-T2 measurements rather than guesses.
 - [ ] **D5:** Define whether “empty export” creates no files or one schema-only file; document consistently.
