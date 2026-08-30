@@ -674,7 +674,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
     - Destructive confirmation states the exact managed project name and path.
   - Tests: managed rename/reopen, display-only external rename, managed delete cascade, external forget preservation, active-worker shutdown, collision, locked/permission failure, rollback.
   - Commit: `feat(projects): add safe rename and delete workflows`
-  - Implementation commit: pending commit
+  - Implementation commit: `8379053`
 
 ---
 
