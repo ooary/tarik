@@ -589,7 +589,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
 
 ## EPIC E3 — DuckDB project and engine lifecycle
 
-**Status:** `REVIEW` - manual QA fixes complete; waiting for project discovery and native file-picker sign-off.
+**Status:** `REVIEW` - manual QA fixes complete; project rename/delete is explicitly tracked as E3-T6 before final E3 approval.
 
 **Outcome:** Safe project-scoped DuckDB engine with bounded worker concurrency.
 
@@ -655,6 +655,25 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Tests: filename sanitization/reserved names, recent reopen, native dialog boundary, populated catalog UI.
   - Commit: `feat(projects): complete native project discovery workflow`
   - Implementation commit: `61de982`
+
+- [ ] **E3-T6 Add safe project rename, forget, and delete workflows**
+  - Depends on: E3-T1, E3-T5
+  - Owns: project ownership metadata, project repository, filesystem lifecycle, project actions UI
+  - Deliverables:
+    - Record whether a project is Tarik-managed or an externally opened DuckDB file.
+    - Rename a managed project display name and its DuckDB filename using the Windows-safe filename rules; update SQLite path metadata transactionally and roll back the filesystem rename if metadata update fails.
+    - Rename an external project's Tarik display name without renaming or moving the user-owned DuckDB file.
+    - Offer `Delete project` only for Tarik-managed projects, with explicit destructive confirmation and worker shutdown before deleting the managed project directory and related SQLite metadata.
+    - Offer `Forget project` for external projects, removing only Tarik metadata while preserving the external DuckDB file.
+    - Remove deleted/forgotten projects from Recent projects and select a predictable empty state afterward.
+  - Acceptance:
+    - An active project connection is closed before any managed file rename or deletion.
+    - Managed rename preserves DuckDB contents and reopens from the new filename.
+    - Filename collisions, permission failures, locked files, and metadata failures are recoverable and never leave a silently broken recent-project entry.
+    - Tarik never deletes, renames, or moves an externally opened DuckDB file through the normal project-management actions.
+    - Destructive confirmation states the exact managed project name and path.
+  - Tests: managed rename/reopen, display-only external rename, managed delete cascade, external forget preservation, active-worker shutdown, collision, locked/permission failure, rollback.
+  - Commit: `feat(projects): add safe rename and delete workflows`
 
 ---
 
@@ -1163,6 +1182,6 @@ For chunk size `1,000,000`, verify outputs for:
 - [ ] **D3:** Choose the Arrow batch transport strategy across Tauri IPC after measuring JSON vs binary transfer overhead.
 - [ ] **D4:** Define default result page size, cache size, and worker count from E11-T2 measurements rather than guesses.
 - [ ] **D5:** Define whether “empty export” creates no files or one schema-only file; document consistently.
-- [ ] **D6:** Decide whether project deletion removes only Tarik-managed project files or merely forgets an externally located `.duckdb` file.
+- [x] **D6:** Ownership-safe project removal: Tarik-managed projects may delete their managed directory after explicit confirmation; externally opened DuckDB files can only be forgotten from Tarik metadata and are never deleted, renamed, or moved automatically.
 
 Do not resolve an open decision implicitly inside unrelated code. Record the decision here and in the implementing commit.
