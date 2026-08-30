@@ -680,7 +680,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
 
 ## EPIC E4 — Local sources and import workflow
 
-**Status:** `REVIEW` - E4 QA improvements complete; waiting for final import wizard sign-off before E5.
+**Status:** `APPROVED` - user authorized E5.
 
 **Outcome:** Beginner-safe Parquet linking and CSV/Parquet imports.
 
@@ -758,7 +758,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Commit: `fix(import): add controlled types and row summary`
   - Implementation commit: `c355ce2`
 
-- [~] **E4-T7 Show cheap cached/estimated row totals in Explorer** — owner: lead-agent
+- [x] **E4-T7 Show cheap cached/estimated row totals in Explorer** — owner: lead-agent
   - Depends on: E3-T4, E4-T4, E4-T6
   - Deliverables:
     - Display table name, column total, and compact row total without issuing automatic `COUNT(*)` queries.
@@ -769,14 +769,17 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: Explorer refresh uses catalog/source metadata only; exact cached values override estimates.
   - Tests: cached exact import count, catalog estimate, unknown view count, compact formatting.
   - Commit: `feat(catalog): show cached row totals`
+  - Implementation commit: `d05696d`
 
 ---
 
 ## EPIC E5 — SQL editor and restorable sessions
 
+**Status:** `REVIEW` - implementation complete, waiting for manual SQL editor/session review before E6.
+
 **Outcome:** Fast multi-tab SQL workspace that never loses drafts during normal use.
 
-- [ ] **E5-T1 Integrate CodeMirror SQL editor**
+- [x] **E5-T1 Integrate CodeMirror SQL editor** — owner: lead-agent
   - Depends on: E1-T2, E3-T4
   - Owns: `src/features/editor/`
   - Deliverables:
@@ -785,8 +788,9 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: editor remains responsive with realistically large SQL scripts.
   - Tests: keyboard commands and completion data adapter.
   - Commit: `feat(editor): add codemirror sql workspace`
+  - Implementation commit: `fea173b`
 
-- [ ] **E5-T2 Implement multi-tab session model**
+- [x] **E5-T2 Implement multi-tab session model** — owner: lead-agent
   - Depends on: E5-T1, E2-T3
   - Owns: editor/session frontend and typed commands
   - Deliverables:
@@ -795,8 +799,9 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: tab identity is stable and active-tab invariant holds.
   - Tests: tab reducer/store transitions and user interactions.
   - Commit: `feat(session): add multi-tab query workspace`
+  - Implementation commit: `98eca42`
 
-- [ ] **E5-T3 Autosave and restore drafts**
+- [x] **E5-T3 Autosave and restore drafts** — owner: lead-agent
   - Depends on: E5-T2
   - Owns: autosave/restore behavior
   - Deliverables:
@@ -806,14 +811,16 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: rapid edits cannot write older SQL over newer SQL.
   - Tests: debounce ordering, shutdown flush, corrupt-session fallback.
   - Commit: `feat(session): autosave and restore query drafts`
+  - Implementation commit: `98eca42`
 
-- [ ] **E5-T4 Add SQL-to-source affordances**
+- [x] **E5-T4 Add SQL-to-source affordances** — owner: lead-agent
   - Depends on: E5-T1, E3-T4
   - Owns: editor/source explorer interactions
   - Deliverables: insert quoted identifier, open table preview query, copy qualified name.
   - Acceptance: generated SQL handles unusual identifiers safely.
   - Tests: identifier quoting and UI actions.
   - Commit: `feat(editor): connect catalog actions to sql tabs`
+  - Implementation commit: `98eca42`
 
 ---
 
