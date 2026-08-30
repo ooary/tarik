@@ -18,7 +18,7 @@ export function previewTableSql(schema: string, object: string, limit = 100): st
 export function countSqlStatements(sql: string): number {
   let count = 0;
   let hasContent = false;
-  let chars = sql;
+  const chars = sql;
   let index = 0;
   while (index < chars.length) {
     const c = chars[index];
