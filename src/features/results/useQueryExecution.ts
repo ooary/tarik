@@ -4,6 +4,7 @@ import {
   executeQuery,
   forgetTabExecution,
   getQueryStatus,
+  releaseResult,
   type ExecutionError,
   type ExecutionState,
 } from "../../lib/commands";
@@ -99,8 +100,11 @@ export function useQueryExecution(projectId: string): {
       if (previous && (previous.state === "queued" || previous.state === "running")) {
         return;
       }
-      // A superseded execution is released by the coordinator in E6-T5; for
-      // now the view simply replaces the previous one.
+      // Release the superseded result so its page artifacts are reclaimed
+      // before the new execution publishes a fresh one.
+      if (previous?.resultId) {
+        await releaseResult(previous.resultId).catch(() => undefined);
+      }
       const view = await executeQuery(projectId, tabId, sql);
       if (stopped.current) return;
       patch(tabId, {

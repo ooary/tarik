@@ -51,6 +51,7 @@ vi.mock("./lib/commands", () => ({
   repairLinkedSource: vi.fn(),
   renameProject: vi.fn(),
   reopenRecentProject: vi.fn(),
+  releaseAllResults: vi.fn(),
   saveQuerySession: vi.fn(),
   setWorkbenchPreferences: vi.fn(),
 }));

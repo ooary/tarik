@@ -480,3 +480,67 @@ fn paging_reads_windows_across_pages_and_release_removes_artifacts() {
     let _ = std::fs::remove_file(&database);
     let _ = std::fs::remove_dir_all(&cache_dir);
 }
+
+#[test]
+fn lifecycle_stress_releases_cursors_without_leaking_directories() {
+    let mut engine = spawn_engine();
+    let database = temp_path("stress", ".duckdb");
+    let cache_dir = temp_path("stress-cache", "");
+    std::fs::create_dir_all(&cache_dir).unwrap();
+    engine.assert_ok(
+        "session.open",
+        json!({
+            "sessionId": "ss",
+            "locator": { "engineId": "duckdb", "payload": { "path": database } }
+        }),
+    );
+
+    // Repeated run/release cycles must not leak result directories.
+    for run in 0..3u32 {
+        let execution_id = format!("s{run}");
+        engine.assert_ok(
+            "query.execute",
+            json!({
+                "sessionId": "ss",
+                "executionId": execution_id,
+                "sql": "SELECT i FROM range(1, 1201) t(i);",
+                "cacheDir": cache_dir,
+            }),
+        );
+        let status = poll_terminal(&mut engine, &execution_id);
+        assert_eq!(status["state"], "succeeded");
+
+        let page = engine
+            .assert_ok(
+                "result.get_page",
+                json!({ "resultId": execution_id, "offset": 1000 }),
+            )
+            .clone();
+        assert_eq!(page["rows"].as_array().unwrap().len(), 200);
+
+        engine.assert_ok("result.release", json!({ "resultId": execution_id }));
+        assert_eq!(
+            engine.request(
+                "result.get_page",
+                json!({ "resultId": execution_id, "offset": 0 })
+            )["error"]["code"],
+            "result.missing"
+        );
+    }
+
+    // The session still works after the stress cycle.
+    engine.assert_ok(
+        "query.execute",
+        json!({ "sessionId": "ss", "executionId": "final", "sql": "SELECT 1;", "cacheDir": cache_dir }),
+    );
+    let status = poll_terminal(&mut engine, "final");
+    assert_eq!(status["state"], "succeeded");
+
+    // Every released directory is gone; only the final result remains.
+    let leftovers: Vec<_> = std::fs::read_dir(&cache_dir).unwrap().collect();
+    assert_eq!(leftovers.len(), 1);
+
+    engine.child.kill().ok();
+    let _ = std::fs::remove_file(&database);
+    let _ = std::fs::remove_dir_all(&cache_dir);
+}

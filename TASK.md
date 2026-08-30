@@ -925,7 +925,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
 
 ## EPIC E6 — Query execution and bounded result browsing
 
-**Status:** `READY` - E5.5 approved. Preparation/design audit complete; implementation has not started.
+**Status:** `REVIEW` - T1-T5 implemented; waiting for manual large-result and memory review per the EPIC order.
 
 **Outcome:** Cancellable execution with large-result browsing that has a defined memory ceiling.
 
@@ -997,7 +997,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
     - `src/features/editor/` results panel now renders the grid for successful row-returning executions; DML completions keep the concise completion message.
     - jsdom cannot measure layout, so the bounded-DOM test asserts the virtualizer's initial overscan window (<30 rows) for a 500-row page of a 24,318-row result; manual review will confirm large-fixture behavior. Release actions land with E6-T5.
 
-- [ ] **E6-T5 Add result lifecycle and memory instrumentation**
+- [x] **E6-T5 Add result lifecycle and memory instrumentation** — owner: lead-agent
   - Depends on: E6-T3, E6-T4
   - Owns: result status UI/backend metrics
   - Deliverables:
@@ -1006,6 +1006,10 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: repeated run/close cycle does not leak open cursors or cache directories.
   - Tests: lifecycle stress integration test.
   - Commit: `fix(results): enforce bounded result lifecycle`
+  - Notes:
+    - The desktop passes the app cache root to `query.execute`, so page artifacts always live under `<cacheDir>/results/<executionId>/`. Startup cleanup removes stale artifact directories from a previous session; a new run in the same tab releases the superseded result before submitting; project close releases every known result via `release_all_results`.
+    - The grid toolbar shows the loaded row window, page x of y, and total count (exact from streaming, never a COUNT(*) query); released results surface as a structured `result.missing` error state.
+    - Lifecycle stress integration test: three run/release cycles with 1,200-row results plus a final run, asserting page reads at offset 1,000, missing-after-release, session usability, and exactly one artifact directory remaining.
 
 ---
 

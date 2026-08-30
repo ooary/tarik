@@ -503,7 +503,10 @@ mod tests {
             .unwrap()
             .as_nanos();
         let root = std::env::temp_dir().join(format!("tarik-projects-{stamp}"));
-        let engine = Arc::new(EngineManager::new(PathBuf::from("unused-engine-binary")));
+        let engine = Arc::new(EngineManager::new(
+            PathBuf::from("unused-engine-binary"),
+            std::env::temp_dir().join("tarik-test-results"),
+        ));
         let manager = ProjectManager::new(
             MetadataDb::open_in_memory().unwrap(),
             root.join("projects"),

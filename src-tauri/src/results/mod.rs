@@ -61,6 +61,22 @@ struct CacheEntry {
     page: ResultPageView,
 }
 
+/// Result artifacts are ephemeral: remove every stale result directory left
+/// behind by a previous session (crash, kill, or upgrade).
+pub fn cleanup_stale_results(result_root: &std::path::Path) {
+    let Ok(entries) = std::fs::read_dir(result_root) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            let _ = std::fs::remove_dir_all(&path);
+        } else {
+            let _ = std::fs::remove_file(&path);
+        }
+    }
+}
+
 pub struct ResultStore {
     engine: Arc<dyn ResultsEngine>,
     cache: Mutex<CacheState>,
@@ -130,6 +146,26 @@ impl ResultStore {
         Ok(())
     }
 
+    /// Release every result known to this store (project close / shutdown).
+    /// Missing results are tolerated so partial failures cannot block cleanup.
+    pub fn release_all(&self) {
+        let ids: Vec<String> = {
+            let Ok(state) = self.cache.lock() else {
+                return;
+            };
+            state
+                .order
+                .iter()
+                .map(|(id, _)| id.clone())
+                .collect::<std::collections::HashSet<_>>()
+                .into_iter()
+                .collect()
+        };
+        for id in ids {
+            let _ = self.release(&id);
+        }
+    }
+
     fn cache_put(&self, key: (String, u64), page: ResultPageView) {
         let Ok(mut state) = self.cache.lock() else {
             return;
@@ -182,6 +218,12 @@ pub fn release_result(
     store: tauri::State<'_, Arc<ResultStore>>,
 ) -> Result<(), String> {
     store.release(&result_id)
+}
+
+#[tauri::command]
+pub fn release_all_results(store: tauri::State<'_, Arc<ResultStore>>) -> Result<(), String> {
+    store.release_all();
+    Ok(())
 }
 
 #[cfg(test)]
@@ -284,5 +326,69 @@ mod tests {
         // After release the cache is empty; a new fetch reaches the engine.
         store.get_page("r1", 0).unwrap();
         assert_eq!(engine.fetch_count(), 2);
+    }
+}
+
+#[cfg(test)]
+mod lifecycle_tests {
+    use super::*;
+
+    struct TrackingEngine {
+        released: std::sync::Mutex<Vec<String>>,
+    }
+
+    impl ResultsEngine for TrackingEngine {
+        fn get_page(
+            &self,
+            result_id: &str,
+            offset: u64,
+            _max_rows: u32,
+        ) -> Result<serde_json::Value, String> {
+            Ok(serde_json::json!({
+                "resultId": result_id,
+                "offset": offset,
+                "rowTotal": 10,
+                "rowTotalExact": true,
+                "columns": [],
+                "rows": [],
+                "truncatedCells": [],
+            }))
+        }
+
+        fn release(&self, result_id: &str) -> Result<(), String> {
+            self.released.lock().unwrap().push(result_id.to_string());
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn release_all_releases_every_known_result() {
+        let engine = Arc::new(TrackingEngine {
+            released: std::sync::Mutex::new(Vec::new()),
+        });
+        let store = ResultStore::new(engine.clone());
+        store.get_page("r1", 0).unwrap();
+        store.get_page("r2", 0).unwrap();
+        store.release_all();
+        let mut released = engine.released.lock().unwrap().clone();
+        released.sort();
+        assert_eq!(released, vec!["r1".to_string(), "r2".to_string()]);
+    }
+
+    #[test]
+    fn stale_result_directories_are_removed_at_startup() {
+        let root = std::env::temp_dir().join(format!("tarik-stale-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(root.join("exec-a")).unwrap();
+        std::fs::create_dir_all(root.join("exec-b")).unwrap();
+        std::fs::write(root.join("stray.tmp"), b"x").unwrap();
+
+        cleanup_stale_results(&root);
+
+        let remaining: Vec<_> = std::fs::read_dir(&root)
+            .unwrap()
+            .filter_map(Result::ok)
+            .collect();
+        assert!(remaining.is_empty());
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

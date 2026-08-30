@@ -17,6 +17,7 @@ import {
   chooseParquetFile,
   chooseSourceFile,
   closeProject,
+  releaseAllResults,
   createProject,
   getActiveProject,
   getRuntimeInfo,
@@ -217,6 +218,7 @@ function App() {
   async function closeLocalProject() {
     setProjectError(null);
     try {
+      await Promise.resolve(releaseAllResults()).catch(() => undefined);
       await closeProject();
       setProject(null);
       setCatalog({ objects: [], columns: [] });

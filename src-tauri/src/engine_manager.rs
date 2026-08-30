@@ -11,14 +11,17 @@ use tarik_engine_protocol::{
 
 pub struct EngineManager {
     engine_bin: PathBuf,
+    /// Directory where published result page artifacts live.
+    result_root: PathBuf,
     process: Mutex<Option<EngineProcess>>,
     session_id: Mutex<Option<String>>,
 }
 
 impl EngineManager {
-    pub fn new(engine_bin: PathBuf) -> Self {
+    pub fn new(engine_bin: PathBuf, result_root: PathBuf) -> Self {
         Self {
             engine_bin,
+            result_root,
             process: Mutex::new(None),
             session_id: Mutex::new(None),
         }
@@ -230,7 +233,11 @@ impl EngineManager {
     pub fn execute_query(&self, execution_id: &str, sql: &str) -> Result<(), String> {
         self.raw_request(
             "query.execute",
-            serde_json::json!({ "executionId": execution_id, "sql": sql }),
+            serde_json::json!({
+                "executionId": execution_id,
+                "sql": sql,
+                "cacheDir": self.result_root.to_string_lossy(),
+            }),
         )
         .map(|_| ())
     }

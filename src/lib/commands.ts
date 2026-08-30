@@ -369,6 +369,10 @@ export function releaseResult(
   return invokeCommand<void>("release_result", { resultId });
 }
 
+export function releaseAllResults(invokeCommand: InvokeCommand = invoke): Promise<void> {
+  return invokeCommand<void>("release_all_results");
+}
+
 export function saveQuerySession(
   snapshot: QuerySessionSnapshot,
   invokeCommand: InvokeCommand = invoke,

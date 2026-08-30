@@ -73,7 +73,14 @@ pub fn run() {
                 .map_err(|error| Box::new(error) as Box<dyn std::error::Error>)?;
             let database = metadata::MetadataDb::open(directories.data_dir.join("tarik.sqlite"))
                 .map_err(|error| Box::new(error) as Box<dyn std::error::Error>)?;
-            let engine = Arc::new(engine_manager::EngineManager::new(locate_engine_binary()));
+            let result_root = directories.cache_dir.join("results");
+            // Result artifacts are ephemeral by definition; a crashed or
+            // killed session must not leave page directories behind.
+            results::cleanup_stale_results(&result_root);
+            let engine = Arc::new(engine_manager::EngineManager::new(
+                locate_engine_binary(),
+                result_root,
+            ));
             let project_manager = projects::ProjectManager::new(
                 database.clone(),
                 directories.data_dir.join("projects"),
@@ -144,7 +151,8 @@ pub fn run() {
             query::commands::cancel_query,
             query::commands::forget_tab_execution,
             results::get_result_page,
-            results::release_result
+            results::release_result,
+            results::release_all_results
         ])
         .run(tauri::generate_context!())
         .expect("error while running Tarik");
