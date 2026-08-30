@@ -589,7 +589,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
 
 ## EPIC E3 — DuckDB project and engine lifecycle
 
-**Status:** `REVIEW` - implementation complete, waiting for user project-lifecycle review before E4.
+**Status:** `REVIEW` - manual QA fixes complete; waiting for project discovery and native file-picker sign-off.
 
 **Outcome:** Safe project-scoped DuckDB engine with bounded worker concurrency.
 
@@ -637,6 +637,24 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Tests: multiple schemas/tables/views and unusual identifier tests.
   - Commit: `feat(engine): expose project catalog`
   - Implementation commit: `42f3d00`, `24b0415`
+
+- [x] **E3-T5 Complete manual-QA project discovery and native open workflow** — owner: lead-agent
+  - Depends on: E3-T1, E3-T4
+  - Owns: project manager, recent project commands, native dialog integration, explorer project list
+  - Deliverables:
+    - Show recent managed and external DuckDB projects after the active project closes.
+    - Reopen a recent project from Explorer with one action.
+    - Name managed database files from a Windows-safe slug of the project name, with collision-safe project directories.
+    - Use a native file-selection dialog filtered to DuckDB file extensions.
+    - Keep live imported/opened DuckDB table names and column totals visible.
+  - Acceptance:
+    - Closing a project does not hide its durable recent-project entry.
+    - `Retail Analysis` creates `retail-analysis.duckdb`, while reserved/invalid Windows filename characters are sanitized.
+    - Open presents the operating system file picker instead of asking for a pasted path.
+    - Opening a populated DuckDB file displays each real table name and column count.
+  - Tests: filename sanitization/reserved names, recent reopen, native dialog boundary, populated catalog UI.
+  - Commit: `feat(projects): complete native project discovery workflow`
+  - Implementation commit: pending commit
 
 ---
 
@@ -1052,6 +1070,44 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
 
 ---
 
+## EPIC E12 — Windows portable application support
+
+**Outcome:** Signed or checksummed Windows x64 portable ZIP that runs without an installer and keeps user data in normal Windows application-data directories.
+
+**Portable definition:** The user downloads a ZIP, extracts it, and launches `Tarik.exe` without administrator rights or an installer. Tarik operational metadata remains in Windows AppData by default. User DuckDB, CSV, Parquet, and export files remain where the user chooses. A fully self-contained mode that writes metadata beside the executable is explicitly out of scope unless requested later.
+
+- [ ] **E12-T1 Add Windows x64 compile and test CI**
+  - Depends on: E3
+  - Deliverables: `windows-latest` checks for frontend, Rust, bundled DuckDB, and Tauri build using `x86_64-pc-windows-msvc`.
+  - Acceptance: every pull request proves the current source compiles and tests on Windows.
+  - Commit: `ci(windows): add native windows build checks`
+
+- [ ] **E12-T2 Make development and filesystem boundaries cross-platform**
+  - Depends on: E12-T1
+  - Deliverables: replace Bash-only reset workflow with cross-platform tooling; test drive-letter, spaces, Unicode, long paths, UNC paths, read-only files, and file-lock errors.
+  - Acceptance: Windows development and all local file workflows require no Unix compatibility layer.
+  - Commit: `fix(platform): support windows paths and development`
+
+- [ ] **E12-T3 Configure portable Windows release artifact**
+  - Depends on: E11-T3, E12-T2
+  - Deliverables: release-mode `Tarik.exe`, required runtime files, licenses, README, and checksums packaged as `Tarik-<version>-windows-x64-portable.zip`.
+  - Acceptance: archive runs after extraction on a clean supported Windows machine without installation or administrator access.
+  - Commit: `chore(windows): package portable x64 release`
+
+- [ ] **E12-T4 Verify WebView2, DPI, and clean-machine behavior**
+  - Depends on: E12-T3
+  - Deliverables: Windows 10/11 smoke matrix, WebView2 prerequisite behavior, 100/125/150/200 percent DPI, mixed-monitor scaling, light/dark, keyboard focus, large-result memory, and long-running export checks.
+  - Acceptance: missing WebView2 produces clear prerequisite guidance; normal supported systems launch the portable executable directly.
+  - Commit: `test(windows): verify portable runtime behavior`
+
+- [ ] **E12-T5 Add portable upgrade, signing, and release documentation**
+  - Depends on: E12-T4
+  - Deliverables: replacement/upgrade instructions, AppData backup and migration behavior, optional Authenticode signing pipeline, checksum verification, known SmartScreen behavior if unsigned, and uninstall-by-folder-deletion guidance.
+  - Acceptance: users know which files are portable, which data stays in AppData, and how to upgrade/remove Tarik safely.
+  - Commit: `docs(windows): document portable release lifecycle`
+
+---
+
 # Cross-cutting test matrix
 
 | Layer                  | Required coverage                                                          |
@@ -1102,7 +1158,7 @@ For chunk size `1,000,000`, verify outputs for:
 
 # Open decisions — resolve before affected task starts
 
-- [ ] **D1:** Confirm supported MVP operating systems and packaging priority.
+- [x] **D1:** Linux remains the development platform; Windows 10/11 x64 portable ZIP is the first additional release target. No Windows installer is required.
 - [x] **D2:** Pin `duckdb` Rust binding `1.10505.0` with the bundled engine. It supports the required embedded lifecycle and optional Arrow/Parquet features; binary Arrow transport remains a separate D3 measurement.
 - [ ] **D3:** Choose the Arrow batch transport strategy across Tauri IPC after measuring JSON vs binary transfer overhead.
 - [ ] **D4:** Define default result page size, cache size, and worker count from E11-T2 measurements rather than guesses.

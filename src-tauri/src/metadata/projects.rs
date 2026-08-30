@@ -52,6 +52,17 @@ impl ProjectsRepository {
         )? > 0)
     }
 
+    pub fn find(&self, id: &str) -> Result<Option<RecentProject>, MetadataError> {
+        let connection = self.database.connection()?;
+        Ok(connection
+            .query_row(
+                "SELECT id, name, duckdb_path, created_at, last_opened_at FROM projects WHERE id = ?1",
+                [id],
+                read_project,
+            )
+            .optional()?)
+    }
+
     pub fn list(&self) -> Result<Vec<RecentProject>, MetadataError> {
         let connection = self.database.connection()?;
         let mut statement = connection.prepare(

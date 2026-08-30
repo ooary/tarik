@@ -52,7 +52,7 @@ impl ProjectManager {
             path: project_directory.clone(),
             source,
         })?;
-        let database_path = project_directory.join("project.duckdb");
+        let database_path = project_directory.join(format!("{}.duckdb", project_file_stem(name)));
         match self.open_path(name, &database_path) {
             Ok(project) => Ok(project),
             Err(error) => {
@@ -67,6 +67,13 @@ impl ProjectManager {
             return Err(ProjectError::NotAFile(path.to_path_buf()));
         }
         self.open_path(validate_name(name)?, path)
+    }
+
+    pub fn reopen(&self, project_id: &str) -> Result<ActiveProject, ProjectError> {
+        let recent = ProjectsRepository::new(self.metadata.clone())
+            .find(project_id)?
+            .ok_or_else(|| ProjectError::UnknownProject(project_id.to_owned()))?;
+        self.open(&recent.name, Path::new(&recent.duckdb_path))
     }
 
     fn open_path(&self, name: &str, path: &Path) -> Result<ActiveProject, ProjectError> {
@@ -136,6 +143,57 @@ impl ProjectManager {
     }
 }
 
+fn project_file_stem(name: &str) -> String {
+    let mut stem = String::with_capacity(name.len());
+    let mut separator = false;
+    for character in name.chars() {
+        if character.is_ascii_alphanumeric() {
+            stem.push(character.to_ascii_lowercase());
+            separator = false;
+        } else if (character.is_alphanumeric() || character == '_' || character == '-')
+            && character != '\0'
+        {
+            stem.push(character);
+            separator = false;
+        } else if !separator && !stem.is_empty() {
+            stem.push('-');
+            separator = true;
+        }
+    }
+    let stem = stem.trim_matches(['-', '.', ' ']).to_owned();
+    let upper = stem.to_ascii_uppercase();
+    let windows_reserved = matches!(
+        upper.as_str(),
+        "CON"
+            | "PRN"
+            | "AUX"
+            | "NUL"
+            | "COM1"
+            | "COM2"
+            | "COM3"
+            | "COM4"
+            | "COM5"
+            | "COM6"
+            | "COM7"
+            | "COM8"
+            | "COM9"
+            | "LPT1"
+            | "LPT2"
+            | "LPT3"
+            | "LPT4"
+            | "LPT5"
+            | "LPT6"
+            | "LPT7"
+            | "LPT8"
+            | "LPT9"
+    );
+    if stem.is_empty() || windows_reserved {
+        format!("tarik-{stem}").trim_end_matches('-').to_owned()
+    } else {
+        stem
+    }
+}
+
 fn validate_name(name: &str) -> Result<&str, ProjectError> {
     let name = name.trim();
     if name.is_empty() {
@@ -154,6 +212,8 @@ pub enum ProjectError {
     InvalidName,
     #[error("project path is not a file: {0}")]
     NotAFile(PathBuf),
+    #[error("recent project was not found: {0}")]
+    UnknownProject(String),
     #[error("could not create project directory {path}: {source}")]
     CreateDirectory {
         path: PathBuf,
@@ -192,15 +252,19 @@ mod tests {
     #[test]
     fn creates_closes_and_reopens_persistent_project() {
         let (manager, root) = fixture();
-        let created = manager.create("Retail").unwrap();
+        let created = manager.create("Retail Analysis").unwrap();
         assert!(created.duckdb_path.is_file());
+        assert_eq!(
+            created.duckdb_path.file_name().unwrap(),
+            "retail-analysis.duckdb"
+        );
         manager.close().unwrap();
 
         Connection::open(&created.duckdb_path)
             .unwrap()
             .execute_batch("CREATE TABLE persisted(id INTEGER);")
             .unwrap();
-        manager.open("Retail", &created.duckdb_path).unwrap();
+        manager.reopen(&created.id).unwrap();
         assert!(manager
             .catalog()
             .unwrap()
@@ -209,6 +273,15 @@ mod tests {
             .any(|object| object.name == "persisted"));
         manager.close().unwrap();
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn managed_filename_is_windows_safe() {
+        assert_eq!(project_file_stem("Retail Analysis"), "retail-analysis");
+        assert_eq!(project_file_stem("Sales: 2026/Q1"), "sales-2026-q1");
+        assert_eq!(project_file_stem("CON"), "tarik-con");
+        assert_eq!(project_file_stem("  ...  "), "tarik");
+        assert_eq!(project_file_stem("Pelanggan_日本語"), "pelanggan_日本語");
     }
 
     #[test]

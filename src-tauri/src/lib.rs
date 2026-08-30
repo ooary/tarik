@@ -37,6 +37,7 @@ fn get_app_directories<R: tauri::Runtime>(
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let directories = paths::resolve_directories(app.handle())
                 .map_err(|error| Box::new(error) as Box<dyn std::error::Error>)?;
@@ -75,6 +76,7 @@ pub fn run() {
             metadata::commands::get_export_history,
             projects::commands::create_project,
             projects::commands::open_project,
+            projects::commands::reopen_recent_project,
             projects::commands::close_project,
             projects::commands::get_active_project,
             projects::commands::apply_engine_profile,

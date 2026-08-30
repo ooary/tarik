@@ -9,16 +9,20 @@ import {
   type WorkbenchPreferences,
 } from "./app/preferences";
 import {
+  chooseDuckDbFile,
   closeProject,
   createProject,
   getActiveProject,
   getRuntimeInfo,
   getWorkbenchPreferences,
   inspectProjectCatalog,
+  listRecentProjects,
   openProject,
+  reopenRecentProject,
   setWorkbenchPreferences,
   type ActiveProject,
   type ProjectCatalog,
+  type RecentProject,
   type RuntimeInfo,
 } from "./lib/commands";
 
@@ -61,6 +65,7 @@ function App() {
   const [runtime, setRuntime] = useState<RuntimeState>({ kind: "loading" });
   const [project, setProject] = useState<ActiveProject | null>(null);
   const [catalog, setCatalog] = useState<ProjectCatalog>({ objects: [], columns: [] });
+  const [recentProjects, setRecentProjects] = useState<RecentProject[]>([]);
   const [projectError, setProjectError] = useState<string | null>(null);
   const [preferencesReady, setPreferencesReady] = useState(false);
   const [preferences, setPreferences] = useState<WorkbenchPreferences>(defaultWorkbenchPreferences);
@@ -117,6 +122,12 @@ function App() {
         if (active) setPreferencesReady(true);
       });
 
+    listRecentProjects()
+      .then((recent) => {
+        if (active) setRecentProjects(recent);
+      })
+      .catch(() => undefined);
+
     getActiveProject()
       .then((activeProject) => {
         if (!active || !activeProject) return;
@@ -165,13 +176,14 @@ function App() {
       const activeProject = await createProject(name);
       setProject(activeProject);
       setCatalog(await inspectProjectCatalog());
+      setRecentProjects(await listRecentProjects());
     } catch (error) {
       setProjectError(String(error));
     }
   }
 
   async function openLocalProject() {
-    const duckdbPath = window.prompt("Absolute path to an existing .duckdb file")?.trim();
+    const duckdbPath = await chooseDuckDbFile();
     if (!duckdbPath) return;
     const defaultName = duckdbPath.split(/[\\/]/).pop()?.replace(/\.duckdb$/i, "") || "Local project";
     const name = window.prompt("Project name", defaultName)?.trim();
@@ -181,6 +193,19 @@ function App() {
       const activeProject = await openProject(name, duckdbPath);
       setProject(activeProject);
       setCatalog(await inspectProjectCatalog());
+      setRecentProjects(await listRecentProjects());
+    } catch (error) {
+      setProjectError(String(error));
+    }
+  }
+
+  async function reopenLocalProject(recent: RecentProject) {
+    setProjectError(null);
+    try {
+      const activeProject = await reopenRecentProject(recent.id);
+      setProject(activeProject);
+      setCatalog(await inspectProjectCatalog());
+      setRecentProjects(await listRecentProjects());
     } catch (error) {
       setProjectError(String(error));
     }
@@ -192,6 +217,7 @@ function App() {
       await closeProject();
       setProject(null);
       setCatalog({ objects: [], columns: [] });
+      setRecentProjects(await listRecentProjects());
     } catch (error) {
       setProjectError(String(error));
     }
@@ -300,10 +326,30 @@ function App() {
                 )}
               </>
             ) : (
-              <div className="catalog-empty">
-                <strong>No local project</strong>
-                <span>Create a project or open an existing DuckDB file.</span>
-              </div>
+              <>
+                <div className="catalog-empty">
+                  <strong>No local project</strong>
+                  <span>Create a project, choose a DuckDB file, or reopen a recent project.</span>
+                </div>
+                {recentProjects.length > 0 && (
+                  <>
+                    <div className="tree-section-title tree-section-spaced">Recent projects</div>
+                    {recentProjects.map((recent) => (
+                      <button
+                        className="tree-row"
+                        key={recent.id}
+                        onClick={() => reopenLocalProject(recent)}
+                        title={recent.duckdbPath}
+                        type="button"
+                      >
+                        <SourceIcon kind="database" />
+                        <span>{recent.name}</span>
+                        <span className="row-meta">Open</span>
+                      </button>
+                    ))}
+                  </>
+                )}
+              </>
             )}
             {projectError && <p className="catalog-error" role="alert">{projectError}</p>}
           </div>

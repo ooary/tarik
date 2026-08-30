@@ -2,24 +2,30 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import {
+  chooseDuckDbFile,
   closeProject,
   createProject,
   getActiveProject,
   getRuntimeInfo,
   getWorkbenchPreferences,
   inspectProjectCatalog,
+  listRecentProjects,
   openProject,
+  reopenRecentProject,
   setWorkbenchPreferences,
 } from "./lib/commands";
 
 vi.mock("./lib/commands", () => ({
+  chooseDuckDbFile: vi.fn(),
   closeProject: vi.fn(),
   createProject: vi.fn(),
   getActiveProject: vi.fn(),
   getRuntimeInfo: vi.fn(),
   getWorkbenchPreferences: vi.fn(),
   inspectProjectCatalog: vi.fn(),
+  listRecentProjects: vi.fn(),
   openProject: vi.fn(),
+  reopenRecentProject: vi.fn(),
   setWorkbenchPreferences: vi.fn(),
 }));
 
@@ -32,6 +38,13 @@ describe("Tarik workbench shell", () => {
     vi.mocked(setWorkbenchPreferences).mockResolvedValue(undefined);
     vi.mocked(getActiveProject).mockResolvedValue(null);
     vi.mocked(inspectProjectCatalog).mockResolvedValue({ objects: [], columns: [] });
+    vi.mocked(listRecentProjects).mockResolvedValue([]);
+    vi.mocked(chooseDuckDbFile).mockResolvedValue("/data/existing.duckdb");
+    vi.mocked(reopenRecentProject).mockResolvedValue({
+      id: "project-1",
+      name: "Local analysis",
+      duckdbPath: "/data/local-analysis.duckdb",
+    });
     vi.mocked(createProject).mockResolvedValue({
       id: "project-1",
       name: "Local analysis",
@@ -71,6 +84,59 @@ describe("Tarik workbench shell", () => {
     fireEvent.click(screen.getByRole("button", { name: "Close project" }));
     await waitFor(() => expect(closeProject).toHaveBeenCalled());
     prompt.mockRestore();
+  });
+
+  it("shows and reopens recent projects after close", async () => {
+    vi.mocked(listRecentProjects).mockResolvedValue([
+      {
+        id: "project-1",
+        name: "Local analysis",
+        duckdbPath: "/data/local-analysis.duckdb",
+        createdAt: "2026-01-01T00:00:00Z",
+        lastOpenedAt: "2026-01-01T00:00:00Z",
+      },
+    ]);
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /Local analysis/ }));
+
+    expect(await screen.findByText("Connected to Local analysis")).toBeInTheDocument();
+    expect(reopenRecentProject).toHaveBeenCalledWith("project-1");
+  });
+
+  it("opens a populated DuckDB from the native selection boundary", async () => {
+    vi.spyOn(window, "prompt").mockReturnValue("Existing");
+    vi.mocked(inspectProjectCatalog).mockResolvedValue({
+      objects: [{ database: "existing", schema: "main", name: "orders", kind: "table" }],
+      columns: [
+        {
+          database: "existing",
+          schema: "main",
+          object: "orders",
+          name: "id",
+          dataType: "BIGINT",
+          position: 0,
+          nullable: false,
+        },
+        {
+          database: "existing",
+          schema: "main",
+          object: "orders",
+          name: "amount",
+          dataType: "DOUBLE",
+          position: 1,
+          nullable: true,
+        },
+      ],
+    });
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Open" }));
+
+    expect(await screen.findByText("orders")).toBeInTheDocument();
+    expect(screen.getByText("2 cols")).toBeInTheDocument();
+    expect(chooseDuckDbFile).toHaveBeenCalled();
+    expect(openProject).toHaveBeenCalledWith("Existing", "/data/existing.duckdb");
   });
 
   it("collapses and expands the source explorer", () => {

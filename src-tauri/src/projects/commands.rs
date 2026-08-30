@@ -34,6 +34,15 @@ pub async fn open_project(
 }
 
 #[tauri::command]
+pub async fn reopen_recent_project(
+    project_id: String,
+    manager: State<'_, ProjectManager>,
+) -> Result<ActiveProject, String> {
+    let manager = manager.inner().clone();
+    blocking(move || manager.reopen(&project_id)).await
+}
+
+#[tauri::command]
 pub async fn close_project(manager: State<'_, ProjectManager>) -> Result<bool, String> {
     let manager = manager.inner().clone();
     blocking(move || manager.close()).await

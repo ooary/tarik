@@ -7,6 +7,7 @@ import { readFile } from "node:fs/promises";
 async function loadCommandsModule() {
   const source = await readFile(new URL("../src/lib/commands.ts", import.meta.url), "utf8");
   const withoutTauriImport = source
+    .replace('import { open as openFileDialog } from "@tauri-apps/plugin-dialog";\n', "")
     .replace('import { invoke } from "@tauri-apps/api/core";\n', "")
     .replace('import type { WorkbenchPreferences } from "../app/preferences";\n', "");
   const javascript = ts.transpile(withoutTauriImport, {
@@ -59,8 +60,15 @@ test("workbench preferences use typed metadata commands", async () => {
 });
 
 test("project lifecycle and catalog use typed commands", async () => {
-  const { createProject, openProject, closeProject, getActiveProject, inspectProjectCatalog } =
-    await loadCommandsModule();
+  const {
+    createProject,
+    openProject,
+    reopenRecentProject,
+    listRecentProjects,
+    closeProject,
+    getActiveProject,
+    inspectProjectCatalog,
+  } = await loadCommandsModule();
   const calls = [];
   const project = { id: "p1", name: "Retail", duckdbPath: "/data/retail.duckdb" };
   const invoke = async (command, args) => {
@@ -72,12 +80,15 @@ test("project lifecycle and catalog use typed commands", async () => {
 
   assert.deepEqual(await createProject("Retail", invoke), project);
   assert.deepEqual(await openProject("Retail", "/data/retail.duckdb", invoke), project);
+  assert.deepEqual(await reopenRecentProject("p1", invoke), project);
+  assert.deepEqual(await listRecentProjects(invoke), project);
   assert.equal(await closeProject(invoke), true);
   assert.deepEqual(await getActiveProject(invoke), project);
   assert.deepEqual(await inspectProjectCatalog(invoke), { objects: [], columns: [] });
   assert.equal(calls[0].command, "create_project");
   assert.equal(calls[1].command, "open_project");
-  assert.equal(calls[4].command, "inspect_project_catalog");
+  assert.equal(calls[2].command, "reopen_recent_project");
+  assert.equal(calls[6].command, "inspect_project_catalog");
 });
 
 test("getAppDirectories invokes the typed path command", async () => {

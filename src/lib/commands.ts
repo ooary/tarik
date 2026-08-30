@@ -1,3 +1,4 @@
+import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import type { WorkbenchPreferences } from "../app/preferences";
 
@@ -17,6 +18,11 @@ export interface ActiveProject {
   id: string;
   name: string;
   duckdbPath: string;
+}
+
+export interface RecentProject extends ActiveProject {
+  createdAt: string;
+  lastOpenedAt: string;
 }
 
 export type CatalogObjectKind = "table" | "view";
@@ -79,6 +85,28 @@ export function openProject(
   invokeCommand: InvokeCommand = invoke,
 ): Promise<ActiveProject> {
   return invokeCommand<ActiveProject>("open_project", { name, duckdbPath });
+}
+
+export function reopenRecentProject(
+  projectId: string,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<ActiveProject> {
+  return invokeCommand<ActiveProject>("reopen_recent_project", { projectId });
+}
+
+export function listRecentProjects(
+  invokeCommand: InvokeCommand = invoke,
+): Promise<RecentProject[]> {
+  return invokeCommand<RecentProject[]>("list_recent_projects");
+}
+
+export function chooseDuckDbFile(): Promise<string | null> {
+  return openFileDialog({
+    multiple: false,
+    directory: false,
+    title: "Open DuckDB project",
+    filters: [{ name: "DuckDB database", extensions: ["duckdb", "ddb", "db"] }],
+  });
 }
 
 export function closeProject(invokeCommand: InvokeCommand = invoke): Promise<boolean> {
