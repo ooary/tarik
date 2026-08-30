@@ -998,6 +998,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
     - `src/features/results/ResultGrid.tsx`: row and column virtualization over engine pages; only visible rows/columns render, so DOM stays bounded for a 24k-row result and any column count. Page navigation (Previous/Next + PageUp/PageDown), arrow-key row navigation with scroll-into-view, and Ctrl/Cmd+C page copy are wired. Null cells render a dim NULL marker; truncated cells (>64 KiB) show an ellipsis; numbers render with tabular numerals.
     - `src/features/editor/` results panel now renders the grid for successful row-returning executions; DML completions keep the concise completion message.
     - jsdom cannot measure layout, so the bounded-DOM test asserts the virtualizer's initial overscan window (<30 rows) for a 500-row page of a 24,318-row result; manual review will confirm large-fixture behavior. Release actions land with E6-T5.
+    - Post-review fix `876ec03`: `ResultGrid` passed the entire page to `parseColumns` instead of `page.columns`, so the toolbar count appeared but the grid had only the 68px row-number column. The grid now parses the real column array, fixes header/viewport geometry, and renders a bounded 16-row first-paint fallback while ResizeObserver initializes. Regression asserts headers and real cell values render.
 
 - [x] **E6-T5 Add result lifecycle and memory instrumentation** — owner: lead-agent
   - Depends on: E6-T3, E6-T4

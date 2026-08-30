@@ -22,6 +22,7 @@ stale startup artifacts.
 | `dcb1a76` | E6-T5     | `fix(editor): prefer const in statement counter`           |
 | `066e175` | E6-T1 fix | `fix(query): persist terminal history exactly once`        |
 | `8f3807e` | E6-T1 fix | `fix(query): bind execution to active session and project` |
+| `876ec03` | E6-T4 fix | `fix(results): render result columns and cells`            |
 
 Design reference: `docs/design/E6-DESIGN-GRAPH.md`.
 
@@ -45,6 +46,7 @@ Design reference: `docs/design/E6-DESIGN-GRAPH.md`.
 
 - `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`
 - `cargo test --workspace` — all Rust workspace suites pass (desktop includes active-session injection, active/missing-project boundary checks, duplicate-terminal and idempotent-storage regressions; engine includes paging/cancel/stress integration)
+- Frontend grid regression asserts column headers (`country`, `orders`) and cell values (`Singapore`, `6842`) appear, not only the row count; bounded first-paint window remains below 30 rows
 - `npm run lint`, `npm run typecheck`, `npm test` (6 node tests)
 - `npm run test:ui` — 48 vitest tests
 - `npm run build`
