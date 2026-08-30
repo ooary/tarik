@@ -62,6 +62,9 @@ fn dispatch(
             )?;
             let path = ProjectLocator::duckdb_path(&locator)
                 .ok_or_else(|| EngineError::InvalidOptions("duckdb locator requires a path"))?;
+            // Idempotent open: replace any stale session with the same id so a
+            // previously failed or interrupted open cannot block a retry.
+            let _ = sessions.close(&session_id);
             sessions.open(session_id, path)?;
             Ok(Value::Null)
         }

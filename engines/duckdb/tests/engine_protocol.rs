@@ -128,6 +128,14 @@ fn session_open_import_catalog_close_roundtrip() {
         .iter()
         .any(|o| o["name"] == "orders" && o["kind"] == "table"));
 
+    // Reopening the same session id must replace the stale session, not fail.
+    engine.assert_ok(
+        "session.open",
+        json!({
+            "sessionId": "s1",
+            "locator": { "engineId": "duckdb", "payload": { "path": database } }
+        }),
+    );
     engine.assert_ok("session.close", json!({ "sessionId": "s1" }));
 
     let _ = std::fs::remove_file(&database);

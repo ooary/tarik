@@ -9,12 +9,10 @@ use tarik_engine_protocol::{
     CatalogSnapshot, CsvOptions, ImportOptions, ProjectLocator, SourceInspection, SourceRecord,
 };
 
-const ACTIVE_SESSION_ID: &str = "active";
-
 pub struct EngineManager {
     engine_bin: PathBuf,
     process: Mutex<Option<EngineProcess>>,
-    session_open: Mutex<bool>,
+    session_id: Mutex<Option<String>>,
 }
 
 impl EngineManager {
@@ -22,7 +20,7 @@ impl EngineManager {
         Self {
             engine_bin,
             process: Mutex::new(None),
-            session_open: Mutex::new(false),
+            session_id: Mutex::new(None),
         }
     }
 
@@ -53,13 +51,23 @@ impl EngineManager {
     }
 
     pub fn open_session(&self, project_path: &Path) -> Result<(), String> {
-        let mut open = self
-            .session_open
+        let mut session = self
+            .session_id
             .lock()
             .map_err(|_| "session lock".to_string())?;
-        if *open {
-            return Err("an engine session is already open".into());
+        // Close any previous session before opening a new one so a stale
+        // session cannot block project reopen.
+        if let Some(previous) = session.as_ref() {
+            let _ = self.with_process(|process| {
+                process
+                    .request(
+                        "session.close",
+                        serde_json::json!({ "sessionId": previous }),
+                    )
+                    .map_err(|error| error.to_string())
+            });
         }
+        let session_id = uuid::Uuid::new_v4().to_string();
         let locator = ProjectLocator {
             engine_id: "duckdb".into(),
             payload: serde_json::json!({ "path": project_path.to_string_lossy() })
@@ -72,53 +80,48 @@ impl EngineManager {
                 .request(
                     "session.open",
                     serde_json::json!({
-                        "sessionId": ACTIVE_SESSION_ID,
+                        "sessionId": session_id,
                         "locator": locator,
                     }),
                 )
                 .map_err(|error| error.to_string())?;
             Ok(())
         })?;
-        *open = true;
+        *session = Some(session_id);
         Ok(())
     }
 
     pub fn close_session(&self) -> Result<(), String> {
-        let mut open = self
-            .session_open
+        let mut session = self
+            .session_id
             .lock()
             .map_err(|_| "session lock".to_string())?;
-        if *open {
+        if let Some(session_id) = session.as_ref() {
             self.with_process(|process| {
                 process
                     .request(
                         "session.close",
-                        serde_json::json!({ "sessionId": ACTIVE_SESSION_ID }),
+                        serde_json::json!({ "sessionId": session_id }),
                     )
-                    .map_err(|error| error.to_string())?;
-                Ok(())
+                    .map_err(|error| error.to_string())
             })?;
-            *open = false;
+            *session = None;
         }
         Ok(())
     }
 
-    fn require_session(&self) -> Result<(), String> {
-        let open = self
-            .session_open
+    fn require_session_id(&self) -> Result<String, String> {
+        self.session_id
             .lock()
-            .map_err(|_| "session lock".to_string())?;
-        if *open {
-            Ok(())
-        } else {
-            Err("no engine session is open".into())
-        }
+            .map_err(|_| "session lock".to_string())?
+            .clone()
+            .ok_or_else(|| "no engine session is open".to_string())
     }
 
     fn session_request(&self, method: &str, mut params: Value) -> Result<Value, String> {
-        self.require_session()?;
+        let session_id = self.require_session_id()?;
         if let Value::Object(map) = &mut params {
-            map.insert("sessionId".into(), Value::String(ACTIVE_SESSION_ID.into()));
+            map.insert("sessionId".into(), Value::String(session_id));
         }
         self.with_process(|process| {
             process
