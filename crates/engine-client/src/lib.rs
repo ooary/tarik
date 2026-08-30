@@ -16,7 +16,7 @@ pub enum ClientError {
     ChannelClosed,
     #[error("engine protocol error: {0}")]
     Protocol(String),
-    #[error("engine returned a structured error: {code}")]
+    #[error("engine returned a structured error: {code}: {message}")]
     Engine { code: String, message: String },
 }
 

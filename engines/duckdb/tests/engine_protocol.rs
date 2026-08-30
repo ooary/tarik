@@ -140,6 +140,15 @@ fn session_open_import_catalog_close_roundtrip() {
 
     let _ = std::fs::remove_file(&database);
     let _ = std::fs::remove_file(&csv);
+    let csv = temp_path("inspect-null", ".csv");
+    std::fs::write(&csv, "id,amount\n1,12.5\n").unwrap();
+
+    // JSON null for csv options must deserialize as "no CSV options".
+    let inspected = engine.assert_ok("source.inspect", json!({ "path": csv, "csv": null }));
+    assert_eq!(inspected["format"], "csv");
+    assert_eq!(inspected["columns"].as_array().unwrap().len(), 2);
+
+    let _ = std::fs::remove_file(&csv);
     engine.child.kill().ok();
 }
 

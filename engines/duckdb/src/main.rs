@@ -80,11 +80,13 @@ fn dispatch(
         }
         "source.inspect" => {
             let path = required_string(params, "path")?;
-            let csv = params
-                .get("csv")
-                .cloned()
-                .map(serde_json::from_value::<tarik_engine_protocol::CsvOptions>)
-                .transpose()?;
+            // JSON null means "no CSV options" (e.g. Parquet or default CSV parse).
+            let csv = match params.get("csv") {
+                None | Some(Value::Null) => None,
+                Some(value) => Some(serde_json::from_value::<tarik_engine_protocol::CsvOptions>(
+                    value.clone(),
+                )?),
+            };
             Ok(serde_json::to_value(sources::inspect(
                 std::path::Path::new(&path),
                 csv.as_ref(),
