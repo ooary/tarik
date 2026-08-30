@@ -1,11 +1,25 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
-import { getRuntimeInfo, getWorkbenchPreferences, setWorkbenchPreferences } from "./lib/commands";
+import {
+  closeProject,
+  createProject,
+  getActiveProject,
+  getRuntimeInfo,
+  getWorkbenchPreferences,
+  inspectProjectCatalog,
+  openProject,
+  setWorkbenchPreferences,
+} from "./lib/commands";
 
 vi.mock("./lib/commands", () => ({
+  closeProject: vi.fn(),
+  createProject: vi.fn(),
+  getActiveProject: vi.fn(),
   getRuntimeInfo: vi.fn(),
   getWorkbenchPreferences: vi.fn(),
+  inspectProjectCatalog: vi.fn(),
+  openProject: vi.fn(),
   setWorkbenchPreferences: vi.fn(),
 }));
 
@@ -16,6 +30,19 @@ describe("Tarik workbench shell", () => {
     runtimeInfoMock.mockReset();
     vi.mocked(getWorkbenchPreferences).mockResolvedValue(null);
     vi.mocked(setWorkbenchPreferences).mockResolvedValue(undefined);
+    vi.mocked(getActiveProject).mockResolvedValue(null);
+    vi.mocked(inspectProjectCatalog).mockResolvedValue({ objects: [], columns: [] });
+    vi.mocked(createProject).mockResolvedValue({
+      id: "project-1",
+      name: "Local analysis",
+      duckdbPath: "/data/project.duckdb",
+    });
+    vi.mocked(openProject).mockResolvedValue({
+      id: "project-2",
+      name: "Existing",
+      duckdbPath: "/data/existing.duckdb",
+    });
+    vi.mocked(closeProject).mockResolvedValue(true);
     runtimeInfoMock.mockResolvedValue({
       appName: "Tarik",
       appVersion: "0.1.0",
@@ -30,7 +57,20 @@ describe("Tarik workbench shell", () => {
     expect(screen.getByRole("complementary", { name: "Source explorer" })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "SQL workspace" })).toBeInTheDocument();
     expect(screen.getByRole("contentinfo")).toBeInTheDocument();
-    expect(await screen.findByText("Connected to local DuckDB")).toBeInTheDocument();
+    expect(await screen.findByText("No DuckDB project open")).toBeInTheDocument();
+  });
+
+  it("creates and closes a real project through the typed commands", async () => {
+    const prompt = vi.spyOn(window, "prompt").mockReturnValue("Local analysis");
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "New project" }));
+    expect(await screen.findByText("Connected to Local analysis")).toBeInTheDocument();
+    expect(createProject).toHaveBeenCalledWith("Local analysis");
+
+    fireEvent.click(screen.getByRole("button", { name: "Close project" }));
+    await waitFor(() => expect(closeProject).toHaveBeenCalled());
+    prompt.mockRestore();
   });
 
   it("collapses and expands the source explorer", () => {
@@ -76,6 +116,6 @@ describe("Tarik workbench shell", () => {
 
     render(<App />);
 
-    expect(await screen.findByText("Connecting to local DuckDB")).toBeInTheDocument();
+    expect(await screen.findByText("Starting Tarik")).toBeInTheDocument();
   });
 });

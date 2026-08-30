@@ -13,6 +13,36 @@ export interface AppDirectories {
   logDir: string;
 }
 
+export interface ActiveProject {
+  id: string;
+  name: string;
+  duckdbPath: string;
+}
+
+export type CatalogObjectKind = "table" | "view";
+
+export interface CatalogObject {
+  database: string;
+  schema: string;
+  name: string;
+  kind: CatalogObjectKind;
+}
+
+export interface CatalogColumn {
+  database: string;
+  schema: string;
+  object: string;
+  name: string;
+  dataType: string;
+  position: number;
+  nullable: boolean;
+}
+
+export interface ProjectCatalog {
+  objects: CatalogObject[];
+  columns: CatalogColumn[];
+}
+
 export type InvokeCommand = <T>(command: string, args?: Record<string, unknown>) => Promise<T>;
 
 export function getRuntimeInfo(invokeCommand: InvokeCommand = invoke): Promise<RuntimeInfo> {
@@ -34,4 +64,35 @@ export function setWorkbenchPreferences(
   invokeCommand: InvokeCommand = invoke,
 ): Promise<void> {
   return invokeCommand<void>("set_workbench_preferences", { preferences });
+}
+
+export function createProject(
+  name: string,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<ActiveProject> {
+  return invokeCommand<ActiveProject>("create_project", { name });
+}
+
+export function openProject(
+  name: string,
+  duckdbPath: string,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<ActiveProject> {
+  return invokeCommand<ActiveProject>("open_project", { name, duckdbPath });
+}
+
+export function closeProject(invokeCommand: InvokeCommand = invoke): Promise<boolean> {
+  return invokeCommand<boolean>("close_project");
+}
+
+export function getActiveProject(
+  invokeCommand: InvokeCommand = invoke,
+): Promise<ActiveProject | null> {
+  return invokeCommand<ActiveProject | null>("get_active_project");
+}
+
+export function inspectProjectCatalog(
+  invokeCommand: InvokeCommand = invoke,
+): Promise<ProjectCatalog> {
+  return invokeCommand<ProjectCatalog>("inspect_project_catalog");
 }

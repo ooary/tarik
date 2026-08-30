@@ -1,5 +1,7 @@
+mod engine;
 mod metadata;
 mod paths;
+mod projects;
 
 use serde::Serialize;
 use tauri::Manager;
@@ -40,7 +42,13 @@ pub fn run() {
                 .map_err(|error| Box::new(error) as Box<dyn std::error::Error>)?;
             let database = metadata::MetadataDb::open(directories.data_dir.join("tarik.sqlite"))
                 .map_err(|error| Box::new(error) as Box<dyn std::error::Error>)?;
+            let project_manager = projects::ProjectManager::new(
+                database.clone(),
+                directories.data_dir.join("projects"),
+                directories.cache_dir.join("duckdb-temp"),
+            );
             app.manage(database);
+            app.manage(project_manager);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -64,7 +72,13 @@ pub fn run() {
             metadata::commands::set_source_state,
             metadata::commands::get_source,
             metadata::commands::upsert_export_history,
-            metadata::commands::get_export_history
+            metadata::commands::get_export_history,
+            projects::commands::create_project,
+            projects::commands::open_project,
+            projects::commands::close_project,
+            projects::commands::get_active_project,
+            projects::commands::apply_engine_profile,
+            projects::commands::inspect_project_catalog
         ])
         .run(tauri::generate_context!())
         .expect("error while running Tarik");

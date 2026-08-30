@@ -268,6 +268,16 @@ button:active {
   background: var(--status-ready);
 }
 
+.status-mark-idle {
+  background: var(--text-faint);
+}
+
+button:disabled {
+  color: var(--text-faint);
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+
 .workspace {
   --sidebar-width: 260px;
   position: relative;
@@ -345,6 +355,31 @@ button:active {
 
 .tree-section-spaced {
   margin-top: 18px;
+}
+
+.tree-empty,
+.catalog-empty,
+.catalog-error {
+  margin: 10px 8px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.catalog-empty {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  background: var(--surface-raised);
+}
+
+.catalog-empty strong {
+  color: var(--text-primary);
+}
+
+.catalog-error {
+  color: var(--status-error);
 }
 
 .tree-row {

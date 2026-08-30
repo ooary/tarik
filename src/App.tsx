@@ -1,5 +1,5 @@
 import * as Tabs from "@radix-ui/react-tabs";
-import { CaretDownIcon, CaretUpIcon, DatabaseIcon, DotsThreeIcon, FileIcon, FolderOpenIcon, ListIcon, PlusIcon, PlayIcon, TableIcon, XIcon } from "@phosphor-icons/react";
+import { CaretDownIcon, CaretUpIcon, DatabaseIcon, DotsThreeIcon, FileIcon, ListIcon, PlusIcon, PlayIcon, TableIcon, XIcon } from "@phosphor-icons/react";
 import { useEffect, useRef, useState } from "react";
 import "./App.css";
 import { Dialog } from "./components/ui";
@@ -9,9 +9,16 @@ import {
   type WorkbenchPreferences,
 } from "./app/preferences";
 import {
+  closeProject,
+  createProject,
+  getActiveProject,
   getRuntimeInfo,
   getWorkbenchPreferences,
+  inspectProjectCatalog,
+  openProject,
   setWorkbenchPreferences,
+  type ActiveProject,
+  type ProjectCatalog,
   type RuntimeInfo,
 } from "./lib/commands";
 
@@ -33,8 +40,8 @@ JOIN customers AS c
 GROUP BY c.country
 ORDER BY revenue DESC;`;
 
-function SourceIcon({ kind }: { kind: "database" | "folder" | "table" }) {
-  const Icon = kind === "database" ? DatabaseIcon : kind === "folder" ? FolderOpenIcon : TableIcon;
+function SourceIcon({ kind }: { kind: "database" | "table" }) {
+  const Icon = kind === "database" ? DatabaseIcon : TableIcon;
   return <Icon aria-hidden="true" className="source-icon" size={15} weight="regular" />;
 }
 
@@ -52,6 +59,9 @@ function App() {
   const workspaceRef = useRef<HTMLDivElement>(null);
   const queryWorkspaceRef = useRef<HTMLElement>(null);
   const [runtime, setRuntime] = useState<RuntimeState>({ kind: "loading" });
+  const [project, setProject] = useState<ActiveProject | null>(null);
+  const [catalog, setCatalog] = useState<ProjectCatalog>({ objects: [], columns: [] });
+  const [projectError, setProjectError] = useState<string | null>(null);
   const [preferencesReady, setPreferencesReady] = useState(false);
   const [preferences, setPreferences] = useState<WorkbenchPreferences>(defaultWorkbenchPreferences);
   const { activeOutputPanel: activePanel, bottomPanelOpen: bottomOpen, sidebarOpen } = preferences;
@@ -107,6 +117,16 @@ function App() {
         if (active) setPreferencesReady(true);
       });
 
+    getActiveProject()
+      .then((activeProject) => {
+        if (!active || !activeProject) return;
+        setProject(activeProject);
+        return inspectProjectCatalog().then((projectCatalog) => {
+          if (active) setCatalog(projectCatalog);
+        });
+      })
+      .catch(() => undefined);
+
     getRuntimeInfo()
       .then((info) => {
         if (active) setRuntime({ kind: "ready", info });
@@ -137,6 +157,46 @@ function App() {
     );
   }, [preferences.bottomPanelHeight, preferences.sidebarWidth]);
 
+  async function createLocalProject() {
+    const name = window.prompt("Project name", "Local analysis")?.trim();
+    if (!name) return;
+    setProjectError(null);
+    try {
+      const activeProject = await createProject(name);
+      setProject(activeProject);
+      setCatalog(await inspectProjectCatalog());
+    } catch (error) {
+      setProjectError(String(error));
+    }
+  }
+
+  async function openLocalProject() {
+    const duckdbPath = window.prompt("Absolute path to an existing .duckdb file")?.trim();
+    if (!duckdbPath) return;
+    const defaultName = duckdbPath.split(/[\\/]/).pop()?.replace(/\.duckdb$/i, "") || "Local project";
+    const name = window.prompt("Project name", defaultName)?.trim();
+    if (!name) return;
+    setProjectError(null);
+    try {
+      const activeProject = await openProject(name, duckdbPath);
+      setProject(activeProject);
+      setCatalog(await inspectProjectCatalog());
+    } catch (error) {
+      setProjectError(String(error));
+    }
+  }
+
+  async function closeLocalProject() {
+    setProjectError(null);
+    try {
+      await closeProject();
+      setProject(null);
+      setCatalog({ objects: [], columns: [] });
+    } catch (error) {
+      setProjectError(String(error));
+    }
+  }
+
   return (
     <main
       className="app-shell"
@@ -157,12 +217,23 @@ function App() {
         </div>
 
         <div className="project-context">
-          <span className="project-file">retail-analysis.duckdb</span>
-          <span className="project-mode">Local project</span>
+          <span className="project-file">{project?.name ?? "No project open"}</span>
+          <span className="project-mode">{project ? "Local DuckDB" : "Create or open a project"}</span>
         </div>
 
         <div className="header-actions">
-          <span className="engine-status"><span aria-hidden="true" className="status-mark" /> DuckDB ready</span>
+          <span className="engine-status">
+            <span aria-hidden="true" className={`status-mark ${project ? "" : "status-mark-idle"}`} />
+            {project ? "DuckDB ready" : "DuckDB idle"}
+          </span>
+          {project ? (
+            <button className="text-button" onClick={closeLocalProject} type="button">Close project</button>
+          ) : (
+            <>
+              <button className="text-button" onClick={createLocalProject} type="button">New project</button>
+              <button className="text-button" onClick={openLocalProject} type="button">Open</button>
+            </>
+          )}
           <Dialog
             description="Choose how Tarik appears on this device. This setting is stored locally."
             title="Appearance"
@@ -197,45 +268,49 @@ function App() {
               <p className="panel-kicker">Workspace</p>
               <h2>Explorer</h2>
             </div>
-            <button aria-label="Add source" className="icon-button add-button" type="button"><PlusIcon aria-hidden="true" size={17} weight="bold" /></button>
+            <button aria-label="Refresh catalog" className="icon-button add-button" disabled={!project} onClick={async () => project && setCatalog(await inspectProjectCatalog())} type="button"><PlusIcon aria-hidden="true" size={17} weight="bold" /></button>
           </div>
 
           <div className="source-tree">
-            <div className="tree-section-title">Project tables</div>
-            <button className="tree-row tree-row-selected" type="button">
-              <SourceIcon kind="database" />
-              <span>retail-analysis</span>
-            </button>
-            <button className="tree-row tree-row-child" type="button">
-              <SourceIcon kind="table" />
-              <span>customers</span>
-              <span className="row-meta">12 cols</span>
-            </button>
-            <button className="tree-row tree-row-child" type="button">
-              <SourceIcon kind="table" />
-              <span>order_items</span>
-              <span className="row-meta">8 cols</span>
-            </button>
-            <button className="tree-row tree-row-child" type="button">
-              <SourceIcon kind="table" />
-              <span>products</span>
-              <span className="row-meta">14 cols</span>
-            </button>
-
-            <div className="tree-section-title tree-section-spaced">Linked files</div>
-            <button className="tree-row" type="button">
-              <SourceIcon kind="folder" />
-              <span>orders.parquet</span>
-            </button>
-            <button className="tree-row" type="button">
-              <SourceIcon kind="folder" />
-              <span>monthly_targets.csv</span>
-            </button>
+            <div className="tree-section-title">Project catalog</div>
+            {project ? (
+              <>
+                <div className="tree-row tree-row-selected">
+                  <SourceIcon kind="database" />
+                  <span>{project.name}</span>
+                </div>
+                {catalog.objects.length === 0 ? (
+                  <p className="tree-empty">No tables or views yet.</p>
+                ) : (
+                  catalog.objects.map((object) => {
+                    const count = catalog.columns.filter(
+                      (column) =>
+                        column.database === object.database &&
+                        column.schema === object.schema &&
+                        column.object === object.name,
+                    ).length;
+                    return (
+                      <button className="tree-row tree-row-child" key={`${object.database}.${object.schema}.${object.name}`} type="button">
+                        <SourceIcon kind="table" />
+                        <span title={`${object.schema}.${object.name}`}>{object.name}</span>
+                        <span className="row-meta">{object.kind === "view" ? "view" : `${count} cols`}</span>
+                      </button>
+                    );
+                  })
+                )}
+              </>
+            ) : (
+              <div className="catalog-empty">
+                <strong>No local project</strong>
+                <span>Create a project or open an existing DuckDB file.</span>
+              </div>
+            )}
+            {projectError && <p className="catalog-error" role="alert">{projectError}</p>}
           </div>
 
           <div className="explorer-footer">
-            <button className="footer-action" type="button">Import file</button>
-            <button className="footer-action" type="button">New table</button>
+            <button className="footer-action" disabled={!project} type="button">Import file</button>
+            <button className="footer-action" disabled={!project} type="button">New table</button>
           </div>
         </aside>
 
@@ -308,7 +383,7 @@ function App() {
       </div>
 
       <footer className="status-bar">
-        <span className="status-bar-left"><span className="status-mark" aria-hidden="true" /> {runtime.kind === "ready" ? "Connected to local DuckDB" : "Connecting to local DuckDB"}</span>
+        <span className="status-bar-left"><span className={`status-mark ${project ? "" : "status-mark-idle"}`} aria-hidden="true" /> {project ? `Connected to ${project.name}` : runtime.kind === "ready" ? "No DuckDB project open" : "Starting Tarik"}</span>
         <span className="status-bar-right"><span>Memory limit: Balanced</span><span>2 threads</span><span>UTF-8</span></span>
       </footer>
     </main>

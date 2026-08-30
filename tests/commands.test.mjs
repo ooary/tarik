@@ -58,6 +58,28 @@ test("workbench preferences use typed metadata commands", async () => {
   );
 });
 
+test("project lifecycle and catalog use typed commands", async () => {
+  const { createProject, openProject, closeProject, getActiveProject, inspectProjectCatalog } =
+    await loadCommandsModule();
+  const calls = [];
+  const project = { id: "p1", name: "Retail", duckdbPath: "/data/retail.duckdb" };
+  const invoke = async (command, args) => {
+    calls.push({ command, args });
+    if (command === "close_project") return true;
+    if (command === "inspect_project_catalog") return { objects: [], columns: [] };
+    return project;
+  };
+
+  assert.deepEqual(await createProject("Retail", invoke), project);
+  assert.deepEqual(await openProject("Retail", "/data/retail.duckdb", invoke), project);
+  assert.equal(await closeProject(invoke), true);
+  assert.deepEqual(await getActiveProject(invoke), project);
+  assert.deepEqual(await inspectProjectCatalog(invoke), { objects: [], columns: [] });
+  assert.equal(calls[0].command, "create_project");
+  assert.equal(calls[1].command, "open_project");
+  assert.equal(calls[4].command, "inspect_project_catalog");
+});
+
 test("getAppDirectories invokes the typed path command", async () => {
   const { getAppDirectories } = await loadCommandsModule();
   const expected = {
