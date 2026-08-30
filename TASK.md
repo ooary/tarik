@@ -589,7 +589,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
 
 ## EPIC E3 — DuckDB project and engine lifecycle
 
-**Status:** `IN PROGRESS` - user authorized implementation.
+**Status:** `REVIEW` - implementation complete, waiting for user project-lifecycle review before E4.
 
 **Outcome:** Safe project-scoped DuckDB engine with bounded worker concurrency.
 
@@ -603,7 +603,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: reopen preserves DuckDB tables and operational project metadata.
   - Tests: create, reopen, invalid path, already-open, and close-on-error tests.
   - Commit: `feat(projects): manage local duckdb projects`
-  - Implementation commit: pending commit
+  - Implementation commit: `24b0415`
 
 - [x] **E3-T2 Add dedicated DuckDB worker and job protocol** — owner: lead-agent
   - Depends on: E3-T1
@@ -615,7 +615,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: long query does not block the UI command loop.
   - Tests: serialization of connection access, queue capacity, worker shutdown.
   - Commit: `feat(engine): add bounded duckdb worker`
-  - Implementation commit: pending commit
+  - Implementation commit: `42f3d00`, `b02bd8c`
 
 - [x] **E3-T3 Add engine resource and performance settings** — owner: lead-agent
   - Depends on: E3-T2, E2-T2
@@ -627,7 +627,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: settings apply per opened project without raw SQL interpolation hazards.
   - Tests: profile mapping and validation tests.
   - Commit: `feat(engine): add resource profiles`
-  - Implementation commit: pending commit
+  - Implementation commit: `42f3d00`
 
 - [x] **E3-T4 Add catalog inspection service** — owner: lead-agent
   - Depends on: E3-T2
@@ -636,7 +636,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: UI can refresh catalog after DDL/import without reopening project.
   - Tests: multiple schemas/tables/views and unusual identifier tests.
   - Commit: `feat(engine): expose project catalog`
-  - Implementation commit: pending commit
+  - Implementation commit: `42f3d00`, `24b0415`
 
 ---
 
