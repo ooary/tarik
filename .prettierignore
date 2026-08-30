@@ -1,6 +1,7 @@
 dist
 node_modules
 src-tauri/target
+target
 src-tauri/gen
 src-tauri/capabilities/*.json
 package-lock.json
@@ -13,3 +14,6 @@ src/App.tsx
 src/styles/components.css
 src/styles/tokens.css
 from_claude-rust-tauri-dev-setup.md
+
+# External advisory notes (not Tarik source)
+advise-from-claude/
