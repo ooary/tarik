@@ -11,15 +11,16 @@ stale startup artifacts.
 
 ## Commits (in order)
 
-| Commit    | Task  | Summary                                          |
-| --------- | ----- | ------------------------------------------------ |
-| `a7ae393` | prep  | `docs(query): prepare E6 execution design`       |
-| `09fd646` | E6-T1 | `feat(query): add typed execution lifecycle`     |
-| `441cb1f` | E6-T2 | `feat(query): support safe cancellation`         |
-| `877ea92` | E6-T3 | `feat(results): add bounded result paging`       |
-| `5d32db6` | E6-T4 | `feat(results): add virtualized data grid`       |
-| `457dd25` | E6-T5 | `fix(results): enforce bounded result lifecycle` |
-| `dcb1a76` | E6-T5 | `fix(editor): prefer const in statement counter` |
+| Commit    | Task      | Summary                                             |
+| --------- | --------- | --------------------------------------------------- |
+| `a7ae393` | prep      | `docs(query): prepare E6 execution design`          |
+| `09fd646` | E6-T1     | `feat(query): add typed execution lifecycle`        |
+| `441cb1f` | E6-T2     | `feat(query): support safe cancellation`            |
+| `877ea92` | E6-T3     | `feat(results): add bounded result paging`          |
+| `5d32db6` | E6-T4     | `feat(results): add virtualized data grid`          |
+| `457dd25` | E6-T5     | `fix(results): enforce bounded result lifecycle`    |
+| `dcb1a76` | E6-T5     | `fix(editor): prefer const in statement counter`    |
+| `066e175` | E6-T1 fix | `fix(query): persist terminal history exactly once` |
 
 Design reference: `docs/design/E6-DESIGN-GRAPH.md`.
 
@@ -42,8 +43,7 @@ Design reference: `docs/design/E6-DESIGN-GRAPH.md`.
 ## Automated checks (all passing)
 
 - `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`
-- `cargo test --workspace` — 62 Rust tests (desktop 35 incl. coordinator + results;
-  protocol 4; client 3; page-format 1; engine 12 incl. paging/cancel/stress)
+- `cargo test --workspace` — all Rust workspace suites pass (desktop coordinator includes the duplicate-terminal exactly-once regression; engine includes paging/cancel/stress integration)
 - `npm run lint`, `npm run typecheck`, `npm test` (6 node tests)
 - `npm run test:ui` — 48 vitest tests
 - `npm run build`
