@@ -925,15 +925,18 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
 
 ## EPIC E6 — Query execution and bounded result browsing
 
-**Status:** BLOCKED on E5.5 (engine protocol, sidecar adapter, and bounded interchange must exist first).
+**Status:** `READY` - E5.5 approved. Preparation/design audit complete; implementation has not started.
 
 **Outcome:** Cancellable execution with large-result browsing that has a defined memory ceiling.
+
+**Preparation:** See `docs/design/E6-DESIGN-GRAPH.md` for the data-flow graph, concurrency decision, boundedness contract, lifecycle scope, UI states, test layers, and implementation order. The E5.5 protocol/page metadata exists, while E6-T3 owns the concrete streaming page writer/reader and cache behavior.
 
 - [ ] **E6-T1 Define typed query execution lifecycle**
   - Depends on: E5.5-T1, E5.5-T3, E2-T4
   - Owns: `src-tauri/src/query/`, shared frontend command types
   - Deliverables:
     - Execute immutable SQL snapshot with project/tab/execution IDs through the engine client.
+    - Add an asynchronous engine job registry so `query.execute` returns without blocking protocol framing or cancellation.
     - Queued/running/succeeded/failed/cancelled events.
     - Structured engine error location/message where available.
   - Acceptance: every terminal execution state creates one durable history entry.
@@ -955,6 +958,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Depends on: E6-T1, E5.5-T2, E0-T4
   - Owns: `src-tauri/src/results/`, bounded page reader
   - Deliverables:
+    - Implement concrete streaming Arrow IPC page writing/reading behind the E5.5 interchange types; never collect all record batches.
     - Consume Arrow IPC/Parquet pages produced by the engine.
     - Bounded page cache with configurable maximum and spill to cache directory.
     - Result metadata returned separately from page data.
@@ -967,7 +971,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Depends on: E6-T3, E1-T2
   - Owns: `src/features/results/`
   - Deliverables:
-    - Row and column virtualization.
+    - Row and column virtualization using `@tanstack/react-virtual` (dependency added only when this task starts).
     - Typed formatting for null, boolean, numeric, date/time, binary, and nested values.
     - Copy cell/row/selection and visible loading/error states.
   - Acceptance: DOM size remains bounded while browsing a large fixture.
