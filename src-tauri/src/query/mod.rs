@@ -144,17 +144,26 @@ impl QueryCoordinator {
         );
         drop(executions);
 
-        if let Err(error) = self.engine.execute(&execution_id, sql) {
-            self.mark_terminal(
-                &execution_id,
-                ExecutionState::Failed,
-                Some(ExecutionErrorView {
-                    code: "query.rejected".into(),
-                    message: error,
-                }),
-            );
+        let submitted = match self.engine.execute(&execution_id, sql) {
+            Ok(()) => true,
+            Err(error) => {
+                self.mark_terminal(
+                    &execution_id,
+                    ExecutionState::Failed,
+                    Some(ExecutionErrorView {
+                        code: "query.rejected".into(),
+                        message: error,
+                    }),
+                );
+                false
+            }
+        };
+        // A rejected submission is already terminal. Polling it would observe
+        // a missing engine job and attempt to persist the same history ID a
+        // second time.
+        if submitted {
+            self.spawn_poller(execution_id.clone());
         }
-        self.spawn_poller(execution_id.clone());
         self.view(&execution_id)
             .ok_or_else(|| "execution registry poisoned".to_string())
     }
@@ -220,8 +229,12 @@ impl QueryCoordinator {
                         failures = 0;
                         if let Ok(mut executions) = self.executions.lock() {
                             if let Some(record) = executions.get_mut(execution_id) {
-                                record.state = status.state;
-                                record.duration_ms = status.duration_ms;
+                                // A late queued/running poll cannot roll a
+                                // terminal execution backwards.
+                                if !record.history_written {
+                                    record.state = status.state;
+                                    record.duration_ms = status.duration_ms;
+                                }
                             }
                         }
                     }
@@ -290,15 +303,21 @@ impl QueryCoordinator {
             let Some(record) = executions.get_mut(execution_id) else {
                 return;
             };
-            record.state = state;
-            record.error = error;
-            record.history_written = true;
+            // First terminal transition owns the durable history write. Later
+            // status observations and repeated cancellation are idempotent and
+            // cannot overwrite the terminal view or insert the same ID again.
+            if record.history_written {
+                return;
+            }
             let status = match state {
                 ExecutionState::Succeeded => HistoryStatus::Succeeded,
                 ExecutionState::Failed => HistoryStatus::Failed,
                 ExecutionState::Cancelled => HistoryStatus::Cancelled,
                 ExecutionState::Queued | ExecutionState::Running => return,
             };
+            record.state = state;
+            record.error = error;
+            record.history_written = true;
             let error = record.error.clone();
             QueryHistoryEntry {
                 id: execution_id.to_string(),
@@ -531,6 +550,34 @@ mod tests {
         let error = coordinator.execute(&project_id, "tab1", "   ").unwrap_err();
         assert_eq!(error, "query.empty");
         assert!(history_count(&coordinator, &project_id).is_empty());
+    }
+
+    #[test]
+    fn repeated_terminal_observation_writes_history_exactly_once() {
+        let engine = FakeEngine::new(vec![status("e1", ExecutionState::Running)]);
+        let (coordinator, project_id) = coordinator(engine);
+        let view = coordinator
+            .execute(&project_id, "tab1", "SELECT 1")
+            .unwrap();
+
+        coordinator.mark_terminal(&view.execution_id, ExecutionState::Succeeded, None);
+        coordinator.mark_terminal(
+            &view.execution_id,
+            ExecutionState::Failed,
+            Some(ExecutionErrorView {
+                code: "execution.late".into(),
+                message: "late duplicate terminal observation".into(),
+            }),
+        );
+
+        let history = history_count(&coordinator, &project_id);
+        assert_eq!(history.len(), 1);
+        assert_eq!(history[0].status, HistoryStatus::Succeeded);
+        assert_eq!(history[0].error_code, None);
+        assert_eq!(
+            coordinator.status(&view.execution_id).unwrap().state,
+            ExecutionState::Succeeded
+        );
     }
 
     #[test]
