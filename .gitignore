@@ -57,3 +57,6 @@ coverage/
 
 # External reference notes (not Tarik source)
 from_claude-rust-tauri-dev-setup.md
+
+# External advisory notes (not Tarik source)
+advise-from-claude/

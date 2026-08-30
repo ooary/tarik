@@ -136,6 +136,95 @@ pub struct CatalogSnapshot {
     pub columns: Vec<CatalogColumn>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SourceKind {
+    DuckdbTable,
+    LinkedParquet,
+    LinkedCsv,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SourceState {
+    Ready,
+    Missing,
+    InvalidSchema,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceColumn {
+    pub name: String,
+    pub data_type: String,
+    pub nullable: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceInspection {
+    pub path: String,
+    pub format: String,
+    pub suggested_name: String,
+    pub file_size_bytes: u64,
+    pub row_count: u64,
+    pub row_count_exact: bool,
+    pub columns: Vec<SourceColumn>,
+    pub preview_rows: Vec<Vec<serde_json::Value>>,
+    pub csv_options: Option<CsvOptions>,
+    pub warnings: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CsvOptions {
+    pub delimiter: String,
+    pub has_header: bool,
+    pub null_value: Option<String>,
+    pub all_varchar: bool,
+}
+
+impl Default for CsvOptions {
+    fn default() -> Self {
+        Self {
+            delimiter: ",".into(),
+            has_header: true,
+            null_value: None,
+            all_varchar: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ColumnOverride {
+    pub column: String,
+    pub data_type: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportOptions {
+    pub table_name: String,
+    pub csv: Option<CsvOptions>,
+    pub column_overrides: Vec<ColumnOverride>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceRecord {
+    pub id: String,
+    pub project_id: String,
+    pub display_name: String,
+    pub kind: SourceKind,
+    pub state: SourceState,
+    pub source_path: Option<String>,
+    pub duckdb_name: String,
+    pub options: serde_json::Map<String, serde_json::Value>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EngineManifest {
@@ -265,7 +354,10 @@ mod tests {
                 .unwrap()
                 .clone(),
         };
-        assert_eq!(ProjectLocator::duckdb_path(&locator), Some("/data/retail.duckdb"));
+        assert_eq!(
+            ProjectLocator::duckdb_path(&locator),
+            Some("/data/retail.duckdb")
+        );
 
         let postgres = ProjectLocator {
             engine_id: "postgres".into(),

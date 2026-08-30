@@ -3,7 +3,11 @@ linker = "clang"
 rustflags = ["-C", "link-arg=-fuse-ld=mold"]
 
 [build]
-# No rustc-wrapper here: Cargo incremental is the fast warm path and
-# mold handles the expensive link step. Keep sccache disabled for the
-# hot loop because wrapping rustc here invalidated the previous target/.
+# No rustc-wrapper: Cargo incremental is the fast warm path and mold handles
+# the expensive link step. sccache stays available but unwrapped.
 # jobs = 4
+
+[env]
+# Engine adapters link the official prebuilt DuckDB library instead of
+# compiling bundled C++. Only the tarik-engine-duckdb graph uses this.
+DUCKDB_DOWNLOAD_LIB = "1"

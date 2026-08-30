@@ -1,8 +1,12 @@
 //! Placeholder for the engine client: process lifecycle, framing, and typed
 //! request/response plumbing. E5.5-T3 fills this crate.
 
+pub mod process;
+
 use serde_json::Value;
-use tarik_engine_protocol::{EngineManifest, EngineFrame, RequestEnvelope, ResponseEnvelope};
+use tarik_engine_protocol::{EngineManifest, RequestEnvelope};
+
+pub use process::EngineProcess;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ClientError {
@@ -10,6 +14,8 @@ pub enum ClientError {
     Spawn(String),
     #[error("engine channel closed before response")]
     ChannelClosed,
+    #[error("engine protocol error: {0}")]
+    Protocol(String),
     #[error("engine returned a structured error: {code}")]
     Engine { code: String, message: String },
 }
@@ -18,17 +24,7 @@ pub fn build_request(method: &str, params: Value) -> RequestEnvelope {
     RequestEnvelope {
         id: tarik_engine_protocol::new_request_id(),
         method: method.into(),
-        params: params
-            .as_object()
-            .cloned()
-            .unwrap_or_default(),
-    }
-}
-
-pub fn frame_response(frame: EngineFrame) -> Result<ResponseEnvelope, ClientError> {
-    match frame {
-        EngineFrame::Response(response) => Ok(response),
-        EngineFrame::Request(_) => Err(ClientError::ChannelClosed),
+        params: params.as_object().cloned().unwrap_or_default(),
     }
 }
 
@@ -38,7 +34,9 @@ pub fn check_manifest(manifest: &EngineManifest) -> Result<(), ClientError> {
             code: "protocol.mismatch".into(),
             message: format!(
                 "engine {} protocol {} does not match required {}",
-                manifest.id, manifest.protocol_version, tarik_engine_protocol::PROTOCOL_VERSION
+                manifest.id,
+                manifest.protocol_version,
+                tarik_engine_protocol::PROTOCOL_VERSION
             ),
         });
     }
@@ -48,7 +46,7 @@ pub fn check_manifest(manifest: &EngineManifest) -> Result<(), ClientError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tarik_engine_protocol::ErrorEnvelope;
+    use tarik_engine_protocol::{ErrorEnvelope, ResponseEnvelope};
 
     #[test]
     fn builds_request_with_unique_id() {
@@ -60,12 +58,10 @@ mod tests {
 
     #[test]
     fn surfaces_structured_engine_error() {
-        let frame = EngineFrame::Response(ResponseEnvelope::err(
-            "req-1",
-            ErrorEnvelope::new("sql.parse", "syntax error"),
-        ));
-        let response = frame_response(frame).unwrap();
+        let response =
+            ResponseEnvelope::err("req-1", ErrorEnvelope::new("sql.parse", "syntax error"));
         assert!(!response.ok);
+        assert_eq!(response.error.as_ref().unwrap().code, "sql.parse");
     }
 
     #[test]

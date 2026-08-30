@@ -1,11 +1,39 @@
-mod engine;
+mod engine_manager;
 mod metadata;
 mod paths;
 mod projects;
-mod sources;
+
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use serde::Serialize;
 use tauri::Manager;
+
+/// Locate the DuckDB engine adapter binary.
+///
+/// Development: sibling of the current executable or the workspace debug build.
+/// Packaged: a sibling `tarik-engine-duckdb` next to `tarik`.
+fn locate_engine_binary() -> PathBuf {
+    if let Ok(current) = std::env::current_exe() {
+        if let Some(parent) = current.parent() {
+            let sibling = parent.join("tarik-engine-duckdb");
+            if sibling.exists() {
+                return sibling;
+            }
+        }
+    }
+    let workspace = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .unwrap_or_else(|| Path::new("."));
+    let debug = workspace.join("target/debug/tarik-engine-duckdb");
+    if debug.exists() {
+        return debug;
+    }
+    workspace.join("target/release/tarik-engine-duckdb")
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -44,14 +72,26 @@ pub fn run() {
                 .map_err(|error| Box::new(error) as Box<dyn std::error::Error>)?;
             let database = metadata::MetadataDb::open(directories.data_dir.join("tarik.sqlite"))
                 .map_err(|error| Box::new(error) as Box<dyn std::error::Error>)?;
+            let engine = Arc::new(engine_manager::EngineManager::new(locate_engine_binary()));
             let project_manager = projects::ProjectManager::new(
                 database.clone(),
                 directories.data_dir.join("projects"),
-                directories.cache_dir.join("duckdb-temp"),
+                engine.clone(),
             );
             app.manage(database);
+            app.manage(engine);
             app.manage(project_manager);
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::Destroyed = event {
+                if let Some(engine) = window
+                    .app_handle()
+                    .try_state::<Arc<engine_manager::EngineManager>>()
+                {
+                    engine.shutdown();
+                }
+            }
         })
         .invoke_handler(tauri::generate_handler![
             get_runtime_info,
@@ -84,7 +124,6 @@ pub fn run() {
             projects::commands::remove_project,
             projects::commands::close_project,
             projects::commands::get_active_project,
-            projects::commands::apply_engine_profile,
             projects::commands::inspect_project_catalog,
             projects::commands::inspect_source_file,
             projects::commands::link_parquet_source,

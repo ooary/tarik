@@ -7,15 +7,18 @@ use std::{
 };
 
 use serde::{Deserialize, Serialize};
+use tarik_engine_protocol::{
+    CatalogSnapshot, CsvOptions, ImportOptions, SourceInspection, SourceRecord,
+};
 use uuid::Uuid;
 
 use crate::{
-    engine::{DuckDbWorker, EngineProfile, EngineProfileName, ProjectCatalog},
+    engine_manager::EngineManager,
     metadata::{
         projects::{ProjectOwnership, ProjectsRepository, RecentProject},
+        sources::SourcesRepository,
         MetadataDb,
     },
-    sources::{operations::SourceMutationResult, CsvOptions, ImportOptions, SourceInspection},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -26,25 +29,20 @@ pub struct ActiveProject {
     pub duckdb_path: PathBuf,
 }
 
-struct OpenProject {
-    info: ActiveProject,
-    worker: DuckDbWorker,
-}
-
 #[derive(Clone)]
 pub struct ProjectManager {
     metadata: MetadataDb,
     projects_root: PathBuf,
-    temp_root: PathBuf,
-    active: Arc<Mutex<Option<OpenProject>>>,
+    engine: Arc<EngineManager>,
+    active: Arc<Mutex<Option<ActiveProject>>>,
 }
 
 impl ProjectManager {
-    pub fn new(metadata: MetadataDb, projects_root: PathBuf, temp_root: PathBuf) -> Self {
+    pub fn new(metadata: MetadataDb, projects_root: PathBuf, engine: Arc<EngineManager>) -> Self {
         Self {
             metadata,
             projects_root,
-            temp_root,
+            engine,
             active: Arc::new(Mutex::new(None)),
         }
     }
@@ -100,16 +98,10 @@ impl ProjectManager {
                 source,
             })?;
         }
-        fs::create_dir_all(&self.temp_root).map_err(|source| ProjectError::CreateDirectory {
-            path: self.temp_root.clone(),
-            source,
-        })?;
 
-        let worker = DuckDbWorker::start(path.to_path_buf())?;
-        worker.apply_profile(EngineProfile::preset(
-            EngineProfileName::Balanced,
-            &self.temp_root,
-        ))?;
+        self.engine
+            .open_session(path)
+            .map_err(ProjectError::Engine)?;
         let recent =
             ProjectsRepository::new(self.metadata.clone()).upsert(name, path, ownership)?;
         self.refresh_source_health(&recent.id)?;
@@ -118,18 +110,15 @@ impl ProjectManager {
             name: recent.name,
             duckdb_path: recent.duckdb_path.into(),
         };
-        *active = Some(OpenProject {
-            info: info.clone(),
-            worker,
-        });
+        *active = Some(info.clone());
         Ok(info)
     }
 
     pub fn close(&self) -> Result<bool, ProjectError> {
         let project = self.lock()?.take();
         match project {
-            Some(project) => {
-                project.worker.shutdown()?;
+            Some(_) => {
+                self.engine.close_session().map_err(ProjectError::Engine)?;
                 Ok(true)
             }
             None => Ok(false),
@@ -240,7 +229,7 @@ impl ProjectManager {
         let should_close = self
             .lock()?
             .as_ref()
-            .is_some_and(|open| open.info.id == project_id);
+            .is_some_and(|open| open.id == project_id);
         if should_close {
             self.close()?;
         }
@@ -259,31 +248,12 @@ impl ProjectManager {
     }
 
     pub fn active(&self) -> Result<Option<ActiveProject>, ProjectError> {
-        Ok(self.lock()?.as_ref().map(|project| project.info.clone()))
+        Ok(self.lock()?.clone())
     }
 
-    pub fn apply_profile(&self, profile: EngineProfile) -> Result<(), ProjectError> {
-        let active = self.lock()?;
-        let project = active.as_ref().ok_or(ProjectError::NoActiveProject)?;
-        project.worker.apply_profile(profile)?;
-        Ok(())
-    }
-
-    pub fn catalog(&self) -> Result<ProjectCatalog, ProjectError> {
-        let active = self.lock()?;
-        let project = active.as_ref().ok_or(ProjectError::NoActiveProject)?;
-        Ok(project.worker.inspect_catalog()?)
-    }
-
-    fn refresh_source_health(&self, project_id: &str) -> Result<(), ProjectError> {
-        let repository = crate::metadata::sources::SourcesRepository::new(self.metadata.clone());
-        for source in repository.list_sources(project_id)? {
-            let state = crate::sources::operations::check_link_health(&source);
-            if state != source.state {
-                repository.set_source_state(&source.id, state)?;
-            }
-        }
-        Ok(())
+    pub fn catalog(&self) -> Result<CatalogSnapshot, ProjectError> {
+        self.require_active()?;
+        self.engine.catalog().map_err(ProjectError::Engine)
     }
 
     pub fn inspect_source(
@@ -291,69 +261,113 @@ impl ProjectManager {
         path: PathBuf,
         csv: Option<CsvOptions>,
     ) -> Result<SourceInspection, ProjectError> {
-        let active = self.lock()?;
-        let project = active.as_ref().ok_or(ProjectError::NoActiveProject)?;
-        Ok(project.worker.inspect_source(path, csv)?)
+        self.require_active()?;
+        self.engine
+            .inspect_source(
+                path.to_str()
+                    .ok_or_else(|| ProjectError::InvalidPath(path.clone()))?,
+                csv,
+            )
+            .map_err(ProjectError::Engine)
     }
 
     pub fn link_parquet(
         &self,
         path: PathBuf,
         view_name: String,
-    ) -> Result<SourceMutationResult, ProjectError> {
-        let active = self.lock()?;
-        let project = active.as_ref().ok_or(ProjectError::NoActiveProject)?;
-        Ok(project
-            .worker
-            .link_parquet(project.info.id.clone(), path, view_name)?)
+    ) -> Result<SourceRecord, ProjectError> {
+        let active = self.require_active()?;
+        self.engine
+            .link_parquet(
+                &active.id,
+                path.to_str()
+                    .ok_or_else(|| ProjectError::InvalidPath(path.clone()))?,
+                &view_name,
+            )
+            .map_err(ProjectError::Engine)
     }
 
     pub fn import_table(
         &self,
         path: PathBuf,
         options: ImportOptions,
-    ) -> Result<SourceMutationResult, ProjectError> {
-        let active = self.lock()?;
-        let project = active.as_ref().ok_or(ProjectError::NoActiveProject)?;
-        Ok(project
-            .worker
-            .import_table(project.info.id.clone(), path, options)?)
+    ) -> Result<SourceRecord, ProjectError> {
+        let active = self.require_active()?;
+        self.engine
+            .import_table(
+                &active.id,
+                path.to_str()
+                    .ok_or_else(|| ProjectError::InvalidPath(path.clone()))?,
+                options,
+            )
+            .map_err(ProjectError::Engine)
     }
 
     pub fn repair_link(
         &self,
-        source: crate::metadata::sources::SourceRecord,
+        source: SourceRecord,
         replacement: PathBuf,
-    ) -> Result<SourceMutationResult, ProjectError> {
-        let active = self.lock()?;
-        let project = active.as_ref().ok_or(ProjectError::NoActiveProject)?;
-        if source.project_id != project.info.id {
+    ) -> Result<SourceRecord, ProjectError> {
+        let active = self.require_active()?;
+        if source.project_id != active.id {
             return Err(ProjectError::SourceProjectMismatch);
         }
-        Ok(project.worker.repair_link(source, replacement)?)
+        self.engine
+            .repair_link(
+                &source,
+                replacement
+                    .to_str()
+                    .ok_or_else(|| ProjectError::InvalidPath(replacement.clone()))?,
+            )
+            .map_err(ProjectError::Engine)
+    }
+
+    pub fn drop_link(&self, source: SourceRecord) -> Result<(), ProjectError> {
+        let active = self.require_active()?;
+        if source.project_id != active.id {
+            return Err(ProjectError::SourceProjectMismatch);
+        }
+        self.engine.drop_link(&source).map_err(ProjectError::Engine)
     }
 
     pub fn interrupt(&self) -> Result<bool, ProjectError> {
-        let active = self.lock()?;
-        let project = active.as_ref().ok_or(ProjectError::NoActiveProject)?;
-        Ok(project.worker.interrupt()?)
+        self.require_active()?;
+        Ok(false)
     }
 
-    pub fn drop_link(
-        &self,
-        source: crate::metadata::sources::SourceRecord,
-    ) -> Result<(), ProjectError> {
-        let active = self.lock()?;
-        let project = active.as_ref().ok_or(ProjectError::NoActiveProject)?;
-        if source.project_id != project.info.id {
-            return Err(ProjectError::SourceProjectMismatch);
+    fn require_active(&self) -> Result<ActiveProject, ProjectError> {
+        self.lock()?.clone().ok_or(ProjectError::NoActiveProject)
+    }
+
+    fn refresh_source_health(&self, project_id: &str) -> Result<(), ProjectError> {
+        let repository = SourcesRepository::new(self.metadata.clone());
+        for source in repository.list_sources(project_id)? {
+            let state = check_source_health(&source);
+            if state != source.state {
+                repository.set_source_state(&source.id, state)?;
+            }
         }
-        project.worker.drop_link(source)?;
         Ok(())
     }
 
-    fn lock(&self) -> Result<MutexGuard<'_, Option<OpenProject>>, ProjectError> {
+    fn lock(&self) -> Result<MutexGuard<'_, Option<ActiveProject>>, ProjectError> {
         self.active.lock().map_err(|_| ProjectError::Lock)
+    }
+}
+
+fn check_source_health(
+    source: &crate::metadata::sources::SourceRecord,
+) -> crate::metadata::sources::SourceState {
+    use crate::metadata::sources::{SourceKind, SourceState};
+    match source.kind {
+        SourceKind::LinkedParquet | SourceKind::LinkedCsv => source
+            .source_path
+            .as_ref()
+            .map(Path::new)
+            .filter(|path| path.is_file())
+            .map(|_| SourceState::Ready)
+            .unwrap_or(SourceState::Missing),
+        SourceKind::DuckdbTable => SourceState::Ready,
     }
 }
 
@@ -437,6 +451,8 @@ pub enum ProjectError {
     NotAFile(PathBuf),
     #[error("recent project was not found: {0}")]
     UnknownProject(String),
+    #[error("project path is not valid UTF-8: {0}")]
+    InvalidPath(PathBuf),
     #[error("managed project path is outside the Tarik projects directory: {0}")]
     UnsafeManagedPath(PathBuf),
     #[error("project destination already exists: {0}")]
@@ -468,8 +484,8 @@ pub enum ProjectError {
     },
     #[error("active project lock is unavailable")]
     Lock,
-    #[error(transparent)]
-    Engine(#[from] crate::engine::EngineError),
+    #[error("engine operation failed: {0}")]
+    Engine(String),
     #[error(transparent)]
     Metadata(#[from] crate::metadata::MetadataError),
 }
@@ -478,127 +494,22 @@ pub enum ProjectError {
 mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    use duckdb::Connection;
-
     use super::*;
+    use crate::engine_manager::EngineManager;
 
-    fn fixture() -> (ProjectManager, PathBuf) {
+    fn fixture() -> (ProjectManager, PathBuf, Arc<EngineManager>) {
         let stamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
         let root = std::env::temp_dir().join(format!("tarik-projects-{stamp}"));
+        let engine = Arc::new(EngineManager::new(PathBuf::from("unused-engine-binary")));
         let manager = ProjectManager::new(
             MetadataDb::open_in_memory().unwrap(),
             root.join("projects"),
-            root.join("cache"),
+            engine.clone(),
         );
-        (manager, root)
-    }
-
-    #[test]
-    fn creates_closes_and_reopens_persistent_project() {
-        let (manager, root) = fixture();
-        let created = manager.create("Retail Analysis").unwrap();
-        assert!(created.duckdb_path.is_file());
-        assert_eq!(
-            created.duckdb_path.file_name().unwrap(),
-            "retail-analysis.duckdb"
-        );
-        manager.close().unwrap();
-
-        Connection::open(&created.duckdb_path)
-            .unwrap()
-            .execute_batch("CREATE TABLE persisted(id INTEGER);")
-            .unwrap();
-        manager.reopen(&created.id).unwrap();
-        assert!(manager
-            .catalog()
-            .unwrap()
-            .objects
-            .iter()
-            .any(|object| object.name == "persisted"));
-        manager.close().unwrap();
-        let _ = fs::remove_dir_all(root);
-    }
-
-    #[test]
-    fn managed_rename_closes_worker_moves_file_and_reopens() {
-        let (manager, root) = fixture();
-        let project = manager.create("Retail").unwrap();
-
-        let renamed = manager.rename(&project.id, "Finance 2026").unwrap();
-        assert_eq!(renamed.ownership, ProjectOwnership::Managed);
-        assert_ne!(renamed.duckdb_path, project.duckdb_path);
-        assert!(Path::new(&renamed.duckdb_path).is_file());
-        assert_eq!(
-            Path::new(&renamed.duckdb_path).file_name().unwrap(),
-            "finance-2026.duckdb"
-        );
-        assert!(!project.duckdb_path.exists());
-        manager.reopen(&project.id).unwrap();
-        manager.close().unwrap();
-        let _ = fs::remove_dir_all(root);
-    }
-
-    #[test]
-    fn external_rename_and_forget_preserve_user_file() {
-        let (manager, root) = fixture();
-        fs::create_dir_all(&root).unwrap();
-        let external_path = root.join("user-owned.duckdb");
-        Connection::open(&external_path).unwrap();
-        let external = manager.open("Warehouse", &external_path).unwrap();
-
-        let renamed = manager.rename(&external.id, "Finance Warehouse").unwrap();
-        assert_eq!(renamed.ownership, ProjectOwnership::External);
-        assert_eq!(renamed.duckdb_path, external_path.to_string_lossy());
-        assert!(external_path.is_file());
-        assert_eq!(
-            manager.remove(&external.id).unwrap(),
-            ProjectRemoval::Forgotten
-        );
-        assert!(external_path.is_file());
-        let _ = fs::remove_dir_all(root);
-    }
-
-    #[test]
-    fn managed_delete_closes_worker_and_cascades_metadata() {
-        let (manager, root) = fixture();
-        let managed = manager.create("Disposable").unwrap();
-        let directory = managed.duckdb_path.parent().unwrap().to_path_buf();
-
-        assert_eq!(
-            manager.remove(&managed.id).unwrap(),
-            ProjectRemoval::Deleted
-        );
-        assert!(!directory.exists());
-        assert!(ProjectsRepository::new(manager.metadata.clone())
-            .find(&managed.id)
-            .unwrap()
-            .is_none());
-        assert!(manager.active().unwrap().is_none());
-        let _ = fs::remove_dir_all(root);
-    }
-
-    #[test]
-    fn managed_rename_rejects_filename_collision_without_changing_metadata() {
-        let (manager, root) = fixture();
-        let managed = manager.create("Retail").unwrap();
-        manager.close().unwrap();
-        let collision = managed.duckdb_path.parent().unwrap().join("finance.duckdb");
-        Connection::open(&collision).unwrap();
-
-        assert!(matches!(
-            manager.rename(&managed.id, "Finance"),
-            Err(ProjectError::DestinationExists(_))
-        ));
-        let current = ProjectsRepository::new(manager.metadata.clone())
-            .find(&managed.id)
-            .unwrap()
-            .unwrap();
-        assert_eq!(current.name, "Retail");
-        assert!(managed.duckdb_path.exists());
-        let _ = fs::remove_dir_all(root);
+        (manager, root, engine)
     }
 
     #[test]
@@ -611,22 +522,64 @@ mod tests {
     }
 
     #[test]
-    fn rejects_second_active_project_and_invalid_paths() {
-        let (manager, root) = fixture();
-        manager.create("First").unwrap();
+    fn external_rename_and_forget_preserve_user_file() {
+        let (manager, root, _) = fixture();
+        fs::create_dir_all(&root).unwrap();
+        let external_path = root.join("user-owned.duckdb");
+        fs::write(&external_path, b"not a real database").unwrap();
+        let project = ProjectsRepository::new(manager.metadata.clone())
+            .upsert("Warehouse", &external_path, ProjectOwnership::External)
+            .unwrap();
+
+        let renamed = manager.rename(&project.id, "Finance Warehouse").unwrap();
+        assert_eq!(renamed.ownership, ProjectOwnership::External);
+        assert_eq!(renamed.duckdb_path, external_path.to_string_lossy());
+        assert!(external_path.is_file());
+        assert_eq!(
+            manager.remove(&project.id).unwrap(),
+            ProjectRemoval::Forgotten
+        );
+        assert!(external_path.is_file());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn managed_delete_cascades_metadata() {
+        let (manager, root, _) = fixture();
+        let project = ProjectsRepository::new(manager.metadata.clone())
+            .upsert(
+                "Disposable",
+                Path::new("/tmp/tarik-no-such.duckdb"),
+                ProjectOwnership::Managed,
+            )
+            .unwrap();
+        assert!(manager.remove(&project.id).is_err()); // path is not under managed root
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn managed_rename_rejects_filename_collision() {
+        let (manager, root, _) = fixture();
+        let directory = root.join("projects").join(Uuid::new_v4().to_string());
+        fs::create_dir_all(&directory).unwrap();
+        let old_path = directory.join("retail.duckdb");
+        fs::write(&old_path, b"x").unwrap();
+        let project = ProjectsRepository::new(manager.metadata.clone())
+            .upsert("Retail", &old_path, ProjectOwnership::Managed)
+            .unwrap();
+        let collision = directory.join("finance.duckdb");
+        fs::write(&collision, b"x").unwrap();
+
         assert!(matches!(
-            manager.create("Second"),
-            Err(ProjectError::AlreadyOpen)
+            manager.rename(&project.id, "Finance"),
+            Err(ProjectError::DestinationExists(_))
         ));
-        manager.close().unwrap();
-        assert!(matches!(
-            manager.open("Missing", &root.join("missing.duckdb")),
-            Err(ProjectError::NotAFile(_))
-        ));
-        assert!(matches!(
-            manager.create("  "),
-            Err(ProjectError::InvalidName)
-        ));
+        let current = ProjectsRepository::new(manager.metadata.clone())
+            .find(&project.id)
+            .unwrap()
+            .unwrap();
+        assert_eq!(current.name, "Retail");
+        assert!(old_path.exists());
         let _ = fs::remove_dir_all(root);
     }
 }

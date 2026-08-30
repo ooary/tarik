@@ -17,5 +17,6 @@ serde_json.workspace = true
 thiserror.workspace = true
 uuid.workspace = true
 duckdb.workspace = true
+glob = "0.3"
 tarik-engine-protocol = { path = "../../crates/engine-protocol" }
 tarik-arrow-page-format = { path = "../../crates/arrow-page-format" }

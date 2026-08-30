@@ -480,8 +480,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0ad534f4357a5264cce5019c989cf66a4f0dc4e0d1b1d15f8aacec0ff7360273"
 dependencies = [
  "find-msvc-tools",
- "jobserver",
- "libc",
  "shlex",
 ]
 
@@ -1996,16 +1994,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "jobserver"
-version = "0.1.35"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1c00acbd29eabad4a2392fa0e921c874934dbbf4194312ad20f04a0ed67a3cb3"
-dependencies = [
- "getrandom 0.4.3",
- "libc",
-]
-
-[[package]]
 name = "js-sys"
 version = "0.3.104"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2151,7 +2139,6 @@ version = "1.10505.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6cb514dab5e271e849235c1cb98bd65a2ae107fbd619a6740219319c54a71d95"
 dependencies = [
- "cc",
  "flate2",
  "pkg-config",
  "serde",
@@ -3718,11 +3705,12 @@ checksum = "61c41af27dd6d1e27b1b16b489db798443478cef1f06a660c96db617ba5de3b1"
 name = "tarik"
 version = "0.1.0"
 dependencies = [
- "duckdb",
- "glob",
  "rusqlite",
  "serde",
  "serde_json",
+ "tarik-arrow-page-format",
+ "tarik-engine-client",
+ "tarik-engine-protocol",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",
@@ -3756,6 +3744,7 @@ name = "tarik-engine-duckdb"
 version = "0.1.0"
 dependencies = [
  "duckdb",
+ "glob",
  "serde",
  "serde_json",
  "tarik-arrow-page-format",

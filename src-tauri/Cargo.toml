@@ -25,7 +25,8 @@ serde_json = "1"
 thiserror = "2"
 rusqlite = { version = "0.37", features = ["bundled"] }
 uuid = { version = "1", features = ["v4"] }
-duckdb = { version = "1.10505.0", features = ["bundled"] }
 tauri-plugin-dialog = "2"
-glob = "0.3"
+tarik-engine-client = { path = "../crates/engine-client" }
+tarik-engine-protocol = { path = "../crates/engine-protocol" }
+tarik-arrow-page-format = { path = "../crates/arrow-page-format" }
 

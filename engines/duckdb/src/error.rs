@@ -1,0 +1,63 @@
+use std::path::PathBuf;
+
+#[derive(Debug, thiserror::Error)]
+pub enum EngineError {
+    #[error("session already exists: {0}")]
+    SessionExists(String),
+    #[error("session does not exist: {0}")]
+    SessionMissing(String),
+    #[error("source file does not exist: {0}")]
+    Missing(PathBuf),
+    #[error("unsupported source type: {0}")]
+    Unsupported(PathBuf),
+    #[error("source path is not valid UTF-8: {0}")]
+    InvalidPath(PathBuf),
+    #[error("source glob is invalid: {0}")]
+    InvalidGlob(PathBuf),
+    #[error("source name cannot be empty")]
+    InvalidIdentifier,
+    #[error("invalid source options: {0}")]
+    InvalidOptions(&'static str),
+    #[error("invalid column type override: {0}")]
+    InvalidDataType(String),
+    #[error("replacement schema differs; expected {expected:?}, found {actual:?}")]
+    IncompatibleSchema {
+        expected: Vec<String>,
+        actual: Vec<String>,
+    },
+    #[error("could not read path metadata {path}: {source}")]
+    Io {
+        path: PathBuf,
+        source: std::io::Error,
+    },
+    #[error("method not supported: {0}")]
+    MethodNotFound(String),
+    #[error("missing required request field: {0}")]
+    MissingField(String),
+    #[error(transparent)]
+    DuckDb(#[from] duckdb::Error),
+    #[error("serde error: {0}")]
+    Serde(#[from] serde_json::Error),
+}
+
+impl EngineError {
+    pub fn code(&self) -> &'static str {
+        match self {
+            Self::SessionExists(_) => "session.exists",
+            Self::SessionMissing(_) => "session.missing",
+            Self::Missing(_) => "source.missing",
+            Self::Unsupported(_) => "source.unsupported",
+            Self::InvalidPath(_) => "source.invalid_path",
+            Self::InvalidGlob(_) => "source.invalid_glob",
+            Self::InvalidIdentifier => "source.invalid_identifier",
+            Self::InvalidOptions(_) => "source.invalid_options",
+            Self::InvalidDataType(_) => "source.invalid_data_type",
+            Self::IncompatibleSchema { .. } => "source.incompatible_schema",
+            Self::Io { .. } => "io.error",
+            Self::MethodNotFound(_) => "method.not_found",
+            Self::MissingField(_) => "request.missing_field",
+            Self::DuckDb(_) => "duckdb.error",
+            Self::Serde(_) => "request.parse",
+        }
+    }
+}
