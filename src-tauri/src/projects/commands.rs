@@ -5,28 +5,38 @@ use crate::engine::{EngineProfile, EngineProfileName, ProjectCatalog};
 
 use super::{ActiveProject, ProjectManager};
 
-#[tauri::command]
-pub fn create_project(
-    name: String,
-    manager: State<'_, ProjectManager>,
-) -> Result<ActiveProject, String> {
-    manager.create(&name).map_err(|error| error.to_string())
-}
-
-#[tauri::command]
-pub fn open_project(
-    name: String,
-    duckdb_path: String,
-    manager: State<'_, ProjectManager>,
-) -> Result<ActiveProject, String> {
-    manager
-        .open(&name, std::path::Path::new(&duckdb_path))
+async fn blocking<T: Send + 'static>(
+    operation: impl FnOnce() -> Result<T, super::ProjectError> + Send + 'static,
+) -> Result<T, String> {
+    tauri::async_runtime::spawn_blocking(operation)
+        .await
+        .map_err(|error| format!("project task failed: {error}"))?
         .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
-pub fn close_project(manager: State<'_, ProjectManager>) -> Result<bool, String> {
-    manager.close().map_err(|error| error.to_string())
+pub async fn create_project(
+    name: String,
+    manager: State<'_, ProjectManager>,
+) -> Result<ActiveProject, String> {
+    let manager = manager.inner().clone();
+    blocking(move || manager.create(&name)).await
+}
+
+#[tauri::command]
+pub async fn open_project(
+    name: String,
+    duckdb_path: String,
+    manager: State<'_, ProjectManager>,
+) -> Result<ActiveProject, String> {
+    let manager = manager.inner().clone();
+    blocking(move || manager.open(&name, std::path::Path::new(&duckdb_path))).await
+}
+
+#[tauri::command]
+pub async fn close_project(manager: State<'_, ProjectManager>) -> Result<bool, String> {
+    let manager = manager.inner().clone();
+    blocking(move || manager.close()).await
 }
 
 #[tauri::command]
@@ -46,23 +56,26 @@ pub struct EngineProfileInput {
 }
 
 #[tauri::command]
-pub fn apply_engine_profile(
+pub async fn apply_engine_profile(
     profile: EngineProfileInput,
     manager: State<'_, ProjectManager>,
 ) -> Result<(), String> {
-    manager
-        .apply_profile(EngineProfile {
+    let manager = manager.inner().clone();
+    blocking(move || {
+        manager.apply_profile(EngineProfile {
             name: profile.name,
             memory_limit_mb: profile.memory_limit_mb,
             threads: profile.threads,
             temp_directory: profile.temp_directory.into(),
         })
-        .map_err(|error| error.to_string())
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn inspect_project_catalog(
+pub async fn inspect_project_catalog(
     manager: State<'_, ProjectManager>,
 ) -> Result<ProjectCatalog, String> {
-    manager.catalog().map_err(|error| error.to_string())
+    let manager = manager.inner().clone();
+    blocking(move || manager.catalog()).await
 }
