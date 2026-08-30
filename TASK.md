@@ -654,7 +654,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
     - Opening a populated DuckDB file displays each real table name and column count.
   - Tests: filename sanitization/reserved names, recent reopen, native dialog boundary, populated catalog UI.
   - Commit: `feat(projects): complete native project discovery workflow`
-  - Implementation commit: pending commit
+  - Implementation commit: `61de982`
 
 ---
 
