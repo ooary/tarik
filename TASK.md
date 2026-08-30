@@ -680,7 +680,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
 
 ## EPIC E4 — Local sources and import workflow
 
-**Status:** `REVIEW` - implementation complete, waiting for user CSV/Parquet workflow review before E5.
+**Status:** `REVIEW` - E4 QA improvements complete; waiting for final import wizard sign-off before E5.
 
 **Outcome:** Beginner-safe Parquet linking and CSV/Parquet imports.
 
@@ -740,6 +740,23 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Tests: move, relink, incompatible replacement, remove.
   - Commit: `feat(sources): repair missing linked files`
   - Implementation commit: `3d7edf9`, `2eb21b5`
+
+- [x] **E4-T6 Improve import type overrides and source cardinality summary** — owner: lead-agent
+  - Depends on: E4-T1, E4-T3, E4-T4
+  - Deliverables:
+    - Replace free-text column override fields with a controlled DuckDB type dropdown whose first option keeps the inferred type.
+    - Show destination table/view name, total columns, row cardinality, and source file size above the preview.
+    - Use exact row counts for Parquet and small CSV files; use a clearly marked estimate for large CSV files to avoid an expensive full pre-import scan.
+    - Record the exact imported row count in source metadata after successful import.
+    - Format summary counts compactly (`1K`, `1.2M`) while preserving the exact value in accessible text/title where known.
+  - Acceptance:
+    - Users cannot submit arbitrary type SQL from the wizard.
+    - Approximate counts display `~`; exact counts do not.
+    - Large CSV inspection remains bounded and does not scan the full file only to populate the summary.
+    - Summary refreshes when CSV parsing options change.
+  - Tests: dropdown choices/submission, exact Parquet count, exact small CSV count, estimated large CSV count, compact formatting boundaries, exact post-import metadata count.
+  - Commit: `fix(import): add controlled types and row summary`
+  - Implementation commit: pending commit
 
 ---
 

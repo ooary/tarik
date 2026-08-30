@@ -25,6 +25,41 @@
   white-space: nowrap;
 }
 
+.source-summary {
+  display: grid;
+  grid-template-columns: minmax(140px, 1.5fr) repeat(3, minmax(90px, 0.7fr));
+  gap: 1px;
+  margin-bottom: 16px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  background: var(--border-subtle);
+  overflow: hidden;
+}
+
+.source-summary div {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding: 10px;
+  background: var(--surface-raised);
+}
+
+.source-summary span {
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.source-summary strong {
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .import-mode {
   display: grid;
   gap: 7px;
@@ -87,7 +122,7 @@
 }
 
 .csv-setting-grid input:not([type="checkbox"]),
-.schema-row input {
+.schema-row select {
   min-height: 32px;
   border: 1px solid var(--border-control);
   border-radius: var(--radius-control);
@@ -156,6 +191,10 @@
 }
 
 @media (max-width: 760px) {
+  .source-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .csv-setting-grid,
   .schema-row {
     grid-template-columns: 1fr;

@@ -5,6 +5,47 @@ import type { CsvOptions, ImportOptions, SourceInspection } from "../../lib/comm
 
 export type SourceAction = "import" | "link";
 
+const DUCKDB_TYPE_CHOICES = [
+  "BOOLEAN",
+  "TINYINT",
+  "SMALLINT",
+  "INTEGER",
+  "BIGINT",
+  "HUGEINT",
+  "FLOAT",
+  "DOUBLE",
+  "DECIMAL(18,2)",
+  "VARCHAR",
+  "DATE",
+  "TIME",
+  "TIMESTAMP",
+  "BLOB",
+] as const;
+
+export function formatCompactCount(value: number): string {
+  if (value < 1_000) return String(value);
+  const units = [
+    { threshold: 1_000_000_000, suffix: "B" },
+    { threshold: 1_000_000, suffix: "M" },
+    { threshold: 1_000, suffix: "K" },
+  ];
+  const unit = units.find((candidate) => value >= candidate.threshold)!;
+  const compact = value / unit.threshold;
+  return `${compact >= 10 || Number.isInteger(compact) ? compact.toFixed(0) : compact.toFixed(1)}${unit.suffix}`;
+}
+
+export function formatFileSize(bytes: number): string {
+  if (bytes < 1_024) return `${bytes} B`;
+  const units = ["KB", "MB", "GB", "TB"];
+  let value = bytes / 1_024;
+  let index = 0;
+  while (value >= 1_024 && index < units.length - 1) {
+    value /= 1_024;
+    index += 1;
+  }
+  return `${value >= 10 ? value.toFixed(0) : value.toFixed(1)} ${units[index]}`;
+}
+
 export function ImportDialog({
   inspection,
   busy,
@@ -104,6 +145,34 @@ export function ImportDialog({
               </fieldset>
             )}
 
+            <div className="source-summary" aria-label="Source summary">
+              <div>
+                <span>{action === "link" ? "View" : "Table"}</span>
+                <strong title={tableName}>{tableName || "Not named"}</strong>
+              </div>
+              <div>
+                <span>Columns</span>
+                <strong title={`${inspection.columns.length} columns`}>
+                  {formatCompactCount(inspection.columns.length)}
+                </strong>
+              </div>
+              <div>
+                <span>Rows</span>
+                <strong
+                  title={`${inspection.rowCountExact ? "Exact" : "Estimated"}: ${inspection.rowCount.toLocaleString()} rows`}
+                >
+                  {inspection.rowCountExact ? "" : "~"}
+                  {formatCompactCount(inspection.rowCount)}
+                </strong>
+              </div>
+              <div>
+                <span>File size</span>
+                <strong title={`${inspection.fileSizeBytes.toLocaleString()} bytes`}>
+                  {formatFileSize(inspection.fileSizeBytes)}
+                </strong>
+              </div>
+            </div>
+
             <label className="ui-field" htmlFor="source-table-name">
               <span className="ui-field-label">
                 {action === "link" ? "View name" : "Table name"}
@@ -178,14 +247,20 @@ export function ImportDialog({
                     <span>{column.name}</span>
                     <code>{column.dataType}</code>
                     {action === "import" && (
-                      <input
+                      <select
                         aria-label={`Override type for ${column.name}`}
                         onChange={(event) =>
                           setOverrides({ ...overrides, [column.name]: event.currentTarget.value })
                         }
-                        placeholder="Keep inferred type"
                         value={overrides[column.name] ?? ""}
-                      />
+                      >
+                        <option value="">Keep inferred ({column.dataType})</option>
+                        {DUCKDB_TYPE_CHOICES.map((dataType) => (
+                          <option key={dataType} value={dataType}>
+                            {dataType}
+                          </option>
+                        ))}
+                      </select>
                     )}
                   </div>
                 ))}

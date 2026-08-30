@@ -26,6 +26,9 @@ pub struct SourceInspection {
     pub path: PathBuf,
     pub format: SourceFormat,
     pub suggested_name: String,
+    pub file_size_bytes: u64,
+    pub row_count: u64,
+    pub row_count_exact: bool,
     pub columns: Vec<SourceColumn>,
     pub preview_rows: Vec<Vec<serde_json::Value>>,
     pub csv_options: Option<CsvOptions>,
@@ -66,6 +69,8 @@ pub struct ImportOptions {
     pub csv: Option<CsvOptions>,
     pub column_overrides: Vec<ColumnOverride>,
 }
+
+const EXACT_CSV_COUNT_MAX_BYTES: u64 = 8 * 1024 * 1024;
 
 pub fn detect_format(path: &Path) -> Result<SourceFormat, SourceError> {
     if has_glob(path) {
@@ -125,15 +130,92 @@ pub fn inspect(path: &Path, csv: Option<&CsvOptions>) -> Result<SourceInspection
         );
     }
 
+    let file_size_bytes = source_size(path)?;
+    let (row_count, row_count_exact) =
+        source_cardinality(&connection, path, format, csv, file_size_bytes)?;
+
     Ok(SourceInspection {
         path: path.to_path_buf(),
         format,
         suggested_name: suggested_name(path),
+        file_size_bytes,
+        row_count,
+        row_count_exact,
         columns,
         preview_rows,
         csv_options: (format == SourceFormat::Csv).then(|| csv.cloned().unwrap_or_default()),
         warnings: Vec::new(),
     })
+}
+
+fn source_size(path: &Path) -> Result<u64, SourceError> {
+    if has_glob(path) {
+        glob::glob(path.to_string_lossy().as_ref())
+            .map_err(|_| SourceError::InvalidGlob(path.to_path_buf()))?
+            .filter_map(Result::ok)
+            .try_fold(0_u64, |total, candidate| {
+                candidate
+                    .metadata()
+                    .map(|metadata| total.saturating_add(metadata.len()))
+                    .map_err(|source| SourceError::Metadata {
+                        path: candidate,
+                        source,
+                    })
+            })
+    } else {
+        path.metadata()
+            .map(|metadata| metadata.len())
+            .map_err(|source| SourceError::Metadata {
+                path: path.to_path_buf(),
+                source,
+            })
+    }
+}
+
+fn source_cardinality(
+    connection: &Connection,
+    path: &Path,
+    format: SourceFormat,
+    csv: Option<&CsvOptions>,
+    file_size_bytes: u64,
+) -> Result<(u64, bool), SourceError> {
+    if format == SourceFormat::Parquet || file_size_bytes <= EXACT_CSV_COUNT_MAX_BYTES {
+        let relation = relation_sql(path, format, csv)?;
+        let count: u64 = connection.query_row(
+            &format!("SELECT count(*)::UBIGINT FROM {relation}"),
+            [],
+            |row| row.get(0),
+        )?;
+        return Ok((count, true));
+    }
+
+    let sample_bytes = read_sample(path, 1024 * 1024)?;
+    let lines = sample_bytes.iter().filter(|byte| **byte == b'\n').count() as u64;
+    if lines == 0 || sample_bytes.is_empty() {
+        return Ok((0, false));
+    }
+    let average_line_bytes = sample_bytes.len() as f64 / lines as f64;
+    let mut estimate = (file_size_bytes as f64 / average_line_bytes).round() as u64;
+    if csv.cloned().unwrap_or_default().has_header {
+        estimate = estimate.saturating_sub(1);
+    }
+    Ok((estimate, false))
+}
+
+fn read_sample(path: &Path, limit: u64) -> Result<Vec<u8>, SourceError> {
+    use std::io::Read;
+    let file = std::fs::File::open(path).map_err(|source| SourceError::Read {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    let mut sample = Vec::new();
+    file.take(limit)
+        .read_to_end(&mut sample)
+        .map_err(|source| SourceError::Read {
+            path: path.to_path_buf(),
+            source,
+        })?;
+    Ok(sample)
 }
 
 fn has_glob(path: &Path) -> bool {
@@ -244,6 +326,16 @@ pub enum SourceError {
     Unsupported(PathBuf),
     #[error("source path is not valid UTF-8: {0}")]
     InvalidPath(PathBuf),
+    #[error("could not read source metadata at {path}: {source}")]
+    Metadata {
+        path: PathBuf,
+        source: std::io::Error,
+    },
+    #[error("could not read source sample at {path}: {source}")]
+    Read {
+        path: PathBuf,
+        source: std::io::Error,
+    },
     #[error("source glob is invalid: {0}")]
     InvalidGlob(PathBuf),
     #[error("source name cannot be empty")]
@@ -289,6 +381,9 @@ mod tests {
 
         assert_eq!(inspection.format, SourceFormat::Csv);
         assert_eq!(inspection.columns.len(), 3);
+        assert_eq!(inspection.row_count, 40);
+        assert!(inspection.row_count_exact);
+        assert!(inspection.file_size_bytes > 0);
         assert_eq!(inspection.preview_rows.len(), 25);
         let _ = std::fs::remove_file(path);
     }
@@ -308,7 +403,29 @@ mod tests {
 
         assert_eq!(inspection.format, SourceFormat::Parquet);
         assert_eq!(inspection.columns[0].name, "id");
+        assert_eq!(inspection.row_count, 1);
+        assert!(inspection.row_count_exact);
         assert_eq!(inspection.preview_rows.len(), 1);
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn estimates_large_csv_without_full_count_scan() {
+        let path = fixture_path("large.csv");
+        let mut file = std::fs::File::create(&path).unwrap();
+        use std::io::Write;
+        file.write_all(b"id,value\n").unwrap();
+        let row = b"1,abcdefghijklmnopqrstuvwxyz0123456789\n";
+        while file.metadata().unwrap().len() <= EXACT_CSV_COUNT_MAX_BYTES + 1024 {
+            file.write_all(row).unwrap();
+        }
+        drop(file);
+
+        let inspection = inspect(&path, None).unwrap();
+
+        assert!(!inspection.row_count_exact);
+        assert!(inspection.row_count > 100_000);
+        assert_eq!(inspection.preview_rows.len(), 25);
         let _ = std::fs::remove_file(path);
     }
 

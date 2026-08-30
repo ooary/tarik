@@ -75,6 +75,9 @@ export interface SourceInspection {
   path: string;
   format: SourceFormat;
   suggestedName: string;
+  fileSizeBytes: number;
+  rowCount: number;
+  rowCountExact: boolean;
   columns: SourceColumn[];
   previewRows: unknown[][];
   csvOptions: CsvOptions | null;

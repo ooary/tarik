@@ -93,13 +93,24 @@ pub fn import_table(
             return Err(error);
         }
     }
+    let exact_imported_rows: u64 = connection.query_row(
+        &format!("SELECT count(*)::UBIGINT FROM {identifier}"),
+        [],
+        |row| row.get(0),
+    )?;
     Ok(SourceMutationResult {
         source: source_record(
             project_id,
             &options.table_name,
             SourceKind::DuckdbTable,
             Some(path.to_path_buf()),
-            serde_json::json!({"mode": "import", "format": format}),
+            serde_json::json!({
+                "mode": "import",
+                "format": format,
+                "rowCount": exact_imported_rows,
+                "rowCountExact": true,
+                "fileSizeBytes": inspection.file_size_bytes
+            }),
         ),
         inspection,
     })
@@ -298,7 +309,9 @@ mod tests {
             csv: Some(super::super::CsvOptions::default()),
             column_overrides: Vec::new(),
         };
-        import_table(&connection, "p1", &csv, &options).unwrap();
+        let result = import_table(&connection, "p1", &csv, &options).unwrap();
+        assert_eq!(result.source.options["rowCount"], 1);
+        assert_eq!(result.source.options["rowCountExact"], true);
         std::fs::remove_file(&csv).unwrap();
         let count: i64 = connection
             .query_row("SELECT count(*) FROM orders", [], |row| row.get(0))
