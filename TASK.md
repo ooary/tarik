@@ -523,7 +523,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
 
 ## EPIC E2 — SQLite metadata and durable application state
 
-**Status:** `REVIEW` - implementation complete, waiting for user persistence review before E3.
+**Status:** `APPROVED` - user authorized E3.
 
 **Outcome:** Versioned, transactional metadata store for all operational state.
 
@@ -589,9 +589,11 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
 
 ## EPIC E3 — DuckDB project and engine lifecycle
 
+**Status:** `IN PROGRESS` - user authorized implementation.
+
 **Outcome:** Safe project-scoped DuckDB engine with bounded worker concurrency.
 
-- [ ] **E3-T1 Implement project create/open/close lifecycle**
+- [x] **E3-T1 Implement project create/open/close lifecycle** — owner: lead-agent
   - Depends on: E0-T4, E2-T2
   - Owns: `src-tauri/src/projects/`, engine composition root
   - Deliverables:
@@ -601,8 +603,9 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: reopen preserves DuckDB tables and operational project metadata.
   - Tests: create, reopen, invalid path, already-open, and close-on-error tests.
   - Commit: `feat(projects): manage local duckdb projects`
+  - Implementation commit: pending commit
 
-- [ ] **E3-T2 Add dedicated DuckDB worker and job protocol**
+- [x] **E3-T2 Add dedicated DuckDB worker and job protocol** — owner: lead-agent
   - Depends on: E3-T1
   - Owns: `src-tauri/src/engine/worker.rs`, job types
   - Deliverables:
@@ -612,8 +615,9 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: long query does not block the UI command loop.
   - Tests: serialization of connection access, queue capacity, worker shutdown.
   - Commit: `feat(engine): add bounded duckdb worker`
+  - Implementation commit: pending commit
 
-- [ ] **E3-T3 Add engine resource and performance settings**
+- [x] **E3-T3 Add engine resource and performance settings** — owner: lead-agent
   - Depends on: E3-T2, E2-T2
   - Owns: engine configuration module
   - Deliverables:
@@ -623,14 +627,16 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: settings apply per opened project without raw SQL interpolation hazards.
   - Tests: profile mapping and validation tests.
   - Commit: `feat(engine): add resource profiles`
+  - Implementation commit: pending commit
 
-- [ ] **E3-T4 Add catalog inspection service**
+- [x] **E3-T4 Add catalog inspection service** — owner: lead-agent
   - Depends on: E3-T2
   - Owns: engine catalog module and typed commands
   - Deliverables: schemas, tables, views, columns, types, and source-kind metadata.
   - Acceptance: UI can refresh catalog after DDL/import without reopening project.
   - Tests: multiple schemas/tables/views and unusual identifier tests.
   - Commit: `feat(engine): expose project catalog`
+  - Implementation commit: pending commit
 
 ---
 
@@ -1097,7 +1103,7 @@ For chunk size `1,000,000`, verify outputs for:
 # Open decisions — resolve before affected task starts
 
 - [ ] **D1:** Confirm supported MVP operating systems and packaging priority.
-- [ ] **D2:** Select and pin the DuckDB Rust binding/version after a minimal Arrow/profile compatibility spike.
+- [x] **D2:** Pin `duckdb` Rust binding `1.10505.0` with the bundled engine. It supports the required embedded lifecycle and optional Arrow/Parquet features; binary Arrow transport remains a separate D3 measurement.
 - [ ] **D3:** Choose the Arrow batch transport strategy across Tauri IPC after measuring JSON vs binary transfer overhead.
 - [ ] **D4:** Define default result page size, cache size, and worker count from E11-T2 measurements rather than guesses.
 - [ ] **D5:** Define whether “empty export” creates no files or one schema-only file; document consistently.
