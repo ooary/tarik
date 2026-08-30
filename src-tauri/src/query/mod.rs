@@ -121,6 +121,17 @@ impl QueryCoordinator {
         if sql.trim().is_empty() {
             return Err("query.empty".to_string());
         }
+        // Do not submit an engine job whose terminal history cannot satisfy
+        // SQLite's project foreign key. The command layer also checks the
+        // active project; this keeps direct/test callers safe.
+        let project_exists =
+            crate::metadata::projects::ProjectsRepository::new(self.database.clone())
+                .find(project_id)
+                .map_err(|error| error.to_string())?
+                .is_some();
+        if !project_exists {
+            return Err(format!("query.project_missing: {project_id}"));
+        }
         let execution_id = uuid::Uuid::new_v4().to_string();
         let mut executions = self
             .executions
@@ -550,6 +561,19 @@ mod tests {
         let error = coordinator.execute(&project_id, "tab1", "   ").unwrap_err();
         assert_eq!(error, "query.empty");
         assert!(history_count(&coordinator, &project_id).is_empty());
+    }
+
+    #[test]
+    fn unknown_project_is_rejected_before_engine_submission() {
+        let engine = Arc::new(FakeEngine::new(vec![]));
+        let (coordinator, _) = coordinator_for(engine.clone());
+
+        let error = coordinator
+            .execute("not-a-project", "tab1", "SELECT 1")
+            .unwrap_err();
+
+        assert_eq!(error, "query.project_missing: not-a-project");
+        assert!(engine.last.lock().unwrap().is_none());
     }
 
     #[test]

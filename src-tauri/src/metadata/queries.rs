@@ -114,7 +114,8 @@ impl QueriesRepository {
         let connection = self.database.connection()?;
         connection.execute(
             "INSERT INTO query_history(id, project_id, sql_text, status, duration_ms, returned_rows,
-             error_code, error_message, executed_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+             error_code, error_message, executed_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+             ON CONFLICT(id) DO NOTHING",
             (
                 &entry.id,
                 &entry.project_id,
@@ -288,6 +289,30 @@ mod tests {
                 .len(),
             3
         );
+
+        // Replaying a terminal persistence attempt is idempotent at the
+        // storage boundary; the original row remains exactly once.
+        let duplicate = QueryHistoryEntry {
+            id: "history-0".into(),
+            project_id: project_id.clone(),
+            sql_text: "SELECT changed".into(),
+            status: ExecutionStatus::Failed,
+            duration_ms: Some(999),
+            returned_rows: None,
+            error_code: Some("late.duplicate".into()),
+            error_message: Some("must not overwrite the first terminal".into()),
+            executed_at: "2026-01-02T00:00:00Z".into(),
+        };
+        repository.add_history(&duplicate).unwrap();
+        let history = repository.list_history(&project_id, None, 10).unwrap();
+        assert_eq!(history.len(), 3);
+        let original = history
+            .iter()
+            .find(|entry| entry.id == "history-0")
+            .unwrap();
+        assert_eq!(original.status, ExecutionStatus::Succeeded);
+        assert_eq!(original.sql_text, "select 1");
+
         assert_eq!(repository.prune_history(&project_id, 2).unwrap(), 1);
         assert_eq!(
             repository

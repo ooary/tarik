@@ -74,7 +74,7 @@ export const QueryWorkspace = forwardRef<QueryWorkspaceHandle, QueryWorkspacePro
       activeExecution?.state === "queued" || activeExecution?.state === "running";
 
     const runActiveTab = () => {
-      if (!activeTab || executionActive) return;
+      if (!projectId || !activeTab || executionActive) return;
       setRunError(null);
       run(activeTab.id, activeTab.sql).catch((error: unknown) => {
         setRunError(error instanceof Error ? error.message : String(error));
@@ -217,7 +217,7 @@ export const QueryWorkspace = forwardRef<QueryWorkspaceHandle, QueryWorkspacePro
           <div className="toolbar-group">
             <button
               className="run-button"
-              disabled={executionActive || !activeTab}
+              disabled={executionActive || !activeTab || !projectId}
               onClick={runActiveTab}
               type="button"
             >

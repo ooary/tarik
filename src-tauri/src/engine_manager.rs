@@ -229,9 +229,10 @@ impl EngineManager {
         })
     }
 
-    /// Submit an asynchronous query job. Returns once the job is queued.
+    /// Submit an asynchronous query job for the active engine session. Returns
+    /// once the job is queued.
     pub fn execute_query(&self, execution_id: &str, sql: &str) -> Result<(), String> {
-        self.raw_request(
+        self.session_request(
             "query.execute",
             serde_json::json!({
                 "executionId": execution_id,
@@ -340,5 +341,71 @@ impl crate::query::EngineExecutor for EngineManager {
         execution_id: &str,
     ) -> Result<Option<tarik_engine_protocol::ExecutionStatus>, String> {
         self.cancel_query(execution_id)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use super::*;
+    use tarik_engine_protocol::ExecutionState;
+
+    fn workspace_engine() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .join("target/debug/tarik-engine-duckdb")
+    }
+
+    fn temp_path(name: &str, suffix: &str) -> PathBuf {
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!("tarik-manager-{name}-{stamp}{suffix}"))
+    }
+
+    #[test]
+    fn execute_query_injects_the_active_session_id() {
+        let engine_bin = workspace_engine();
+        assert!(
+            engine_bin.exists(),
+            "engine binary missing; build with ./scripts/build-engine.sh"
+        );
+        let database = temp_path("session", ".duckdb");
+        let result_root = temp_path("results", "");
+        let manager = EngineManager::new(engine_bin, result_root.clone());
+        manager.open_session(&database).unwrap();
+
+        // This public method must inject the active sessionId; omitting it is
+        // rejected by the sidecar as request.missing_field.
+        manager
+            .execute_query("session-injection", "SELECT 42 AS answer;")
+            .unwrap();
+
+        let terminal = (0..200)
+            .find_map(|_| {
+                let status = manager.query_status("session-injection").unwrap()?;
+                if matches!(
+                    status.state,
+                    ExecutionState::Succeeded | ExecutionState::Failed | ExecutionState::Cancelled
+                ) {
+                    Some(status)
+                } else {
+                    std::thread::sleep(Duration::from_millis(10));
+                    None
+                }
+            })
+            .expect("query did not reach a terminal state");
+        assert_eq!(terminal.state, ExecutionState::Succeeded);
+        assert_eq!(terminal.rows_produced, Some(1));
+        assert!(terminal.result.is_some());
+
+        manager.release_result("session-injection").unwrap();
+        manager.close_session().unwrap();
+        manager.shutdown();
+        let _ = std::fs::remove_file(database);
+        let _ = std::fs::remove_dir_all(result_root);
     }
 }

@@ -5,6 +5,7 @@ use std::sync::Arc;
 use tauri::State;
 
 use super::QueryCoordinator;
+use crate::projects::ProjectManager;
 
 #[tauri::command]
 pub fn execute_query(
@@ -12,8 +13,19 @@ pub fn execute_query(
     tab_id: String,
     sql: String,
     coordinator: State<'_, Arc<QueryCoordinator>>,
+    projects: State<'_, ProjectManager>,
 ) -> Result<super::ExecutionView, String> {
-    coordinator.execute(&project_id, &tab_id, &sql)
+    let active = projects
+        .active()
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| "query.no_active_project".to_string())?;
+    if active.id != project_id {
+        return Err(format!(
+            "query.project_mismatch: active project is {}, request was {}",
+            active.id, project_id
+        ));
+    }
+    coordinator.execute(&active.id, &tab_id, &sql)
 }
 
 #[tauri::command]
