@@ -26,7 +26,6 @@ fn locate_engine_binary() -> PathBuf {
     }
     let workspace = Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
-        .and_then(Path::parent)
         .unwrap_or_else(|| Path::new("."));
     let debug = workspace.join("target/debug/tarik-engine-duckdb");
     if debug.exists() {

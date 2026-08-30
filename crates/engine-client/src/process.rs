@@ -100,7 +100,9 @@ impl EngineProcess {
                     message: error.message,
                 });
             }
-            return response.result.ok_or(ClientError::ChannelClosed);
+            // A successful call with a missing/null result is a valid no-return
+            // response (for example session.open). Deserialize JSON null as Null.
+            return Ok(response.result.unwrap_or(Value::Null));
         }
     }
 
