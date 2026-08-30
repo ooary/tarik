@@ -694,7 +694,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: malformed/unsupported/missing files produce recoverable errors.
   - Tests: fixture matrix for valid and invalid CSV/Parquet.
   - Commit: `feat(sources): inspect local datasets`
-  - Implementation commit: pending commit
+  - Implementation commit: `3d7edf9`
 
 - [x] **E4-T2 Link a Parquet file or glob as a named DuckDB view** — owner: lead-agent
   - Depends on: E4-T1, E2-T5, E3-T4
@@ -706,7 +706,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: linked view can join imported tables; no data is copied.
   - Tests: spaces/quotes in paths, glob, join, duplicate name, missing file.
   - Commit: `feat(sources): link parquet datasets`
-  - Implementation commit: pending commit
+  - Implementation commit: `3d7edf9`
 
 - [x] **E4-T3 Build CSV import wizard** — owner: lead-agent
   - Depends on: E4-T1, E1-T2
@@ -718,7 +718,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: user confirms trusted options before data copy begins.
   - Tests: wizard navigation, overrides, validation, cancellation.
   - Commit: `feat(import): add csv import wizard`
-  - Implementation commit: pending commit
+  - Implementation commit: `2eb21b5`
 
 - [x] **E4-T4 Import CSV and Parquet as DuckDB tables** — owner: lead-agent
   - Depends on: E4-T1, E2-T5, E3-T2
@@ -730,7 +730,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: imported source remains queryable after original file moves.
   - Tests: import/reopen, cancel cleanup, duplicate table, disk/write failure.
   - Commit: `feat(import): import datasets into duckdb`
-  - Implementation commit: pending commit
+  - Implementation commit: `3d7edf9`, `2eb21b5`
 
 - [x] **E4-T5 Detect and repair missing linked sources** — owner: lead-agent
   - Depends on: E4-T2
@@ -739,7 +739,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: broken source does not prevent unrelated project use.
   - Tests: move, relink, incompatible replacement, remove.
   - Commit: `feat(sources): repair missing linked files`
-  - Implementation commit: pending commit
+  - Implementation commit: `3d7edf9`, `2eb21b5`
 
 ---
 
