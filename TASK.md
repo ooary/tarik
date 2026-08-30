@@ -948,6 +948,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
     - Frontend: `useQueryExecution` hook keeps lightweight per-tab state, polls every 250 ms, and the results panel shows empty/queued/running/failed/cancelled/completed states plus a Cancel action. The static fake fixture (`24,318` rows) is removed.
     - Engine status currently reports `rowsAffected` from DuckDB DML count results; `rows_produced` while running reflects batches already fetched. Engine-side cancel tests land with E6-T2.
     - Post-review fix `066e175`: `mark_terminal` now checks `history_written` before insertion, rejected submissions do not start a status poller, and late non-terminal polls cannot roll terminal state backwards. A regression test proves duplicate terminal observations persist exactly one history row.
+    - Post-review fix `8f3807e`: `EngineManager::execute_query` now uses `session_request` so the active `sessionId` reaches the sidecar; the Tauri command derives and validates the backend active project instead of trusting frontend identity; the coordinator rejects unknown projects before submission/history persistence; SQLite history inserts are idempotent (`ON CONFLICT(id) DO NOTHING`). Integration/unit tests cover active-session injection, missing-project rejection, and duplicate storage writes.
 
 - [x] **E6-T2 Implement query cancellation and cleanup** — owner: lead-agent
   - Depends on: E6-T1, E5.5-T3
