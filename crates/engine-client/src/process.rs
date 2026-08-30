@@ -2,6 +2,7 @@ use std::{
     io::{BufRead, BufReader, BufWriter, Lines, Write},
     path::Path,
     process::{Child, ChildStdin, ChildStdout, Command, Stdio},
+    sync::{Arc, Mutex},
 };
 
 use serde_json::Value;
@@ -9,11 +10,16 @@ use tarik_engine_protocol::{EngineInfo, ErrorEnvelope, RequestEnvelope, Response
 
 use crate::ClientError;
 
+const MAX_STDERR_LINES: usize = 30;
+
 /// Long-lived engine process with newline-delimited JSON framing over stdio.
+/// The child's stderr is captured so a startup crash surfaces its real reason
+/// (for example a missing dynamic library) instead of a bare channel error.
 pub struct EngineProcess {
     child: Child,
     stdin: BufWriter<ChildStdin>,
     stdout: Lines<BufReader<ChildStdout>>,
+    stderr_tail: Arc<Mutex<Vec<String>>>,
 }
 
 impl EngineProcess {
@@ -21,15 +27,35 @@ impl EngineProcess {
         let mut child = Command::new(executable)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::inherit())
+            .stderr(Stdio::piped())
             .spawn()
             .map_err(|error| ClientError::Spawn(format!("{error:?}")))?;
         let stdin = BufWriter::new(child.stdin.take().ok_or(ClientError::ChannelClosed)?);
         let stdout = BufReader::new(child.stdout.take().ok_or(ClientError::ChannelClosed)?).lines();
+        let stderr_tail = Arc::new(Mutex::new(Vec::new()));
+
+        if let Some(stderr) = child.stderr.take() {
+            let tail = stderr_tail.clone();
+            std::thread::Builder::new()
+                .name("tarik-engine-stderr".into())
+                .spawn(move || {
+                    for line in BufReader::new(stderr).lines().map_while(Result::ok) {
+                        if let Ok(mut tail) = tail.lock() {
+                            if tail.len() >= MAX_STDERR_LINES {
+                                tail.remove(0);
+                            }
+                            tail.push(line);
+                        }
+                    }
+                })
+                .map_err(|error| ClientError::Spawn(format!("stderr thread: {error:?}")))?;
+        }
+
         Ok(Self {
             child,
             stdin,
             stdout,
+            stderr_tail,
         })
     }
 
@@ -46,13 +72,15 @@ impl EngineProcess {
         };
         let line = serde_json::to_string(&request)
             .map_err(|error| ClientError::Protocol(format!("{error:?}")))?;
-        self.stdin
-            .write_all(line.as_bytes())
-            .map_err(|_| ClientError::ChannelClosed)?;
-        self.stdin
-            .write_all(b"\n")
-            .map_err(|_| ClientError::ChannelClosed)?;
-        self.stdin.flush().map_err(|_| ClientError::ChannelClosed)?;
+        if self.stdin.write_all(line.as_bytes()).is_err() {
+            return Err(self.closed_with_detail());
+        }
+        if self.stdin.write_all(b"\n").is_err() {
+            return Err(self.closed_with_detail());
+        }
+        if self.stdin.flush().is_err() {
+            return Err(self.closed_with_detail());
+        }
 
         loop {
             let Some(Ok(response_line)) = self.stdout.next() else {
@@ -84,11 +112,17 @@ impl EngineProcess {
             .flatten()
             .map(|status| status.to_string())
             .unwrap_or_else(|| "still running but channel closed".to_string());
+        let stderr = self
+            .stderr_tail
+            .lock()
+            .ok()
+            .map(|lines| lines.join("\n"))
+            .unwrap_or_default();
         ClientError::Engine {
             code: "engine.exited".into(),
             message: format!(
-                "engine process closed its channel before responding (exit: {exit}). \
-                 Check that the engine binary exists and its DuckDB runtime library is beside it."
+                "engine process closed its channel before responding (exit: {exit}).\n\
+                 Engine output:\n{stderr}"
             ),
         }
     }

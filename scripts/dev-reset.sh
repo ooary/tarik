@@ -9,6 +9,7 @@ patterns=(
   "^node ${PROJECT_ROOT}/node_modules/.bin/vite$"
   "^${PROJECT_ROOT}/src-tauri/target/debug/tarik$"
   "^target/debug/tarik$"
+  "^target/debug/tarik-engine-duckdb$"
 )
 
 for pattern in "${patterns[@]}"; do
