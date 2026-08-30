@@ -1,5 +1,6 @@
 @import "./styles/tokens.css";
 @import "./styles/components.css";
+@import "./features/sources/import.css";
 
 * {
   box-sizing: border-box;
@@ -384,6 +385,11 @@ button:disabled {
 
 .recent-project-row {
   margin-bottom: 2px;
+}
+
+.source-row-missing {
+  color: var(--status-error);
+  background: var(--status-error-surface);
 }
 
 .tree-row {

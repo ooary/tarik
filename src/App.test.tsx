@@ -2,38 +2,66 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import {
+  cancelSourceOperation,
   chooseDuckDbFile,
+  chooseParquetFile,
+  chooseSourceFile,
   closeProject,
   createProject,
   getActiveProject,
   getRuntimeInfo,
   getWorkbenchPreferences,
+  importSourceTable,
   inspectProjectCatalog,
+  inspectSourceFile,
+  linkParquetSource,
   listRecentProjects,
+  listSources,
   openProject,
+  removeLinkedSource,
   removeProject,
+  repairLinkedSource,
   renameProject,
   reopenRecentProject,
   setWorkbenchPreferences,
 } from "./lib/commands";
 
 vi.mock("./lib/commands", () => ({
+  cancelSourceOperation: vi.fn(),
   chooseDuckDbFile: vi.fn(),
+  chooseParquetFile: vi.fn(),
+  chooseSourceFile: vi.fn(),
   closeProject: vi.fn(),
   createProject: vi.fn(),
   getActiveProject: vi.fn(),
   getRuntimeInfo: vi.fn(),
   getWorkbenchPreferences: vi.fn(),
+  importSourceTable: vi.fn(),
   inspectProjectCatalog: vi.fn(),
+  inspectSourceFile: vi.fn(),
+  linkParquetSource: vi.fn(),
   listRecentProjects: vi.fn(),
+  listSources: vi.fn(),
   openProject: vi.fn(),
+  removeLinkedSource: vi.fn(),
   removeProject: vi.fn(),
+  repairLinkedSource: vi.fn(),
   renameProject: vi.fn(),
   reopenRecentProject: vi.fn(),
   setWorkbenchPreferences: vi.fn(),
 }));
 
 const runtimeInfoMock = vi.mocked(getRuntimeInfo);
+
+const sourceInspection = {
+  path: "/data/orders.csv",
+  format: "csv" as const,
+  suggestedName: "orders",
+  columns: [{ name: "id", dataType: "BIGINT", nullable: true }],
+  previewRows: [[1]],
+  csvOptions: { delimiter: ",", hasHeader: true, nullValue: null, allVarchar: false },
+  warnings: [],
+};
 
 describe("Tarik workbench shell", () => {
   beforeEach(() => {
@@ -43,6 +71,57 @@ describe("Tarik workbench shell", () => {
     vi.mocked(getActiveProject).mockResolvedValue(null);
     vi.mocked(inspectProjectCatalog).mockResolvedValue({ objects: [], columns: [] });
     vi.mocked(listRecentProjects).mockResolvedValue([]);
+    vi.mocked(listSources).mockResolvedValue([]);
+    vi.mocked(cancelSourceOperation).mockResolvedValue(true);
+    vi.mocked(chooseSourceFile).mockResolvedValue("/data/orders.csv");
+    vi.mocked(chooseParquetFile).mockResolvedValue("/data/replacement.parquet");
+    vi.mocked(inspectSourceFile).mockResolvedValue(sourceInspection);
+    vi.mocked(importSourceTable).mockResolvedValue({
+      source: {
+        id: "source-1",
+        projectId: "project-1",
+        displayName: "orders",
+        kind: "duckdb_table",
+        state: "ready",
+        sourcePath: "/data/orders.csv",
+        duckdbName: "orders",
+        options: {},
+        createdAt: "1",
+        updatedAt: "1",
+      },
+      inspection: sourceInspection,
+    });
+    vi.mocked(linkParquetSource).mockResolvedValue({
+      source: {
+        id: "source-2",
+        projectId: "project-1",
+        displayName: "orders",
+        kind: "linked_parquet",
+        state: "ready",
+        sourcePath: "/data/orders.parquet",
+        duckdbName: "orders",
+        options: {},
+        createdAt: "1",
+        updatedAt: "1",
+      },
+      inspection: { ...sourceInspection, format: "parquet", csvOptions: null },
+    });
+    vi.mocked(repairLinkedSource).mockResolvedValue({
+      source: {
+        id: "source-2",
+        projectId: "project-1",
+        displayName: "orders",
+        kind: "linked_parquet",
+        state: "ready",
+        sourcePath: "/data/replacement.parquet",
+        duckdbName: "orders",
+        options: {},
+        createdAt: "1",
+        updatedAt: "2",
+      },
+      inspection: { ...sourceInspection, format: "parquet", csvOptions: null },
+    });
+    vi.mocked(removeLinkedSource).mockResolvedValue(true);
     vi.mocked(removeProject).mockResolvedValue("deleted");
     vi.mocked(renameProject).mockResolvedValue({
       id: "project-1",
@@ -203,6 +282,53 @@ describe("Tarik workbench shell", () => {
     expect(screen.getByText("2 cols")).toBeInTheDocument();
     expect(chooseDuckDbFile).toHaveBeenCalled();
     expect(openProject).toHaveBeenCalledWith("Existing", "/data/existing.duckdb");
+  });
+
+  it("opens the CSV import wizard and imports confirmed options", async () => {
+    vi.mocked(getActiveProject).mockResolvedValue({
+      id: "project-1",
+      name: "Local analysis",
+      duckdbPath: "/data/project.duckdb",
+    });
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Import file" }));
+    expect(await screen.findByRole("dialog", { name: "Add local source" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Import table" }));
+
+    await waitFor(() => expect(importSourceTable).toHaveBeenCalled());
+    expect(chooseSourceFile).toHaveBeenCalled();
+    expect(inspectSourceFile).toHaveBeenCalledWith("/data/orders.csv");
+  });
+
+  it("repairs a missing linked source from its explorer row", async () => {
+    const activeProject = {
+      id: "project-1",
+      name: "Local analysis",
+      duckdbPath: "/data/project.duckdb",
+    };
+    vi.mocked(getActiveProject).mockResolvedValue(activeProject);
+    vi.mocked(listSources).mockResolvedValue([
+      {
+        id: "source-2",
+        projectId: "project-1",
+        displayName: "orders",
+        kind: "linked_parquet",
+        state: "missing",
+        sourcePath: "/data/missing.parquet",
+        duckdbName: "orders",
+        options: {},
+        createdAt: "1",
+        updatedAt: "1",
+      },
+    ]);
+    render(<App />);
+
+    fireEvent.click(await screen.findByTitle("/data/missing.parquet"));
+
+    await waitFor(() =>
+      expect(repairLinkedSource).toHaveBeenCalledWith("source-2", "/data/replacement.parquet"),
+    );
   });
 
   it("collapses and expands the source explorer", () => {

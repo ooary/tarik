@@ -3,28 +3,42 @@ import { CaretDownIcon, CaretUpIcon, DatabaseIcon, DotsThreeIcon, FileIcon, List
 import { useEffect, useRef, useState } from "react";
 import "./App.css";
 import { ContextMenu, Dialog } from "./components/ui";
+import { ImportDialog, type SourceAction } from "./features/sources/ImportDialog";
 import {
   createWorkbenchPreferencesRepository,
   defaultWorkbenchPreferences,
   type WorkbenchPreferences,
 } from "./app/preferences";
 import {
+  cancelSourceOperation,
   chooseDuckDbFile,
+  chooseParquetFile,
+  chooseSourceFile,
   closeProject,
   createProject,
   getActiveProject,
   getRuntimeInfo,
   getWorkbenchPreferences,
+  importSourceTable,
   inspectProjectCatalog,
+  inspectSourceFile,
+  linkParquetSource,
   listRecentProjects,
+  listSources,
   openProject,
+  removeLinkedSource,
   removeProject,
+  repairLinkedSource,
   renameProject,
   reopenRecentProject,
   setWorkbenchPreferences,
   type ActiveProject,
+  type CsvOptions,
+  type ImportOptions,
   type ProjectCatalog,
   type RecentProject,
+  type SourceInspection,
+  type SourceRecord,
   type RuntimeInfo,
 } from "./lib/commands";
 
@@ -68,6 +82,10 @@ function App() {
   const [project, setProject] = useState<ActiveProject | null>(null);
   const [catalog, setCatalog] = useState<ProjectCatalog>({ objects: [], columns: [] });
   const [recentProjects, setRecentProjects] = useState<RecentProject[]>([]);
+  const [sources, setSources] = useState<SourceRecord[]>([]);
+  const [sourceInspection, setSourceInspection] = useState<SourceInspection | null>(null);
+  const [sourceBusy, setSourceBusy] = useState(false);
+  const [sourceError, setSourceError] = useState<string | null>(null);
   const [projectError, setProjectError] = useState<string | null>(null);
   const [preferencesReady, setPreferencesReady] = useState(false);
   const [preferences, setPreferences] = useState<WorkbenchPreferences>(defaultWorkbenchPreferences);
@@ -134,9 +152,14 @@ function App() {
       .then((activeProject) => {
         if (!active || !activeProject) return;
         setProject(activeProject);
-        return inspectProjectCatalog().then((projectCatalog) => {
-          if (active) setCatalog(projectCatalog);
-        });
+        return Promise.all([inspectProjectCatalog(), listSources(activeProject.id)]).then(
+          ([projectCatalog, projectSources]) => {
+            if (active) {
+              setCatalog(projectCatalog);
+              setSources(projectSources);
+            }
+          },
+        );
       })
       .catch(() => undefined);
 
@@ -170,6 +193,15 @@ function App() {
     );
   }, [preferences.bottomPanelHeight, preferences.sidebarWidth]);
 
+  async function refreshProjectData(activeProject: ActiveProject) {
+    const [projectCatalog, projectSources] = await Promise.all([
+      inspectProjectCatalog(),
+      listSources(activeProject.id),
+    ]);
+    setCatalog(projectCatalog);
+    setSources(projectSources);
+  }
+
   async function createLocalProject() {
     const name = window.prompt("Project name", "Local analysis")?.trim();
     if (!name) return;
@@ -177,7 +209,7 @@ function App() {
     try {
       const activeProject = await createProject(name);
       setProject(activeProject);
-      setCatalog(await inspectProjectCatalog());
+      await refreshProjectData(activeProject);
       setRecentProjects(await listRecentProjects());
     } catch (error) {
       setProjectError(String(error));
@@ -194,7 +226,7 @@ function App() {
     try {
       const activeProject = await openProject(name, duckdbPath);
       setProject(activeProject);
-      setCatalog(await inspectProjectCatalog());
+      await refreshProjectData(activeProject);
       setRecentProjects(await listRecentProjects());
     } catch (error) {
       setProjectError(String(error));
@@ -206,7 +238,7 @@ function App() {
     try {
       const activeProject = await reopenRecentProject(recent.id);
       setProject(activeProject);
-      setCatalog(await inspectProjectCatalog());
+      await refreshProjectData(activeProject);
       setRecentProjects(await listRecentProjects());
     } catch (error) {
       setProjectError(String(error));
@@ -219,9 +251,76 @@ function App() {
       await closeProject();
       setProject(null);
       setCatalog({ objects: [], columns: [] });
+      setSources([]);
       setRecentProjects(await listRecentProjects());
     } catch (error) {
       setProjectError(String(error));
+    }
+  }
+
+  async function beginSourceImport() {
+    if (!project) return;
+    const path = await chooseSourceFile();
+    if (!path) return;
+    setSourceError(null);
+    try {
+      setSourceInspection(await inspectSourceFile(path));
+    } catch (error) {
+      setSourceError(String(error));
+    }
+  }
+
+  async function reinspectCsv(options: CsvOptions) {
+    if (!sourceInspection) return;
+    try {
+      setSourceInspection(await inspectSourceFile(sourceInspection.path, options));
+      setSourceError(null);
+    } catch (error) {
+      setSourceError(String(error));
+    }
+  }
+
+  async function submitSource(action: SourceAction, options: ImportOptions) {
+    if (!project || !sourceInspection) return;
+    setSourceBusy(true);
+    setSourceError(null);
+    try {
+      if (action === "link") {
+        await linkParquetSource(sourceInspection.path, options.tableName);
+      } else {
+        await importSourceTable(sourceInspection.path, options);
+      }
+      await refreshProjectData(project);
+      setSourceInspection(null);
+    } catch (error) {
+      setSourceError(String(error));
+    } finally {
+      setSourceBusy(false);
+    }
+  }
+
+  async function repairSource(source: SourceRecord) {
+    if (!project) return;
+    const replacement = await chooseParquetFile();
+    if (!replacement) return;
+    setSourceError(null);
+    try {
+      await repairLinkedSource(source.id, replacement);
+      await refreshProjectData(project);
+    } catch (error) {
+      setSourceError(String(error));
+    }
+  }
+
+  async function removeSource(source: SourceRecord) {
+    if (!project) return;
+    if (!window.confirm(`Remove linked source "${source.displayName}"?\n\nThe Parquet file is preserved.`)) return;
+    setSourceError(null);
+    try {
+      await removeLinkedSource(source.id);
+      await refreshProjectData(project);
+    } catch (error) {
+      setSourceError(String(error));
     }
   }
 
@@ -233,6 +332,7 @@ function App() {
       await renameProject(recent.id, newName);
       setProject(null);
       setCatalog({ objects: [], columns: [] });
+      setSources([]);
       setRecentProjects(await listRecentProjects());
     } catch (error) {
       setProjectError(String(error));
@@ -251,6 +351,7 @@ function App() {
       await removeProject(recent.id);
       setProject(null);
       setCatalog({ objects: [], columns: [] });
+      setSources([]);
       setRecentProjects(await listRecentProjects());
     } catch (error) {
       setProjectError(String(error));
@@ -358,6 +459,44 @@ function App() {
                     );
                   })
                 )}
+                {sources.filter((source) => source.kind === "linked_parquet").length > 0 && (
+                  <>
+                    <div className="tree-section-title tree-section-spaced">Linked sources</div>
+                    {sources
+                      .filter((source) => source.kind === "linked_parquet")
+                      .map((source) => (
+                        <ContextMenu
+                          items={[
+                            {
+                              disabled: source.state !== "missing",
+                              label: "Locate replacement",
+                              onSelect: () => repairSource(source),
+                            },
+                            {
+                              danger: false,
+                              label: "Remove link",
+                              onSelect: () => removeSource(source),
+                            },
+                          ]}
+                          key={source.id}
+                          label={`${source.displayName} source actions`}
+                        >
+                          <button
+                            className={`tree-row ${source.state === "missing" ? "source-row-missing" : ""}`}
+                            onClick={() => source.state === "missing" && repairSource(source)}
+                            title={source.sourcePath ?? source.displayName}
+                            type="button"
+                          >
+                            <SourceIcon kind="table" />
+                            <span>{source.displayName}</span>
+                            <span className="row-meta">
+                              {source.state === "missing" ? "Missing" : "Linked"}
+                            </span>
+                          </button>
+                        </ContextMenu>
+                      ))}
+                  </>
+                )}
               </>
             ) : (
               <>
@@ -401,10 +540,15 @@ function App() {
               </>
             )}
             {projectError && <p className="catalog-error" role="alert">{projectError}</p>}
+            {sourceError && !sourceInspection && (
+              <p className="catalog-error" role="alert">{sourceError}</p>
+            )}
           </div>
 
           <div className="explorer-footer">
-            <button className="footer-action" disabled={!project} type="button">Import file</button>
+            <button className="footer-action" disabled={!project} onClick={beginSourceImport} type="button">
+              Import file
+            </button>
             <button className="footer-action" disabled={!project} type="button">New table</button>
           </div>
         </aside>
@@ -476,6 +620,22 @@ function App() {
           </div>
         </section>
       </div>
+
+      {sourceInspection && (
+        <ImportDialog
+          key={`${sourceInspection.path}:${sourceInspection.csvOptions?.delimiter ?? "parquet"}:${sourceInspection.csvOptions?.hasHeader ?? true}:${sourceInspection.csvOptions?.allVarchar ?? false}:${sourceInspection.csvOptions?.nullValue ?? ""}`}
+          busy={sourceBusy}
+          error={sourceError}
+          inspection={sourceInspection}
+          onCancel={() => cancelSourceOperation()}
+          onClose={() => {
+            setSourceInspection(null);
+            setSourceError(null);
+          }}
+          onInspectCsv={reinspectCsv}
+          onSubmit={submitSource}
+        />
+      )}
 
       <footer className="status-bar">
         <span className="status-bar-left"><span className={`status-mark ${project ? "" : "status-mark-idle"}`} aria-hidden="true" /> {project ? `Connected to ${project.name}` : runtime.kind === "ready" ? "No DuckDB project open" : "Starting Tarik"}</span>

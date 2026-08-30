@@ -54,6 +54,62 @@ export interface ProjectCatalog {
   columns: CatalogColumn[];
 }
 
+export type SourceFormat = "csv" | "parquet";
+export type SourceKind = "duckdb_table" | "linked_parquet" | "linked_csv";
+export type SourceState = "ready" | "missing" | "invalid_schema";
+
+export interface CsvOptions {
+  delimiter: string;
+  hasHeader: boolean;
+  nullValue: string | null;
+  allVarchar: boolean;
+}
+
+export interface SourceColumn {
+  name: string;
+  dataType: string;
+  nullable: boolean;
+}
+
+export interface SourceInspection {
+  path: string;
+  format: SourceFormat;
+  suggestedName: string;
+  columns: SourceColumn[];
+  previewRows: unknown[][];
+  csvOptions: CsvOptions | null;
+  warnings: string[];
+}
+
+export interface ColumnOverride {
+  column: string;
+  dataType: string;
+}
+
+export interface ImportOptions {
+  tableName: string;
+  csv: CsvOptions | null;
+  columnOverrides: ColumnOverride[];
+}
+
+export interface SourceRecord {
+  id: string;
+  projectId: string;
+  displayName: string;
+  kind: SourceKind;
+  state: SourceState;
+  sourcePath: string | null;
+  duckdbName: string;
+  options: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SourceMutationResult {
+  source: SourceRecord;
+  inspection: SourceInspection;
+}
+
 export type InvokeCommand = <T>(command: string, args?: Record<string, unknown>) => Promise<T>;
 
 export function getRuntimeInfo(invokeCommand: InvokeCommand = invoke): Promise<RuntimeInfo> {
@@ -120,6 +176,30 @@ export function removeProject(
   return invokeCommand<ProjectRemoval>("remove_project", { projectId });
 }
 
+export function chooseSourceFile(): Promise<string | null> {
+  return openFileDialog({
+    multiple: false,
+    directory: false,
+    title: "Choose CSV or Parquet source",
+    filters: [
+      { name: "Data source", extensions: ["csv", "parquet", "pq"] },
+      { name: "CSV", extensions: ["csv"] },
+      { name: "Parquet", extensions: ["parquet", "pq"] },
+    ],
+  });
+}
+
+export function chooseParquetFile(
+  title = "Choose replacement Parquet file",
+): Promise<string | null> {
+  return openFileDialog({
+    multiple: false,
+    directory: false,
+    title,
+    filters: [{ name: "Parquet", extensions: ["parquet", "pq"] }],
+  });
+}
+
 export function chooseDuckDbFile(): Promise<string | null> {
   return openFileDialog({
     multiple: false,
@@ -143,4 +223,54 @@ export function inspectProjectCatalog(
   invokeCommand: InvokeCommand = invoke,
 ): Promise<ProjectCatalog> {
   return invokeCommand<ProjectCatalog>("inspect_project_catalog");
+}
+
+export function inspectSourceFile(
+  path: string,
+  csv: CsvOptions | null = null,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<SourceInspection> {
+  return invokeCommand<SourceInspection>("inspect_source_file", { path, csv });
+}
+
+export function linkParquetSource(
+  path: string,
+  viewName: string,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<SourceMutationResult> {
+  return invokeCommand<SourceMutationResult>("link_parquet_source", { path, viewName });
+}
+
+export function importSourceTable(
+  path: string,
+  options: ImportOptions,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<SourceMutationResult> {
+  return invokeCommand<SourceMutationResult>("import_source_table", { path, options });
+}
+
+export function listSources(
+  projectId: string,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<SourceRecord[]> {
+  return invokeCommand<SourceRecord[]>("list_sources", { projectId });
+}
+
+export function cancelSourceOperation(invokeCommand: InvokeCommand = invoke): Promise<boolean> {
+  return invokeCommand<boolean>("cancel_source_operation");
+}
+
+export function repairLinkedSource(
+  sourceId: string,
+  replacement: string,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<SourceMutationResult> {
+  return invokeCommand<SourceMutationResult>("repair_linked_source", { sourceId, replacement });
+}
+
+export function removeLinkedSource(
+  sourceId: string,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<boolean> {
+  return invokeCommand<boolean>("remove_linked_source", { sourceId });
 }

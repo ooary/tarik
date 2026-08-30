@@ -97,6 +97,46 @@ test("project lifecycle and catalog use typed commands", async () => {
   assert.equal(calls[8].command, "inspect_project_catalog");
 });
 
+test("source inspection, link, import, repair, and removal use typed commands", async () => {
+  const {
+    inspectSourceFile,
+    linkParquetSource,
+    importSourceTable,
+    listSources,
+    cancelSourceOperation,
+    repairLinkedSource,
+    removeLinkedSource,
+  } = await loadCommandsModule();
+  const calls = [];
+  const invoke = async (command, args) => {
+    calls.push({ command, args });
+    return command === "cancel_source_operation" || command === "remove_linked_source" ? true : {};
+  };
+  const csv = { delimiter: ",", hasHeader: true, nullValue: null, allVarchar: false };
+  const options = { tableName: "orders", csv, columnOverrides: [] };
+
+  await inspectSourceFile("/data/orders.csv", csv, invoke);
+  await linkParquetSource("/data/orders.parquet", "orders", invoke);
+  await importSourceTable("/data/orders.csv", options, invoke);
+  await listSources("p1", invoke);
+  assert.equal(await cancelSourceOperation(invoke), true);
+  await repairLinkedSource("s1", "/data/replacement.parquet", invoke);
+  assert.equal(await removeLinkedSource("s1", invoke), true);
+
+  assert.deepEqual(
+    calls.map((call) => call.command),
+    [
+      "inspect_source_file",
+      "link_parquet_source",
+      "import_source_table",
+      "list_sources",
+      "cancel_source_operation",
+      "repair_linked_source",
+      "remove_linked_source",
+    ],
+  );
+});
+
 test("getAppDirectories invokes the typed path command", async () => {
   const { getAppDirectories } = await loadCommandsModule();
   const expected = {
