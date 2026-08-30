@@ -1,0 +1,14 @@
+[package]
+name = "tarik-arrow-page-format"
+description = "Bounded Arrow IPC/Parquet result-page interchange used by engine adapters and the desktop app"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tarik-engine-protocol = { path = "../engine-protocol" }
