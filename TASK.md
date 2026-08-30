@@ -756,7 +756,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
     - Summary refreshes when CSV parsing options change.
   - Tests: dropdown choices/submission, exact Parquet count, exact small CSV count, estimated large CSV count, compact formatting boundaries, exact post-import metadata count.
   - Commit: `fix(import): add controlled types and row summary`
-  - Implementation commit: 
+  - Implementation commit: `c355ce2`
 
 ---
 
