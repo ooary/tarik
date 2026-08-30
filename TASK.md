@@ -838,7 +838,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
 
 ## EPIC E5.5 — Engine protocol and DuckDB sidecar adapter
 
-**Status:** `REVIEW` - T1-T6 implemented; waiting for manual build/process/sidecar review before E6.
+**Status:** `APPROVED` (2026-08-30) - T1-T6 implemented; sidecar verified end-to-end by manual review (project open/create, CSV import, Parquet link, clean shutdown). Follow-ups recorded in Remaining E5.5 follow-ups.
 
 **Outcome:** A capability-driven engine protocol with a long-running DuckDB sidecar adapter, so normal Tauri builds exclude database drivers and DuckDB compiles without bundled C++.
 
