@@ -51,6 +51,9 @@ pub struct ExecutionView {
     pub rows_produced: Option<u64>,
     pub rows_affected: Option<u64>,
     pub error: Option<ExecutionErrorView>,
+    /// Bounded result metadata once the execution succeeded with a row set.
+    pub result_id: Option<String>,
+    pub row_total: Option<u64>,
 }
 
 struct ExecutionRecord {
@@ -62,6 +65,8 @@ struct ExecutionRecord {
     rows_produced: Option<u64>,
     rows_affected: Option<u64>,
     error: Option<ExecutionErrorView>,
+    result_id: Option<String>,
+    row_total: Option<u64>,
     history_written: bool,
 }
 
@@ -76,6 +81,8 @@ impl ExecutionRecord {
             rows_produced: self.rows_produced,
             rows_affected: self.rows_affected,
             error: self.error.clone(),
+            result_id: self.result_id.clone(),
+            row_total: self.row_total,
         }
     }
 }
@@ -130,6 +137,8 @@ impl QueryCoordinator {
                 rows_produced: None,
                 rows_affected: None,
                 error: None,
+                result_id: None,
+                row_total: None,
                 history_written: false,
             },
         );
@@ -221,6 +230,9 @@ impl QueryCoordinator {
                             if let Some(record) = executions.get_mut(execution_id) {
                                 record.rows_produced = status.rows_produced;
                                 record.rows_affected = status.rows_affected;
+                                record.result_id =
+                                    status.result.as_ref().map(|r| r.result_id.clone());
+                                record.row_total = status.result.as_ref().map(|r| r.row_count);
                             }
                         }
                         self.mark_terminal(execution_id, ExecutionState::Succeeded, None);
@@ -382,6 +394,7 @@ mod tests {
             rows_affected: None,
             error: (state == ExecutionState::Failed)
                 .then(|| ErrorEnvelope::new("sql.parse", "syntax error near FROM")),
+            result: None,
         }
     }
 

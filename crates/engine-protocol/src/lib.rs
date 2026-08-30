@@ -251,6 +251,10 @@ pub struct ExecutionStatus {
     /// Rows changed by DML statements when no result set was produced.
     pub rows_affected: Option<u64>,
     pub error: Option<ErrorEnvelope>,
+    /// Published bounded result metadata once the execution succeeded with
+    /// a row set.
+    #[serde(default)]
+    pub result: Option<ResultInfo>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

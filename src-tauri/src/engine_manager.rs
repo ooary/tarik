@@ -281,6 +281,32 @@ impl EngineManager {
         }
     }
 
+    /// Read one bounded page window of a published result.
+    pub fn result_page(
+        &self,
+        result_id: &str,
+        offset: u64,
+        max_rows: u32,
+    ) -> Result<serde_json::Value, String> {
+        self.raw_request(
+            "result.get_page",
+            serde_json::json!({
+                "resultId": result_id,
+                "offset": offset,
+                "maxRows": max_rows,
+            }),
+        )
+    }
+
+    /// Delete a published result and its page artifacts.
+    pub fn release_result(&self, result_id: &str) -> Result<(), String> {
+        self.raw_request(
+            "result.release",
+            serde_json::json!({ "resultId": result_id }),
+        )
+        .map(|_| ())
+    }
+
     pub fn shutdown(&self) {
         if let Ok(mut guard) = self.process.lock() {
             if let Some(process) = guard.take() {

@@ -963,7 +963,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
     - `session.close` first cancels the session's queued/running jobs so closing cannot strand work. Result-page cleanup on cancellation lands with E6-T3, which owns page artifacts.
     - Integration tests cover queued-cancel removal, active interrupt with the session remaining usable afterwards, already-finished cancel, and repeated cancellation.
 
-- [ ] **E6-T3 Wire bounded result paging through the engine client**
+- [x] **E6-T3 Wire bounded result paging through the engine client** — owner: lead-agent
   - Depends on: E6-T1, E5.5-T2, E0-T4
   - Owns: `src-tauri/src/results/`, bounded page reader
   - Deliverables:
@@ -972,6 +972,12 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
     - Bounded page cache with configurable maximum and spill to cache directory.
     - Result metadata returned separately from page data.
     - Explicit result release command.
+  - Acceptance: backend never collects the full result solely for UI display.
+  - Tests: multi-batch query, eviction, spill/readback, close cleanup, query error.
+  - Commit: `feat(results): add bounded result paging`
+  - Notes:
+    - Engine (`engines/duckdb/src/pages.rs`): the job worker streams record batches into Arrow IPC page files of at most 500 rows and roughly 4 MiB (rows per page shrink for wide rows). Pages are written to `<cacheDir>/<executionId>.tmp/` and atomically published by rename; failure/cancel discards temporary directories. `result.get_page` reads the page files covering the requested window, stitches pages, and converts cells to JSON-safe values (JS-safe numbers, booleans, strings; >64 KiB strings truncate with `truncatedCells`; decimals/date-times/binary/nested become display strings; integers beyond 2^53 cross as strings). `result.release` deletes the directory and registry entry. Arrow stays inside the engine process; the desktop receives JSON only.
+    - Desktop: `src-tauri/src/results/` proxies page reads behind `ResultStore`, a bounded LRU (12 decoded pages across results) with aligned offsets and release-driven eviction. The execution view now carries `resultId`/`rowTotal` from engine result metadata.
   - Acceptance: backend never collects the full result solely for UI display.
   - Tests: multi-batch query, eviction, spill/readback, close cleanup, query error.
   - Commit: `feat(results): add bounded result paging`

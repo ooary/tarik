@@ -300,17 +300,6 @@ export interface ExecutionError {
   message: string;
 }
 
-export interface ExecutionView {
-  executionId: string;
-  projectId: string;
-  tabId: string;
-  state: ExecutionState;
-  durationMs: number;
-  rowsProduced: number | null;
-  rowsAffected: number | null;
-  error: ExecutionError | null;
-}
-
 export function executeQuery(
   projectId: string,
   tabId: string,
@@ -334,11 +323,50 @@ export function cancelQuery(
   return invokeCommand<ExecutionView>("cancel_query", { executionId });
 }
 
+export interface ExecutionView {
+  executionId: string;
+  projectId: string;
+  tabId: string;
+  state: ExecutionState;
+  durationMs: number;
+  rowsProduced: number | null;
+  rowsAffected: number | null;
+  error: ExecutionError | null;
+  resultId: string | null;
+  rowTotal: number | null;
+}
+
+export interface ResultPageView {
+  resultId: string;
+  offset: number;
+  rowTotal: number;
+  rowTotalExact: boolean;
+  columns: unknown;
+  rows: unknown[][];
+  truncatedCells: [number, number][];
+  cached: boolean;
+}
+
 export function forgetTabExecution(
   tabId: string,
   invokeCommand: InvokeCommand = invoke,
 ): Promise<void> {
   return invokeCommand<void>("forget_tab_execution", { tabId });
+}
+
+export function getResultPage(
+  resultId: string,
+  offset: number,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<ResultPageView> {
+  return invokeCommand<ResultPageView>("get_result_page", { resultId, offset });
+}
+
+export function releaseResult(
+  resultId: string,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<void> {
+  return invokeCommand<void>("release_result", { resultId });
 }
 
 export function saveQuerySession(

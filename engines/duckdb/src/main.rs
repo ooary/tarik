@@ -1,6 +1,7 @@
 mod catalog;
 mod error;
 mod jobs;
+mod pages;
 mod session;
 mod sources;
 mod sql;
@@ -170,8 +171,15 @@ fn dispatch(
             let session_id = required_string(params, "sessionId")?;
             let execution_id = required_string(params, "executionId")?;
             let sql = required_string(params, "sql")?;
+            let cache_dir = params.get("cacheDir").and_then(Value::as_str);
             let connection = sessions.get(&session_id)?.try_clone()?;
-            jobs.execute(&session_id, &execution_id, &sql, connection)?;
+            jobs.execute(
+                &session_id,
+                &execution_id,
+                &sql,
+                connection,
+                cache_dir.map(std::path::Path::new),
+            )?;
             Ok(serde_json::json!({
                 "executionId": execution_id,
                 "state": "queued",
@@ -186,6 +194,34 @@ fn dispatch(
             let execution_id = required_string(params, "executionId")?;
             let status = jobs.cancel(&execution_id)?;
             Ok(serde_json::to_value(status)?)
+        }
+        "result.get_page" => {
+            let result_id = required_string(params, "resultId")?;
+            let offset = params.get("offset").and_then(Value::as_u64).unwrap_or(0);
+            let max_rows = params
+                .get("maxRows")
+                .and_then(Value::as_u64)
+                .unwrap_or(u64::from(pages::DEFAULT_PAGE_ROWS))
+                .clamp(1, 5_000) as u32;
+            let (result, page) = jobs.get_page(&result_id, offset, max_rows)?;
+            Ok(serde_json::json!({
+                "resultId": result_id,
+                "offset": offset,
+                "rowTotal": result.row_count,
+                "rowTotalExact": result.row_count_exact,
+                "columns": result.columns,
+                "rows": page.values,
+                "truncatedCells": page
+                    .truncated_cells
+                    .iter()
+                    .map(|(r, c)| [r, c])
+                    .collect::<Vec<_>>(),
+            }))
+        }
+        "result.release" => {
+            let result_id = required_string(params, "resultId")?;
+            jobs.release_result(&result_id)?;
+            Ok(Value::Null)
         }
         "engine.ping" => Ok(Value::String("pong".into())),
         _ => Err(EngineError::MethodNotFound(request.method.clone())),

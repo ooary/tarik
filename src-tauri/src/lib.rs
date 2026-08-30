@@ -3,6 +3,7 @@ mod metadata;
 mod paths;
 mod projects;
 mod query;
+mod results;
 
 use std::{
     path::{Path, PathBuf},
@@ -82,10 +83,12 @@ pub fn run() {
                 engine.clone(),
                 database.clone(),
             ));
+            let results_store = Arc::new(results::ResultStore::new(engine.clone()));
             app.manage(database);
             app.manage(engine);
             app.manage(project_manager);
             app.manage(coordinator);
+            app.manage(results_store);
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -139,7 +142,9 @@ pub fn run() {
             query::commands::execute_query,
             query::commands::get_query_status,
             query::commands::cancel_query,
-            query::commands::forget_tab_execution
+            query::commands::forget_tab_execution,
+            results::get_result_page,
+            results::release_result
         ])
         .run(tauri::generate_context!())
         .expect("error while running Tarik");

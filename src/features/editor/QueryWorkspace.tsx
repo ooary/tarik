@@ -247,17 +247,17 @@ export const QueryWorkspace = forwardRef<QueryWorkspaceHandle, QueryWorkspacePro
           </div>
         </div>
 
-          {tabs.map((tab) =>
-            activeTabId === tab.id ? (
-              <SqlEditor
-                key={tab.id}
-                onChange={(sql) => editSql(tab.id, sql)}
-                onRun={runActiveTab}
-                tables={tables}
-                value={tab.sql}
-              />
-            ) : null,
-          )}
+        {tabs.map((tab) =>
+          activeTabId === tab.id ? (
+            <SqlEditor
+              key={tab.id}
+              onChange={(sql) => editSql(tab.id, sql)}
+              onRun={runActiveTab}
+              tables={tables}
+              value={tab.sql}
+            />
+          ) : null,
+        )}
 
         <div
           aria-hidden="true"
@@ -432,12 +432,10 @@ function ResultPanel({
       if (execution.rowsProduced != null) {
         return (
           <div className="result-state" role="status">
-            <strong>
-              Returned {execution.rowsProduced.toLocaleString("en-US")} rows
-            </strong>
+            <strong>Returned {execution.rowsProduced.toLocaleString("en-US")} rows</strong>
             <span>
-              Bounded result browsing with pages and a virtualized grid arrives
-              with the next query tasks.
+              Bounded result browsing with pages and a virtualized grid arrives with the next query
+              tasks.
             </span>
           </div>
         );

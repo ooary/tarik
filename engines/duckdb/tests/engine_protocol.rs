@@ -182,7 +182,7 @@ fn query_execute_reaches_terminal_state_and_persists_rows() {
     // Row-returning statement: execute returns queued, then status terminal.
     let enqueued = engine.assert_ok(
         "query.execute",
-        json!({ "sessionId": "qs", "executionId": "e1", "sql": "SELECT i FROM range(1, 11) t(i);" }),
+        json!({ "sessionId": "qs", "executionId": "e1", "sql": "SELECT i FROM range(1, 11) t(i);", "cacheDir": CACHE_DIR }),
     );
     assert_eq!(enqueued["state"], "queued");
 
@@ -193,7 +193,7 @@ fn query_execute_reaches_terminal_state_and_persists_rows() {
     // DML and DDL without a row set succeed with no produced rows.
     engine.assert_ok(
         "query.execute",
-        json!({ "sessionId": "qs", "executionId": "e2", "sql": "CREATE TABLE t (a INTEGER); INSERT INTO t VALUES (1), (2), (3);" }),
+        json!({ "sessionId": "qs", "executionId": "e2", "sql": "CREATE TABLE t (a INTEGER); INSERT INTO t VALUES (1), (2), (3);", "cacheDir": CACHE_DIR }),
     );
     let status = poll_terminal(&mut engine, "e2");
     assert_eq!(status["state"], "succeeded");
@@ -203,7 +203,7 @@ fn query_execute_reaches_terminal_state_and_persists_rows() {
     // Multi-statement snapshots execute sequentially; the last row set wins.
     engine.assert_ok(
         "query.execute",
-        json!({ "sessionId": "qs", "executionId": "e3", "sql": "CREATE TABLE t2 (a INTEGER); INSERT INTO t2 VALUES (1), (2), (3); SELECT count(*) AS n FROM t2;" }),
+        json!({ "sessionId": "qs", "executionId": "e3", "sql": "CREATE TABLE t2 (a INTEGER); INSERT INTO t2 VALUES (1), (2), (3); SELECT count(*) AS n FROM t2;", "cacheDir": CACHE_DIR }),
     );
     let status = poll_terminal(&mut engine, "e3");
     assert_eq!(status["state"], "succeeded");
@@ -279,6 +279,8 @@ fn poll_terminal_with_timeout(engine: &mut Engine, execution_id: &str, attempts:
     panic!("execution {execution_id} did not reach a terminal state");
 }
 
+const CACHE_DIR: &str = "/tmp/tarik-engine-test-results";
+
 const LONG_QUERY: &str = "SELECT count(*) FROM range(1_000_000_000_000) t(i);";
 
 #[test]
@@ -296,14 +298,14 @@ fn cancel_covers_queued_active_and_session_reuse() {
     // 1. A long-running query occupies the session worker.
     let enqueued = engine.assert_ok(
         "query.execute",
-        json!({ "sessionId": "cs", "executionId": "c1", "sql": LONG_QUERY }),
+        json!({ "sessionId": "cs", "executionId": "c1", "sql": LONG_QUERY, "cacheDir": CACHE_DIR }),
     );
     assert_eq!(enqueued["state"], "queued");
 
     // 2. A second submission on the same session queues behind the first.
     engine.assert_ok(
         "query.execute",
-        json!({ "sessionId": "cs", "executionId": "c2", "sql": "SELECT 41 + 1 AS answer;" }),
+        json!({ "sessionId": "cs", "executionId": "c2", "sql": "SELECT 41 + 1 AS answer;", "cacheDir": CACHE_DIR }),
     );
     let queued_status =
         engine.request("query.status", json!({ "executionId": "c2" }))["result"].clone();
@@ -326,7 +328,7 @@ fn cancel_covers_queued_active_and_session_reuse() {
     // 5. The same session accepts and completes a later query.
     engine.assert_ok(
         "query.execute",
-        json!({ "sessionId": "cs", "executionId": "c3", "sql": "SELECT 6 * 7 AS answer;" }),
+        json!({ "sessionId": "cs", "executionId": "c3", "sql": "SELECT 6 * 7 AS answer;", "cacheDir": CACHE_DIR }),
     );
     let status = poll_terminal_with_timeout(&mut engine, "c3", 400);
     assert_eq!(status["state"], "succeeded");
@@ -350,7 +352,7 @@ fn repeat_cancel_on_terminal_job_is_idempotent() {
 
     engine.assert_ok(
         "query.execute",
-        json!({ "sessionId": "cs", "executionId": "k1", "sql": "SELECT 1;" }),
+        json!({ "sessionId": "cs", "executionId": "k1", "sql": "SELECT 1;", "cacheDir": CACHE_DIR }),
     );
     let status = poll_terminal(&mut engine, "k1");
     assert_eq!(status["state"], "succeeded");
@@ -365,4 +367,116 @@ fn repeat_cancel_on_terminal_job_is_idempotent() {
 
     engine.child.kill().ok();
     let _ = std::fs::remove_file(&database);
+}
+
+#[test]
+fn paging_reads_windows_across_pages_and_release_removes_artifacts() {
+    let mut engine = spawn_engine();
+    let database = temp_path("pages", ".duckdb");
+    let cache_dir = temp_path("pages-cache", "");
+    std::fs::create_dir_all(&cache_dir).unwrap();
+    engine.assert_ok(
+        "session.open",
+        json!({
+            "sessionId": "ps",
+            "locator": { "engineId": "duckdb", "payload": { "path": database } }
+        }),
+    );
+
+    // 4999 rows -> 10 pages of 500 rows with a partial final page.
+    engine.assert_ok(
+        "query.execute",
+        json!({
+            "sessionId": "ps",
+            "executionId": "p1",
+            "sql": "SELECT i, 'label-' || (i % 7) AS label FROM range(1, 5000) t(i);",
+            "cacheDir": cache_dir,
+        }),
+    );
+    let status = poll_terminal(&mut engine, "p1");
+    assert_eq!(status["state"], "succeeded");
+    assert_eq!(status["result"]["rowCount"], 4999);
+    assert_eq!(status["result"]["rowId"], Value::Null); // unknown fields ignored
+    let columns = status["result"]["columns"].as_array().unwrap();
+    assert_eq!(columns.len(), 2);
+    assert_eq!(columns[0]["name"], "i");
+    assert_eq!(columns[0]["logicalType"], "integer");
+
+    // First page: 500 rows starting at i = 1.
+    let page = engine
+        .assert_ok("result.get_page", json!({ "resultId": "p1", "offset": 0 }))
+        .clone();
+    assert_eq!(page["rows"].as_array().unwrap().len(), 500);
+    assert_eq!(page["rows"][0][0], 1);
+    assert_eq!(page["rowTotal"], 4999);
+
+    // A window that straddles a page boundary stitches both files together.
+    let page = engine
+        .assert_ok(
+            "result.get_page",
+            json!({ "resultId": "p1", "offset": 490 }),
+        )
+        .clone();
+    let rows = page["rows"].as_array().unwrap();
+    assert_eq!(rows.len(), 500);
+    assert_eq!(rows[0][0], 491);
+    assert_eq!(rows[499][0], 990);
+
+    // The final partial page returns the remaining rows.
+    let page = engine
+        .assert_ok(
+            "result.get_page",
+            json!({ "resultId": "p1", "offset": 4500 }),
+        )
+        .clone();
+    let rows = page["rows"].as_array().unwrap();
+    assert_eq!(rows.len(), 499);
+    assert_eq!(rows[498][0], 4999);
+
+    // Releasing removes the artifacts; further page reads fail.
+    engine.assert_ok("result.release", json!({ "resultId": "p1" }));
+    assert_eq!(
+        engine.request("result.get_page", json!({ "resultId": "p1", "offset": 0 }))["error"]
+            ["code"],
+        "result.missing"
+    );
+
+    // Wide rows shrink the page size to stay under the byte target.
+    engine.assert_ok(
+        "query.execute",
+        json!({
+            "sessionId": "ps",
+            "executionId": "p2",
+            "sql": "SELECT repeat('x', 20000) AS wide FROM range(1, 3000) t(i);",
+            "cacheDir": cache_dir,
+        }),
+    );
+    let status = poll_terminal(&mut engine, "p2");
+    assert_eq!(status["state"], "succeeded");
+    assert_eq!(status["result"]["rowCount"], 2999);
+    let _ = engine.assert_ok("result.get_page", json!({ "resultId": "p2", "offset": 0 }));
+    // Every page artifact stays under the byte target even with 20 KB rows.
+    let result_dir = cache_dir.join("p2");
+    for entry in std::fs::read_dir(&result_dir).unwrap().flatten() {
+        let size = entry.metadata().unwrap().len();
+        assert!(size <= 5 * 1024 * 1024, "page artifact too large: {size}");
+    }
+
+    // A failed query leaves no result artifacts behind.
+    engine.assert_ok(
+        "query.execute",
+        json!({ "sessionId": "ps", "executionId": "p3", "sql": "SELECT not_a_column", "cacheDir": cache_dir }),
+    );
+    let status = poll_terminal(&mut engine, "p3");
+    assert_eq!(status["state"], "failed");
+    let leftovers: Vec<_> = std::fs::read_dir(&cache_dir)
+        .unwrap()
+        .filter_map(|entry| entry.ok())
+        .filter(|entry| entry.file_name().to_string_lossy().contains(".tmp"))
+        .collect();
+    assert!(leftovers.is_empty(), "temporary page dirs leaked");
+
+    engine.child.kill().ok();
+    let _ = std::fs::remove_file(&database);
+    let _ = std::fs::remove_dir_all(&cache_dir);
 }

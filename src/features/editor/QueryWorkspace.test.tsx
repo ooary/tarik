@@ -28,19 +28,23 @@ const runningView = {
   rowsProduced: 1000,
   rowsAffected: null,
   error: null,
+  resultId: null,
+  rowTotal: null,
 };
 const succeededView = {
   ...runningView,
   state: "succeeded" as const,
   durationMs: 1820,
   rowsProduced: 24318,
+  resultId: "res-1",
+  rowTotal: 24318,
 };
 const failedView = {
   ...runningView,
   state: "failed" as const,
   durationMs: 40,
   rowsProduced: null,
-  error: { code: "sql.parse", message: "syntax error at or near \"FORM\"" },
+  error: { code: "sql.parse", message: 'syntax error at or near "FORM"' },
 };
 
 const catalog = {
@@ -108,12 +112,10 @@ describe("QueryWorkspace", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: /Run query/ }));
-    expect(executeQuery).toHaveBeenCalledWith(
-      "p1",
-      expect.any(String),
-      expect.any(String),
-    );
-    expect(await screen.findByText("Running", { selector: ".result-state strong" })).toBeInTheDocument();
+    expect(executeQuery).toHaveBeenCalledWith("p1", expect.any(String), expect.any(String));
+    expect(
+      await screen.findByText("Running", { selector: ".result-state strong" }),
+    ).toBeInTheDocument();
     expect(await screen.findByText(/1,000 rows produced so far/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Cancel" })).toBeInTheDocument();
     expect(container.querySelector(".tab-count")).toHaveTextContent("1,000");
@@ -158,9 +160,7 @@ describe("QueryWorkspace", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /Run query/ }));
     expect(await screen.findByText("sql.parse")).toBeInTheDocument();
-    expect(
-      await screen.findByText(/syntax error at or near "FORM"/),
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/syntax error at or near "FORM"/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Cancel" })).not.toBeInTheDocument();
   });
 

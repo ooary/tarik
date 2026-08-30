@@ -127,23 +127,20 @@ export function useQueryExecution(projectId: string): {
     [executions, patch],
   );
 
-  const forget = useCallback(
-    (tabId: string) => {
-      const timer = timers.current.get(tabId);
-      if (timer !== undefined) {
-        window.clearTimeout(timer);
-        timers.current.delete(tabId);
-      }
-      setExecutions((current) => {
-        if (!(tabId in current)) return current;
-        const next = { ...current };
-        delete next[tabId];
-        return next;
-      });
-      Promise.resolve(forgetTabExecution(tabId)).catch(() => undefined);
-    },
-    [],
-  );
+  const forget = useCallback((tabId: string) => {
+    const timer = timers.current.get(tabId);
+    if (timer !== undefined) {
+      window.clearTimeout(timer);
+      timers.current.delete(tabId);
+    }
+    setExecutions((current) => {
+      if (!(tabId in current)) return current;
+      const next = { ...current };
+      delete next[tabId];
+      return next;
+    });
+    Promise.resolve(forgetTabExecution(tabId)).catch(() => undefined);
+  }, []);
 
   return { executions, run, cancel, forget };
 }

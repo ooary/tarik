@@ -1,5 +1,20 @@
 use std::path::PathBuf;
 
+/// Either a filesystem error or an Arrow/IPC error behind one code.
+#[derive(Debug, thiserror::Error)]
+pub enum CacheErrorSource {
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
+    #[error("arrow error: {0}")]
+    Arrow(String),
+}
+
+impl From<duckdb::arrow::error::ArrowError> for CacheErrorSource {
+    fn from(value: duckdb::arrow::error::ArrowError) -> Self {
+        Self::Arrow(value.to_string())
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum EngineError {
     #[error("session already exists: {0}")]
@@ -10,12 +25,21 @@ pub enum EngineError {
     ExecutionExists(String),
     #[error("execution does not exist: {0}")]
     ExecutionMissing(String),
+    #[error("result does not exist: {0}")]
+    ResultMissing(String),
     #[error("invalid query request: {0}")]
     InvalidQuery(&'static str),
     #[error("could not spawn job worker: {0}")]
     WorkerSpawn(String),
     #[error("engine job registry state is unavailable")]
     RegistryPoisoned,
+    #[error("result cache error at {path}: {source}")]
+    CacheIo {
+        path: PathBuf,
+        source: CacheErrorSource,
+    },
+    #[error("result display conversion failed: {0}")]
+    CacheDisplay(String),
     #[error("source file does not exist: {0}")]
     Missing(PathBuf),
     #[error("unsupported source type: {0}")]
@@ -57,9 +81,11 @@ impl EngineError {
             Self::SessionMissing(_) => "session.missing",
             Self::ExecutionExists(_) => "execution.exists",
             Self::ExecutionMissing(_) => "execution.missing",
+            Self::ResultMissing(_) => "result.missing",
             Self::InvalidQuery(_) => "query.invalid",
             Self::WorkerSpawn(_) => "engine.worker_spawn",
             Self::RegistryPoisoned => "engine.registry",
+            Self::CacheIo { .. } | Self::CacheDisplay(_) => "cache.io",
             Self::Missing(_) => "source.missing",
             Self::Unsupported(_) => "source.unsupported",
             Self::InvalidPath(_) => "source.invalid_path",
