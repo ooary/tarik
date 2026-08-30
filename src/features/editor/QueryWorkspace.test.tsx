@@ -5,6 +5,7 @@ import {
   cancelQuery,
   executeQuery,
   getQueryStatus,
+  getResultPage,
   loadQuerySession,
   saveQuerySession,
 } from "../../lib/commands";
@@ -17,7 +18,26 @@ vi.mock("../../lib/commands", () => ({
   getQueryStatus: vi.fn(),
   cancelQuery: vi.fn(),
   forgetTabExecution: vi.fn(),
+  getResultPage: vi.fn(),
+  releaseResult: vi.fn(),
 }));
+
+const firstPage = {
+  resultId: "res-1",
+  offset: 0,
+  rowTotal: 24318,
+  rowTotalExact: true,
+  columns: [
+    { name: "country", logicalType: "string", nativeType: "Utf8", nullable: true },
+    { name: "orders", logicalType: "integer", nativeType: "Int64", nullable: true },
+  ],
+  rows: [
+    ["Singapore", 6842],
+    ["Indonesia", 11204],
+  ],
+  truncatedCells: [],
+  cached: false,
+};
 
 const runningView = {
   executionId: "exec-1",
@@ -67,6 +87,7 @@ describe("QueryWorkspace", () => {
     vi.mocked(executeQuery).mockResolvedValue({ ...runningView, tabId: "t1" });
     vi.mocked(getQueryStatus).mockResolvedValue({ ...succeededView, tabId: "t1" });
     vi.mocked(cancelQuery).mockResolvedValue({ ...runningView, tabId: "t1" });
+    vi.mocked(getResultPage).mockResolvedValue({ ...firstPage });
   });
 
   it("adds tabs and exposes SQL insertion/preview actions", async () => {
@@ -121,7 +142,7 @@ describe("QueryWorkspace", () => {
     expect(container.querySelector(".tab-count")).toHaveTextContent("1,000");
   });
 
-  it("shows the succeeded summary with the returned row count", async () => {
+  it("renders the virtualized grid after a successful run", async () => {
     const { container } = render(
       <QueryWorkspace
         activePanel="results"
@@ -136,11 +157,36 @@ describe("QueryWorkspace", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: /Run query/ }));
-    expect(
-      await screen.findByText(/Returned 24,318 rows/, { selector: ".result-state strong" }),
-    ).toBeInTheDocument();
+    await waitFor(() => expect(getResultPage).toHaveBeenCalledWith("res-1", 0));
+    expect(await screen.findByRole("grid", { name: "Query results" })).toBeInTheDocument();
     expect(container.querySelector(".result-duration")).toHaveTextContent("Completed in 1.8s");
-    expect(screen.queryByText("Copy visible rows")).not.toBeInTheDocument();
+  });
+
+  it("keeps the grid DOM bounded while browsing a large result", async () => {
+    const pageWithRows = {
+      ...firstPage,
+      rows: Array.from({ length: 500 }, (_, index) => [index + 1, `label-${index}`]),
+    };
+    vi.mocked(getResultPage).mockResolvedValue(pageWithRows);
+    const { container } = render(
+      <QueryWorkspace
+        activePanel="results"
+        bottomOpen
+        bottomPanelHeight={292}
+        catalog={catalog}
+        onSetBottomHeight={vi.fn()}
+        onToggleBottom={vi.fn()}
+        onUpdatePanel={vi.fn()}
+        projectId="p1"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Run query/ }));
+    await screen.findByRole("grid");
+    await waitFor(() => {
+      // Without layout measurement only the initial overscan window renders.
+      expect(container.querySelectorAll("[role='row']").length).toBeLessThan(30);
+    });
   });
 
   it("shows the structured SQL error when execution fails", async () => {

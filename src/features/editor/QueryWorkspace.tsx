@@ -11,6 +11,7 @@ import * as Tabs from "@radix-ui/react-tabs";
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { ContextMenu } from "../../components/ui";
 import type { ProjectCatalog } from "../../lib/commands";
+import { ResultGrid } from "../results/ResultGrid";
 import { useQueryExecution, type TabExecution } from "../results/useQueryExecution";
 import { SqlEditor } from "./SqlEditor";
 import type { SqlTable } from "./sqlCompletion";
@@ -429,15 +430,12 @@ function ResultPanel({
         </div>
       );
     case "succeeded":
-      if (execution.rowsProduced != null) {
+      if (execution.rowsProduced != null && execution.resultId) {
         return (
-          <div className="result-state" role="status">
-            <strong>Returned {execution.rowsProduced.toLocaleString("en-US")} rows</strong>
-            <span>
-              Bounded result browsing with pages and a virtualized grid arrives with the next query
-              tasks.
-            </span>
-          </div>
+          <ResultGrid
+            resultId={execution.resultId}
+            rowTotal={execution.rowTotal ?? execution.rowsProduced}
+          />
         );
       }
       return (

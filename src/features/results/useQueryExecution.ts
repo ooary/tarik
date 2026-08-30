@@ -17,6 +17,8 @@ export interface TabExecution {
   rowsProduced: number | null;
   rowsAffected: number | null;
   error: ExecutionError | null;
+  resultId: string | null;
+  rowTotal: number | null;
 }
 
 function isTerminal(state: ExecutionState): boolean {
@@ -68,6 +70,8 @@ export function useQueryExecution(projectId: string): {
               rowsProduced: status.rowsProduced,
               rowsAffected: status.rowsAffected,
               error: status.error,
+              resultId: status.resultId,
+              rowTotal: status.rowTotal,
             });
             if (!isTerminal(status.state)) {
               const timer = window.setTimeout(tick, POLL_INTERVAL_MS);
@@ -106,6 +110,8 @@ export function useQueryExecution(projectId: string): {
         rowsProduced: view.rowsProduced,
         rowsAffected: view.rowsAffected,
         error: view.error,
+        resultId: view.resultId,
+        rowTotal: view.rowTotal,
       });
       poll(tabId, view.executionId);
     },
