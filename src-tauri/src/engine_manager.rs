@@ -208,11 +208,104 @@ impl EngineManager {
         .map(|_| ())
     }
 
+    fn structured_code(error: &str) -> Option<&str> {
+        error
+            .strip_prefix("engine returned a structured error: ")
+            .and_then(|rest| rest.split(": ").next())
+    }
+
+    fn raw_request(
+        &self,
+        method: &str,
+        params: serde_json::Value,
+    ) -> Result<serde_json::Value, String> {
+        self.with_process(|process| {
+            process
+                .request(method, params)
+                .map_err(|error| error.to_string())
+        })
+    }
+
+    /// Submit an asynchronous query job. Returns once the job is queued.
+    pub fn execute_query(&self, execution_id: &str, sql: &str) -> Result<(), String> {
+        self.raw_request(
+            "query.execute",
+            serde_json::json!({ "executionId": execution_id, "sql": sql }),
+        )
+        .map(|_| ())
+    }
+
+    /// Poll a job status. `Ok(None)` means the engine no longer tracks the
+    /// execution (pruned or unknown).
+    pub fn query_status(
+        &self,
+        execution_id: &str,
+    ) -> Result<Option<tarik_engine_protocol::ExecutionStatus>, String> {
+        match self.raw_request(
+            "query.status",
+            serde_json::json!({ "executionId": execution_id }),
+        ) {
+            Ok(value) => serde_json::from_value(value)
+                .map(Some)
+                .map_err(|error| format!("execution status decode failed: {error}")),
+            Err(error) => {
+                if Self::structured_code(&error) == Some("execution.missing") {
+                    Ok(None)
+                } else {
+                    Err(error)
+                }
+            }
+        }
+    }
+
+    /// Request cancellation. `Ok(None)` means the engine no longer tracks
+    /// the execution.
+    pub fn cancel_query(
+        &self,
+        execution_id: &str,
+    ) -> Result<Option<tarik_engine_protocol::ExecutionStatus>, String> {
+        match self.raw_request(
+            "query.cancel",
+            serde_json::json!({ "executionId": execution_id }),
+        ) {
+            Ok(value) => serde_json::from_value(value)
+                .map(Some)
+                .map_err(|error| format!("execution status decode failed: {error}")),
+            Err(error) => {
+                if Self::structured_code(&error) == Some("execution.missing") {
+                    Ok(None)
+                } else {
+                    Err(error)
+                }
+            }
+        }
+    }
+
     pub fn shutdown(&self) {
         if let Ok(mut guard) = self.process.lock() {
             if let Some(process) = guard.take() {
                 process.shutdown();
             }
         }
+    }
+}
+
+impl crate::query::EngineExecutor for EngineManager {
+    fn execute(&self, execution_id: &str, sql: &str) -> Result<(), String> {
+        self.execute_query(execution_id, sql)
+    }
+
+    fn status(
+        &self,
+        execution_id: &str,
+    ) -> Result<Option<tarik_engine_protocol::ExecutionStatus>, String> {
+        self.query_status(execution_id)
+    }
+
+    fn cancel(
+        &self,
+        execution_id: &str,
+    ) -> Result<Option<tarik_engine_protocol::ExecutionStatus>, String> {
+        self.cancel_query(execution_id)
     }
 }

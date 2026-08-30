@@ -293,6 +293,54 @@ export interface QuerySessionSnapshot {
   tabs: QueryTabSnapshot[];
 }
 
+export type ExecutionState = "queued" | "running" | "succeeded" | "failed" | "cancelled";
+
+export interface ExecutionError {
+  code: string;
+  message: string;
+}
+
+export interface ExecutionView {
+  executionId: string;
+  projectId: string;
+  tabId: string;
+  state: ExecutionState;
+  durationMs: number;
+  rowsProduced: number | null;
+  rowsAffected: number | null;
+  error: ExecutionError | null;
+}
+
+export function executeQuery(
+  projectId: string,
+  tabId: string,
+  sql: string,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<ExecutionView> {
+  return invokeCommand<ExecutionView>("execute_query", { projectId, tabId, sql });
+}
+
+export function getQueryStatus(
+  executionId: string,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<ExecutionView | null> {
+  return invokeCommand<ExecutionView | null>("get_query_status", { executionId });
+}
+
+export function cancelQuery(
+  executionId: string,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<ExecutionView> {
+  return invokeCommand<ExecutionView>("cancel_query", { executionId });
+}
+
+export function forgetTabExecution(
+  tabId: string,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<void> {
+  return invokeCommand<void>("forget_tab_execution", { tabId });
+}
+
 export function saveQuerySession(
   snapshot: QuerySessionSnapshot,
   invokeCommand: InvokeCommand = invoke,

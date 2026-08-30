@@ -8,11 +8,13 @@ import {
   XIcon,
 } from "@phosphor-icons/react";
 import * as Tabs from "@radix-ui/react-tabs";
-import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { ContextMenu } from "../../components/ui";
 import type { ProjectCatalog } from "../../lib/commands";
+import { useQueryExecution, type TabExecution } from "../results/useQueryExecution";
 import { SqlEditor } from "./SqlEditor";
 import type { SqlTable } from "./sqlCompletion";
+import { countSqlStatements } from "./sqlText";
 import { useQueryTabs } from "./useQueryTabs";
 
 type Panel = "results" | "flow" | "profile";
@@ -60,6 +62,29 @@ export const QueryWorkspace = forwardRef<QueryWorkspaceHandle, QueryWorkspacePro
       editSql,
     } = useQueryTabs(projectId);
     const sectionRef = useRef<HTMLElement>(null);
+    const { executions, run, cancel, forget } = useQueryExecution(projectId);
+    const [runError, setRunError] = useState<string | null>(null);
+
+    const activeTab = tabs.find((tab) => tab.id === activeTabId);
+    const activeExecution: TabExecution | undefined = activeTab
+      ? executions[activeTab.id]
+      : undefined;
+    const executionActive =
+      activeExecution?.state === "queued" || activeExecution?.state === "running";
+
+    const runActiveTab = () => {
+      if (!activeTab || executionActive) return;
+      setRunError(null);
+      run(activeTab.id, activeTab.sql).catch((error: unknown) => {
+        setRunError(error instanceof Error ? error.message : String(error));
+      });
+      if (!bottomOpen) onToggleBottom();
+    };
+
+    const closeTabAndForget = (tabId: string) => {
+      forget(tabId);
+      closeTab(tabId);
+    };
 
     const tables = catalog.objects.map((object): SqlTable => ({
       schema: object.schema,
@@ -124,7 +149,7 @@ export const QueryWorkspace = forwardRef<QueryWorkspaceHandle, QueryWorkspacePro
               ) {
                 return;
               }
-              closeTab(tab.id);
+              closeTabAndForget(tab.id);
             };
             const rename = () => {
               const title = window.prompt("Query tab name", tab.title);
@@ -189,7 +214,12 @@ export const QueryWorkspace = forwardRef<QueryWorkspaceHandle, QueryWorkspacePro
 
         <div className="editor-toolbar">
           <div className="toolbar-group">
-            <button className="run-button" type="button">
+            <button
+              className="run-button"
+              disabled={executionActive || !activeTab}
+              onClick={runActiveTab}
+              type="button"
+            >
               <PlayIcon aria-hidden="true" size={14} weight="fill" /> Run query <kbd>Ctrl</kbd>
               <kbd>Enter</kbd>
             </button>
@@ -203,24 +233,31 @@ export const QueryWorkspace = forwardRef<QueryWorkspaceHandle, QueryWorkspacePro
                 Draft not saved
               </span>
             )}
-            <span className="selection-note">Statement 1 of 1</span>
+            {runError && (
+              <span className="draft-save-error" role="alert" title={runError}>
+                Query could not start
+              </span>
+            )}
+            <span className="selection-note">
+              {activeTab ? `${countSqlStatements(activeTab.sql)} statement(s)` : "No query tab"}
+            </span>
             <button aria-label="More query actions" className="icon-button" type="button">
               <DotsThreeIcon aria-hidden="true" size={18} weight="bold" />
             </button>
           </div>
         </div>
 
-        {tabs.map((tab) =>
-          activeTabId === tab.id ? (
-            <SqlEditor
-              key={tab.id}
-              onChange={(sql) => editSql(tab.id, sql)}
-              onRun={() => undefined}
-              tables={tables}
-              value={tab.sql}
-            />
-          ) : null,
-        )}
+          {tabs.map((tab) =>
+            activeTabId === tab.id ? (
+              <SqlEditor
+                key={tab.id}
+                onChange={(sql) => editSql(tab.id, sql)}
+                onRun={runActiveTab}
+                tables={tables}
+                value={tab.sql}
+              />
+            ) : null,
+          )}
 
         <div
           aria-hidden="true"
@@ -236,7 +273,12 @@ export const QueryWorkspace = forwardRef<QueryWorkspaceHandle, QueryWorkspacePro
                   onClick={() => onUpdatePanel("results")}
                   value="results"
                 >
-                  Results <span className="tab-count">24,318</span>
+                  Results
+                  {activeExecution?.rowsProduced != null && (
+                    <span className="tab-count">
+                      {activeExecution.rowsProduced.toLocaleString("en-US")}
+                    </span>
+                  )}
                 </Tabs.Trigger>
                 <Tabs.Trigger
                   className="result-tab"
@@ -255,10 +297,16 @@ export const QueryWorkspace = forwardRef<QueryWorkspaceHandle, QueryWorkspacePro
               </Tabs.List>
             </Tabs.Root>
             <div className="results-actions">
-              <span className="result-duration">Completed in 1.82s</span>
-              <button className="toolbar-button" type="button">
-                Export
-              </button>
+              <span className="result-duration">{resultDuration(activeExecution)}</span>
+              {executionActive && (
+                <button
+                  className="toolbar-button"
+                  onClick={() => void cancel(activeTabId ?? "")}
+                  type="button"
+                >
+                  Cancel
+                </button>
+              )}
               <button
                 aria-label={bottomOpen ? "Collapse result panel" : "Expand result panel"}
                 className="icon-button"
@@ -275,52 +323,7 @@ export const QueryWorkspace = forwardRef<QueryWorkspaceHandle, QueryWorkspacePro
           </div>
 
           {bottomOpen && activePanel === "results" && (
-            <div className="result-surface">
-              <div className="result-toolbar">
-                <span>Rows 1-500 of 24,318</span>
-                <button className="subtle-button" type="button">
-                  Copy visible rows
-                </button>
-              </div>
-              <div className="result-scroll" tabIndex={0}>
-                <table>
-                  <thead>
-                    <tr>
-                      <th>country</th>
-                      <th>orders</th>
-                      <th>revenue</th>
-                      <th>share</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr>
-                      <td>Singapore</td>
-                      <td>6,842</td>
-                      <td>$2,431,900.00</td>
-                      <td>38.4%</td>
-                    </tr>
-                    <tr>
-                      <td>Indonesia</td>
-                      <td>11,204</td>
-                      <td>$1,885,220.00</td>
-                      <td>29.8%</td>
-                    </tr>
-                    <tr>
-                      <td>Malaysia</td>
-                      <td>4,927</td>
-                      <td>$1,192,410.00</td>
-                      <td>18.9%</td>
-                    </tr>
-                    <tr>
-                      <td>Thailand</td>
-                      <td>1,345</td>
-                      <td>$512,780.00</td>
-                      <td>8.1%</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>
+            <ResultPanel execution={activeExecution} runError={runError} />
           )}
           {bottomOpen && activePanel !== "results" && (
             <div className="panel-placeholder">
@@ -341,3 +344,113 @@ export const QueryWorkspace = forwardRef<QueryWorkspaceHandle, QueryWorkspacePro
     );
   },
 );
+
+function resultDuration(execution: TabExecution | undefined): string {
+  if (!execution) return "";
+  switch (execution.state) {
+    case "queued":
+      return "Queued";
+    case "running":
+      return `Running ${formatSeconds(execution.durationMs)}`;
+    case "succeeded":
+      return `Completed in ${formatSeconds(execution.durationMs)}`;
+    case "failed":
+      return "Failed";
+    case "cancelled":
+      return "Cancelled";
+  }
+}
+
+function formatSeconds(durationMs: number): string {
+  if (durationMs >= 10_000) return `${Math.round(durationMs / 1000)}s`;
+  return `${(durationMs / 1000).toFixed(1)}s`;
+}
+
+function ResultPanel({
+  execution,
+  runError,
+}: {
+  execution: TabExecution | undefined;
+  runError: string | null;
+}) {
+  if (runError) {
+    return (
+      <div className="result-state">
+        <div className="ui-inline-error" role="alert">
+          <strong>Query could not start</strong>
+          <span>{runError}</span>
+        </div>
+      </div>
+    );
+  }
+  if (!execution) {
+    return (
+      <div className="result-state">
+        <div className="ui-empty-state">
+          <strong>No results yet</strong>
+          <span>Run a query to see results here.</span>
+        </div>
+      </div>
+    );
+  }
+  switch (execution.state) {
+    case "queued":
+      return (
+        <div className="result-state" role="status">
+          <strong>Queued</strong>
+          <span>The engine will start this query when the current one finishes.</span>
+        </div>
+      );
+    case "running":
+      return (
+        <div className="result-state" role="status">
+          <strong>Running</strong>
+          <span>
+            {execution.rowsProduced != null
+              ? `${execution.rowsProduced.toLocaleString("en-US")} rows produced so far`
+              : "Waiting for the first rows from DuckDB"}
+          </span>
+        </div>
+      );
+    case "failed":
+      return (
+        <div className="result-state">
+          <div className="ui-inline-error" role="alert">
+            <strong>{execution.error?.code ?? "query.failed"}</strong>
+            <span>{execution.error?.message ?? "The query failed."}</span>
+          </div>
+        </div>
+      );
+    case "cancelled":
+      return (
+        <div className="result-state" role="status">
+          <strong>Cancelled</strong>
+          <span>The query was stopped before completion.</span>
+        </div>
+      );
+    case "succeeded":
+      if (execution.rowsProduced != null) {
+        return (
+          <div className="result-state" role="status">
+            <strong>
+              Returned {execution.rowsProduced.toLocaleString("en-US")} rows
+            </strong>
+            <span>
+              Bounded result browsing with pages and a virtualized grid arrives
+              with the next query tasks.
+            </span>
+          </div>
+        );
+      }
+      return (
+        <div className="result-state" role="status">
+          <strong>Statement completed</strong>
+          {execution.rowsAffected != null ? (
+            <span>{execution.rowsAffected.toLocaleString("en-US")} rows affected.</span>
+          ) : (
+            <span>The statement finished without returning rows.</span>
+          )}
+        </div>
+      );
+  }
+}

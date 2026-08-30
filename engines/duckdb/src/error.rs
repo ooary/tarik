@@ -6,6 +6,16 @@ pub enum EngineError {
     SessionExists(String),
     #[error("session does not exist: {0}")]
     SessionMissing(String),
+    #[error("execution already exists: {0}")]
+    ExecutionExists(String),
+    #[error("execution does not exist: {0}")]
+    ExecutionMissing(String),
+    #[error("invalid query request: {0}")]
+    InvalidQuery(&'static str),
+    #[error("could not spawn job worker: {0}")]
+    WorkerSpawn(String),
+    #[error("engine job registry state is unavailable")]
+    RegistryPoisoned,
     #[error("source file does not exist: {0}")]
     Missing(PathBuf),
     #[error("unsupported source type: {0}")]
@@ -45,6 +55,11 @@ impl EngineError {
         match self {
             Self::SessionExists(_) => "session.exists",
             Self::SessionMissing(_) => "session.missing",
+            Self::ExecutionExists(_) => "execution.exists",
+            Self::ExecutionMissing(_) => "execution.missing",
+            Self::InvalidQuery(_) => "query.invalid",
+            Self::WorkerSpawn(_) => "engine.worker_spawn",
+            Self::RegistryPoisoned => "engine.registry",
             Self::Missing(_) => "source.missing",
             Self::Unsupported(_) => "source.unsupported",
             Self::InvalidPath(_) => "source.invalid_path",

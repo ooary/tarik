@@ -792,6 +792,36 @@ tbody tr:hover {
   font-size: 14px;
 }
 
+.result-state {
+  display: grid;
+  height: calc(100% - 42px);
+  place-content: center;
+  gap: 9px;
+  padding: 24px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.result-state strong {
+  color: var(--text-primary);
+  font-size: 14px;
+}
+
+.result-state .ui-inline-error,
+.result-state .ui-empty-state {
+  width: min(460px, 100%);
+  text-align: left;
+}
+
+.result-state .ui-inline-error strong {
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.result-state .ui-inline-error span {
+  white-space: pre-wrap;
+}
+
 .status-bar {
   display: flex;
   align-items: center;

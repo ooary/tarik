@@ -166,3 +166,111 @@ fn unknown_method_and_missing_session_surface_structured_errors() {
 
     engine.child.kill().ok();
 }
+
+#[test]
+fn query_execute_reaches_terminal_state_and_persists_rows() {
+    let mut engine = spawn_engine();
+    let database = temp_path("query", ".duckdb");
+    engine.assert_ok(
+        "session.open",
+        json!({
+            "sessionId": "qs",
+            "locator": { "engineId": "duckdb", "payload": { "path": database } }
+        }),
+    );
+
+    // Row-returning statement: execute returns queued, then status terminal.
+    let enqueued = engine.assert_ok(
+        "query.execute",
+        json!({ "sessionId": "qs", "executionId": "e1", "sql": "SELECT i FROM range(1, 11) t(i);" }),
+    );
+    assert_eq!(enqueued["state"], "queued");
+
+    let status = poll_terminal(&mut engine, "e1");
+    assert_eq!(status["state"], "succeeded");
+    assert_eq!(status["rowsProduced"], 10);
+
+    // DML and DDL without a row set succeed with no produced rows.
+    engine.assert_ok(
+        "query.execute",
+        json!({ "sessionId": "qs", "executionId": "e2", "sql": "CREATE TABLE t (a INTEGER); INSERT INTO t VALUES (1), (2), (3);" }),
+    );
+    let status = poll_terminal(&mut engine, "e2");
+    assert_eq!(status["state"], "succeeded");
+    assert_eq!(status["rowsAffected"], 3);
+    assert_eq!(status["rowsProduced"], Value::Null);
+
+    // Multi-statement snapshots execute sequentially; the last row set wins.
+    engine.assert_ok(
+        "query.execute",
+        json!({ "sessionId": "qs", "executionId": "e3", "sql": "CREATE TABLE t2 (a INTEGER); INSERT INTO t2 VALUES (1), (2), (3); SELECT count(*) AS n FROM t2;" }),
+    );
+    let status = poll_terminal(&mut engine, "e3");
+    assert_eq!(status["state"], "succeeded");
+    assert_eq!(status["rowsProduced"], 1);
+    assert_eq!(status["rowsAffected"], 3);
+
+    engine.child.kill().ok();
+    let _ = std::fs::remove_file(&database);
+}
+
+#[test]
+fn query_execute_reports_structured_sql_errors() {
+    let mut engine = spawn_engine();
+    let database = temp_path("queryerr", ".duckdb");
+    engine.assert_ok(
+        "session.open",
+        json!({
+            "sessionId": "qs",
+            "locator": { "engineId": "duckdb", "payload": { "path": database } }
+        }),
+    );
+    let enqueued = engine.assert_ok(
+        "query.execute",
+        json!({ "sessionId": "qs", "executionId": "bad", "sql": "SELECT FROM WHERE" }),
+    );
+    assert_eq!(enqueued["state"], "queued");
+
+    let mut status =
+        engine.request("query.status", json!({ "executionId": "bad" }))["result"].clone();
+    for _ in 0..200 {
+        if status["state"] == "failed" {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        status = engine.request("query.status", json!({ "executionId": "bad" }))["result"].clone();
+    }
+    assert_eq!(status["state"], "failed");
+    assert_eq!(status["error"]["code"], "duckdb.error");
+    assert!(status["error"]["message"]
+        .as_str()
+        .unwrap()
+        .to_lowercase()
+        .contains("select"));
+
+    // Empty SQL (only comments) is rejected with a structured error.
+    let response = engine.request(
+        "query.execute",
+        json!({ "sessionId": "qs", "executionId": "e0", "sql": "  ; -- nothing" }),
+    );
+    assert_eq!(response["error"]["code"], "query.invalid");
+
+    engine.child.kill().ok();
+    let _ = std::fs::remove_file(&database);
+}
+
+fn poll_terminal(engine: &mut Engine, execution_id: &str) -> Value {
+    for _ in 0..200 {
+        let status = engine.request("query.status", json!({ "executionId": execution_id }))
+            ["result"]
+            .clone();
+        if !status.is_null() {
+            let state = status["state"].as_str().unwrap_or_default();
+            if state == "succeeded" || state == "failed" || state == "cancelled" {
+                return status;
+            }
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    panic!("execution {execution_id} did not reach a terminal state");
+}

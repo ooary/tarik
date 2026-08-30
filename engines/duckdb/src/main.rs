@@ -1,7 +1,9 @@
 mod catalog;
 mod error;
+mod jobs;
 mod session;
 mod sources;
+mod sql;
 
 use std::io::{BufRead, Write};
 
@@ -45,6 +47,7 @@ fn required_string(
 fn dispatch(
     request: &RequestEnvelope,
     sessions: &mut session::SessionManager,
+    jobs: &std::sync::Arc<jobs::JobRegistry>,
 ) -> Result<Value, EngineError> {
     let params = &request.params;
     match request.method.as_str() {
@@ -66,11 +69,6 @@ fn dispatch(
             // previously failed or interrupted open cannot block a retry.
             let _ = sessions.close(&session_id);
             sessions.open(session_id, path)?;
-            Ok(Value::Null)
-        }
-        "session.close" => {
-            let session_id = required_string(params, "sessionId")?;
-            sessions.close(&session_id)?;
             Ok(Value::Null)
         }
         "catalog.inspect" => {
@@ -161,6 +159,34 @@ fn dispatch(
             let state: SourceState = sources::check_link_health(&source);
             Ok(serde_json::to_value(state)?)
         }
+        "session.close" => {
+            let session_id = required_string(params, "sessionId")?;
+            // Cancel queued/running jobs first so closing cannot strand work.
+            jobs.cancel_session(&session_id);
+            sessions.close(&session_id)?;
+            Ok(Value::Null)
+        }
+        "query.execute" => {
+            let session_id = required_string(params, "sessionId")?;
+            let execution_id = required_string(params, "executionId")?;
+            let sql = required_string(params, "sql")?;
+            let connection = sessions.get(&session_id)?.try_clone()?;
+            jobs.execute(&session_id, &execution_id, &sql, connection)?;
+            Ok(serde_json::json!({
+                "executionId": execution_id,
+                "state": "queued",
+            }))
+        }
+        "query.status" => {
+            let execution_id = required_string(params, "executionId")?;
+            let status = jobs.status(&execution_id)?;
+            Ok(serde_json::to_value(status)?)
+        }
+        "query.cancel" => {
+            let execution_id = required_string(params, "executionId")?;
+            let status = jobs.cancel(&execution_id)?;
+            Ok(serde_json::to_value(status)?)
+        }
         "engine.ping" => Ok(Value::String("pong".into())),
         _ => Err(EngineError::MethodNotFound(request.method.clone())),
     }
@@ -168,6 +194,7 @@ fn dispatch(
 
 fn main() {
     let mut sessions = session::SessionManager::new();
+    let jobs = std::sync::Arc::new(jobs::JobRegistry::new());
     let stdin = std::io::stdin();
     let stdout = std::io::stdout();
     let mut out = stdout.lock();
@@ -182,7 +209,7 @@ fn main() {
         }
 
         let response = match serde_json::from_str::<RequestEnvelope>(&line) {
-            Ok(request) => match dispatch(&request, &mut sessions) {
+            Ok(request) => match dispatch(&request, &mut sessions, &jobs) {
                 Ok(result) => ResponseEnvelope::ok(request.id, result),
                 Err(error) => ResponseEnvelope::err(
                     request.id.clone(),
@@ -228,7 +255,12 @@ mod tests {
             method: "not.real".into(),
             params: serde_json::Map::new(),
         };
-        let error = dispatch(&request, &mut session::SessionManager::new()).unwrap_err();
+        let error = dispatch(
+            &request,
+            &mut session::SessionManager::new(),
+            &std::sync::Arc::new(jobs::JobRegistry::new()),
+        )
+        .unwrap_err();
         assert_eq!(error.code(), "method.not_found");
     }
 
@@ -245,7 +277,12 @@ mod tests {
             .unwrap()
             .clone(),
         };
-        let error = dispatch(&request, &mut session::SessionManager::new()).unwrap_err();
+        let error = dispatch(
+            &request,
+            &mut session::SessionManager::new(),
+            &std::sync::Arc::new(jobs::JobRegistry::new()),
+        )
+        .unwrap_err();
         assert_eq!(error.code(), "source.invalid_options");
     }
 }

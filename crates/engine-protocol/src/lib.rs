@@ -225,6 +225,34 @@ pub struct SourceRecord {
     pub updated_at: String,
 }
 
+/// Lifecycle of one query execution submitted to an engine.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ExecutionState {
+    Queued,
+    Running,
+    Succeeded,
+    Failed,
+    Cancelled,
+}
+
+/// Observed status of one engine execution. The engine owns the transition
+/// from queued to a single terminal state; the desktop persists history from
+/// the terminal snapshot.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExecutionStatus {
+    pub execution_id: String,
+    pub state: ExecutionState,
+    pub duration_ms: u64,
+    /// Rows produced so far while running, or the final row count once
+    /// terminal. `None` for statements without a row set.
+    pub rows_produced: Option<u64>,
+    /// Rows changed by DML statements when no result set was produced.
+    pub rows_affected: Option<u64>,
+    pub error: Option<ErrorEnvelope>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EngineManifest {

@@ -2,6 +2,7 @@ mod engine_manager;
 mod metadata;
 mod paths;
 mod projects;
+mod query;
 
 use std::{
     path::{Path, PathBuf},
@@ -77,9 +78,14 @@ pub fn run() {
                 directories.data_dir.join("projects"),
                 engine.clone(),
             );
+            let coordinator = Arc::new(query::QueryCoordinator::new(
+                engine.clone(),
+                database.clone(),
+            ));
             app.manage(database);
             app.manage(engine);
             app.manage(project_manager);
+            app.manage(coordinator);
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -129,7 +135,11 @@ pub fn run() {
             projects::commands::import_source_table,
             projects::commands::cancel_source_operation,
             projects::commands::repair_linked_source,
-            projects::commands::remove_linked_source
+            projects::commands::remove_linked_source,
+            query::commands::execute_query,
+            query::commands::get_query_status,
+            query::commands::cancel_query,
+            query::commands::forget_tab_execution
         ])
         .run(tauri::generate_context!())
         .expect("error while running Tarik");

@@ -931,7 +931,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
 
 **Preparation:** See `docs/design/E6-DESIGN-GRAPH.md` for the data-flow graph, concurrency decision, boundedness contract, lifecycle scope, UI states, test layers, and implementation order. The E5.5 protocol/page metadata exists, while E6-T3 owns the concrete streaming page writer/reader and cache behavior.
 
-- [ ] **E6-T1 Define typed query execution lifecycle**
+- [x] **E6-T1 Define typed query execution lifecycle** — owner: lead-agent
   - Depends on: E5.5-T1, E5.5-T3, E2-T4
   - Owns: `src-tauri/src/query/`, shared frontend command types
   - Deliverables:
@@ -942,6 +942,11 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: every terminal execution state creates one durable history entry.
   - Tests: state machine, engine-client integration, history integration.
   - Commit: `feat(query): add typed execution lifecycle`
+  - Notes:
+    - Engine: `engines/duckdb/src/jobs.rs` job registry (one worker thread per execution, per-session queue); `query.execute` returns `queued` immediately; `query.status` reports state/duration/rows. Multi-statement snapshots split on top-level semicolons (`src/sql.rs`); DuckDB one-row DML `Count` results are surfaced as `rowsAffected` rather than a browsable result; every statement streams via `stream_arrow`, so no result is materialized up front. DuckDB reports fetch failures (including interrupt) as panics inside its iterator, so job execution runs under `catch_unwind` and a requested cancel becomes a clean cancelled terminal.
+    - Desktop: `src-tauri/src/query/` coordinator observes engine job states with short polls (150 ms) and writes exactly one `query_history` row per terminal state (`history_written` guard). The `EngineExecutor` trait isolates the coordinator for scripted tests.
+    - Frontend: `useQueryExecution` hook keeps lightweight per-tab state, polls every 250 ms, and the results panel shows empty/queued/running/failed/cancelled/completed states plus a Cancel action. The static fake fixture (`24,318` rows) is removed.
+    - Engine status currently reports `rowsAffected` from DuckDB DML count results; `rows_produced` while running reflects batches already fetched. Engine-side cancel tests land with E6-T2.
 
 - [ ] **E6-T2 Implement query cancellation and cleanup**
   - Depends on: E6-T1, E5.5-T3
