@@ -228,3 +228,41 @@
 .ui-tooltip-arrow {
   fill: var(--text-primary);
 }
+
+.ui-context-menu {
+  z-index: 24;
+  min-width: 188px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-control);
+  padding: 5px;
+  color: var(--text-primary);
+  background: var(--surface-raised);
+  box-shadow: 0 10px 32px rgb(8 13 10 / 20%);
+}
+
+.ui-context-menu-item {
+  display: flex;
+  min-height: 31px;
+  align-items: center;
+  border-radius: 3px;
+  padding: 0 9px;
+  outline: none;
+  font-size: 12px;
+  cursor: default;
+}
+
+.ui-context-menu-item[data-highlighted] {
+  background: var(--accent-soft);
+}
+
+.ui-context-menu-danger {
+  color: var(--status-error);
+}
+
+.ui-context-menu-danger[data-highlighted] {
+  background: var(--status-error-surface);
+}
+
+.ui-context-menu-item[data-disabled] {
+  color: var(--text-faint);
+}

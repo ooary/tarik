@@ -132,9 +132,12 @@ describe("Tarik workbench shell", () => {
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
     render(<App />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Rename" }));
+    const row = await screen.findByTitle(/\/managed\/local-analysis\.duckdb/);
+    fireEvent.contextMenu(row);
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Rename" }));
     await waitFor(() => expect(renameProject).toHaveBeenCalledWith("project-1", "Renamed"));
-    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    fireEvent.contextMenu(row);
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Delete project" }));
     await waitFor(() => expect(removeProject).toHaveBeenCalledWith("project-1"));
     expect(confirm).toHaveBeenCalledWith(expect.stringContaining("/managed/local-analysis.duckdb"));
     prompt.mockRestore();
@@ -155,13 +158,15 @@ describe("Tarik workbench shell", () => {
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
     render(<App />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Forget" }));
+    const row = await screen.findByTitle(/\/user\/warehouse\.duckdb/);
+    fireEvent.contextMenu(row);
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Forget project" }));
 
     await waitFor(() => expect(removeProject).toHaveBeenCalledWith("external-1"));
     expect(confirm).toHaveBeenCalledWith(
       expect.stringContaining("external DuckDB file is preserved"),
     );
-    expect(screen.queryByRole("button", { name: "Delete" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "Delete project" })).not.toBeInTheDocument();
     confirm.mockRestore();
   });
 

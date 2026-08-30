@@ -1,7 +1,8 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   Button,
+  ContextMenu,
   Dialog,
   EmptyState,
   Field,
@@ -59,6 +60,25 @@ describe("UI primitives", () => {
       ctrlKey: false,
     });
     expect(await screen.findByRole("menuitem", { name: "Rename" })).toBeInTheDocument();
+  });
+
+  it("opens project context actions on right-click", async () => {
+    const rename = vi.fn();
+    render(
+      <ContextMenu
+        items={[
+          { label: "Rename", onSelect: rename },
+          { danger: true, label: "Delete project", onSelect: vi.fn() },
+        ]}
+        label="Project actions"
+      >
+        <button type="button">Retail project</button>
+      </ContextMenu>,
+    );
+
+    fireEvent.contextMenu(screen.getByRole("button", { name: "Retail project" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Rename" }));
+    expect(rename).toHaveBeenCalledOnce();
   });
 
   it("provides semantic feedback and surface regions", () => {

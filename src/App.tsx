@@ -2,7 +2,7 @@ import * as Tabs from "@radix-ui/react-tabs";
 import { CaretDownIcon, CaretUpIcon, DatabaseIcon, DotsThreeIcon, FileIcon, ListIcon, PlusIcon, PlayIcon, TableIcon, XIcon } from "@phosphor-icons/react";
 import { useEffect, useRef, useState } from "react";
 import "./App.css";
-import { Dialog } from "./components/ui";
+import { ContextMenu, Dialog } from "./components/ui";
 import {
   createWorkbenchPreferencesRepository,
   defaultWorkbenchPreferences,
@@ -243,8 +243,8 @@ function App() {
     const action = recent.ownership === "managed" ? "delete" : "forget";
     const detail =
       recent.ownership === "managed"
-        ? `This permanently deletes Tarik-managed project \"${recent.name}\" and its directory:\n${recent.duckdbPath}`
-        : `This forgets \"${recent.name}\" from Tarik. The external DuckDB file is preserved:\n${recent.duckdbPath}`;
+        ? `This permanently deletes Tarik-managed project "${recent.name}" and its directory:\n${recent.duckdbPath}`
+        : `This forgets "${recent.name}" from Tarik. The external DuckDB file is preserved:\n${recent.duckdbPath}`;
     if (!window.confirm(`${action[0].toUpperCase() + action.slice(1)} project?\n\n${detail}`)) return;
     setProjectError(null);
     try {
@@ -369,33 +369,32 @@ function App() {
                   <>
                     <div className="tree-section-title tree-section-spaced">Recent projects</div>
                     {recentProjects.map((recent) => (
-                      <div className="recent-project" key={recent.id}>
+                      <ContextMenu
+                        items={[
+                          { label: "Open project", onSelect: () => reopenLocalProject(recent) },
+                          { label: "Rename", onSelect: () => renameLocalProject(recent) },
+                          {
+                            danger: recent.ownership === "managed",
+                            label: recent.ownership === "managed" ? "Delete project" : "Forget project",
+                            onSelect: () => removeLocalProject(recent),
+                          },
+                        ]}
+                        key={recent.id}
+                        label={`${recent.name} actions`}
+                      >
                         <button
-                          className="tree-row"
+                          className="tree-row recent-project-row"
                           onClick={() => reopenLocalProject(recent)}
-                          title={recent.duckdbPath}
+                          title={`${recent.duckdbPath}\nRight-click for project actions`}
                           type="button"
                         >
                           <SourceIcon kind="database" />
                           <span>{recent.name}</span>
-                          <span className="row-meta">Open</span>
-                        </button>
-                        <div className="recent-action-row">
-                          <span title={recent.duckdbPath}>
+                          <span className="row-meta">
                             {recent.ownership === "managed" ? "Managed" : "External"}
                           </span>
-                          <button onClick={() => renameLocalProject(recent)} type="button">
-                            Rename
-                          </button>
-                          <button
-                            className={recent.ownership === "managed" ? "danger-action" : ""}
-                            onClick={() => removeLocalProject(recent)}
-                            type="button"
-                          >
-                            {recent.ownership === "managed" ? "Delete" : "Forget"}
-                          </button>
-                        </div>
-                      </div>
+                        </button>
+                      </ContextMenu>
                     ))}
                   </>
                 )}
