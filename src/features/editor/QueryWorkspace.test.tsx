@@ -142,6 +142,48 @@ describe("QueryWorkspace", () => {
     expect(container.querySelector(".tab-count")).toHaveTextContent("1,000");
   });
 
+  it("refreshes project data once after a successful query", async () => {
+    const onQuerySucceeded = vi.fn();
+    render(
+      <QueryWorkspace
+        activePanel="results"
+        bottomOpen
+        bottomPanelHeight={292}
+        catalog={catalog}
+        onQuerySucceeded={onQuerySucceeded}
+        onSetBottomHeight={vi.fn()}
+        onToggleBottom={vi.fn()}
+        onUpdatePanel={vi.fn()}
+        projectId="p1"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Run query/ }));
+    await waitFor(() => expect(onQuerySucceeded).toHaveBeenCalledTimes(1));
+  });
+
+  it("does not refresh project data after a failed query", async () => {
+    const onQuerySucceeded = vi.fn();
+    vi.mocked(getQueryStatus).mockResolvedValue({ ...failedView, tabId: "t1" });
+    render(
+      <QueryWorkspace
+        activePanel="results"
+        bottomOpen
+        bottomPanelHeight={292}
+        catalog={catalog}
+        onQuerySucceeded={onQuerySucceeded}
+        onSetBottomHeight={vi.fn()}
+        onToggleBottom={vi.fn()}
+        onUpdatePanel={vi.fn()}
+        projectId="p1"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Run query/ }));
+    await screen.findByText("sql.parse");
+    expect(onQuerySucceeded).not.toHaveBeenCalled();
+  });
+
   it("renders the virtualized grid after a successful run", async () => {
     const { container } = render(
       <QueryWorkspace

@@ -31,7 +31,10 @@ function isTerminal(state: ExecutionState): boolean {
  * owns the lifecycle; this hook observes it through short status polls and
  * keeps only lightweight state in the WebView.
  */
-export function useQueryExecution(projectId: string): {
+export function useQueryExecution(
+  projectId: string,
+  onSucceeded?: () => void | Promise<void>,
+): {
   executions: Record<string, TabExecution>;
   run: (tabId: string, sql: string) => Promise<void>;
   cancel: (tabId: string) => Promise<void>;
@@ -40,6 +43,11 @@ export function useQueryExecution(projectId: string): {
   const [executions, setExecutions] = useState<Record<string, TabExecution>>({});
   const timers = useRef(new Map<string, number>());
   const stopped = useRef(false);
+  const onSucceededRef = useRef(onSucceeded);
+
+  useEffect(() => {
+    onSucceededRef.current = onSucceeded;
+  }, [onSucceeded]);
 
   useEffect(() => {
     stopped.current = false;
@@ -79,6 +87,11 @@ export function useQueryExecution(projectId: string): {
               timers.current.set(tabId, timer);
             } else {
               timers.current.delete(tabId);
+              if (status.state === "succeeded") {
+                // Refresh catalog/source metadata exactly once per successful
+                // terminal observation. Result rendering does not wait for it.
+                Promise.resolve(onSucceededRef.current?.()).catch(() => undefined);
+              }
             }
             return;
           }

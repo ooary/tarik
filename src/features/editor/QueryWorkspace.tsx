@@ -31,6 +31,7 @@ interface QueryWorkspaceProps {
   activePanel: Panel;
   bottomOpen: boolean;
   bottomPanelHeight: number;
+  onQuerySucceeded?: () => void | Promise<void>;
   onSetBottomHeight: (height: number) => void;
   onToggleBottom: () => void;
   onUpdatePanel: (panel: Panel) => void;
@@ -44,6 +45,7 @@ export const QueryWorkspace = forwardRef<QueryWorkspaceHandle, QueryWorkspacePro
       activePanel,
       bottomOpen,
       bottomPanelHeight,
+      onQuerySucceeded,
       onSetBottomHeight,
       onToggleBottom,
       onUpdatePanel,
@@ -63,7 +65,7 @@ export const QueryWorkspace = forwardRef<QueryWorkspaceHandle, QueryWorkspacePro
       editSql,
     } = useQueryTabs(projectId);
     const sectionRef = useRef<HTMLElement>(null);
-    const { executions, run, cancel, forget } = useQueryExecution(projectId);
+    const { executions, run, cancel, forget } = useQueryExecution(projectId, onQuerySucceeded);
     const [runError, setRunError] = useState<string | null>(null);
 
     const activeTab = tabs.find((tab) => tab.id === activeTabId);

@@ -577,6 +577,7 @@ function App() {
           bottomPanelHeight={preferences.bottomPanelHeight}
           catalog={catalog}
           key={project?.id ?? "no-project"}
+          onQuerySucceeded={() => (project ? refreshProjectData(project) : undefined)}
           onSetBottomHeight={(height) => updatePreferences({ bottomPanelHeight: height })}
           onToggleBottom={() => updatePreferences({ bottomPanelOpen: !bottomOpen })}
           onUpdatePanel={(panel) => updatePreferences({ activeOutputPanel: panel })}
