@@ -879,6 +879,11 @@ tbody tr:hover {
   font-size: 9px;
 }
 
+.sql-codemirror .cm-plan-highlight {
+  background: color-mix(in srgb, var(--accent-solid) 30%, transparent);
+  outline: 1px solid color-mix(in srgb, var(--accent-solid) 55%, transparent);
+}
+
 .result-column-resizer {
   position: absolute;
   z-index: 3;

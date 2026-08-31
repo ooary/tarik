@@ -1020,7 +1020,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
 
 ## EPIC E7 — Beginner-friendly query flow
 
-**Status:** `IN PROGRESS` - preparation/design audit complete; E7-T1 fixture capture ready.
+**Status:** `REVIEW` - E7-T1 through E7-T5 implemented; automated gates pass. Awaiting manual Explain/Profile flow, inspector, and SQL-range sign-off.
 
 **Outcome:** Explain and Profile plans become understandable node graphs.
 
@@ -1087,13 +1087,17 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
     - Selecting a node opens the inspector with explicit `Estimated operation` vs `Actual operation`, source, estimated rows, actual rows, operator timing, rows scanned, and ordered native details (join type/conditions, filters, groups/aggregates, projections, order/top, table/type).
     - Unknown operators retain their native title/details and explicitly say no verified beginner explanation exists; no guessed semantics. Tests cover every common operator, unknown truthfulness, detail ordering, empty inspector, node selection, estimated labeling, and metric display.
 
-- [ ] **E7-T5 Link flow nodes to relevant SQL when reliably available**
+- [x] **E7-T5 Link flow nodes to relevant SQL when reliably available** — owner: lead-agent
   - Depends on: E7-T4
   - Owns: editor/flow selection bridge
   - Deliverables: selecting a node highlights related SQL; unsupported mappings do nothing harmful.
   - Acceptance: feature is presented as best-effort and never highlights a knowingly wrong range.
   - Tests: mapping fixtures and unsupported cases.
   - Commit: `feat(flow): connect plan nodes to sql ranges`
+  - Notes:
+    - Conservative tokenizer skips SQL strings, line comments, nested block comments, and preserves exact source ranges. It maps only unique, mechanically reliable constructs: relation token after `FROM`/`JOIN`, `WHERE`, `JOIN`, `GROUP BY`, `ORDER BY`, `LIMIT`, `UNION`, and `OVER`.
+    - Ambiguous duplicate constructs, unsupported projection/result operators, missing source matches, and stale/edited SQL return no range and clear any prior highlight. Highlights are bound to the active tab and immutable SQL snapshot that produced the plan.
+    - CodeMirror now synchronizes external tab SQL value changes (a pre-existing controlled-editor defect exposed by this bridge), applies a restrained plan-range decoration, and selects the mapped text. Tests cover all supported constructs, quoted qualified sources, strings/comments, duplicate ambiguity, unsupported operators, end-to-end node click highlighting, and clearing on an unmappable node.
 
 ---
 

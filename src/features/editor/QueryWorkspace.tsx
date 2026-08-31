@@ -12,6 +12,7 @@ import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "re
 import { ContextMenu } from "../../components/ui";
 import type { ProjectCatalog } from "../../lib/commands";
 import { QueryFlow } from "../query-flow/QueryFlow";
+import { mapPlanNodeToSql, type SqlRange } from "../query-flow/sqlMapping";
 import { useQueryPlan } from "../query-flow/useQueryPlan";
 import { ResultGrid } from "../results/ResultGrid";
 import { useQueryExecution, type TabExecution } from "../results/useQueryExecution";
@@ -69,6 +70,9 @@ export const QueryWorkspace = forwardRef<QueryWorkspaceHandle, QueryWorkspacePro
     const sectionRef = useRef<HTMLElement>(null);
     const { executions, run, cancel, forget } = useQueryExecution(projectId, onQuerySucceeded);
     const [runError, setRunError] = useState<string | null>(null);
+    const [planHighlight, setPlanHighlight] = useState<{ tabId: string; range: SqlRange } | null>(
+      null,
+    );
     const { states: planStates, runPlan, clearPlan } = useQueryPlan(projectId);
 
     const activeTab = tabs.find((tab) => tab.id === activeTabId);
@@ -89,6 +93,7 @@ export const QueryWorkspace = forwardRef<QueryWorkspaceHandle, QueryWorkspacePro
 
     const runActivePlan = (mode: "explain" | "profile") => {
       if (!projectId || !activeTab || !activeTab.sql.trim()) return;
+      setPlanHighlight(null);
       onUpdatePanel(mode === "explain" ? "flow" : "profile");
       if (!bottomOpen) onToggleBottom();
       void runPlan(activeTab.sql, mode);
@@ -269,8 +274,12 @@ export const QueryWorkspace = forwardRef<QueryWorkspaceHandle, QueryWorkspacePro
         {tabs.map((tab) =>
           activeTabId === tab.id ? (
             <SqlEditor
+              highlightRange={planHighlight?.tabId === tab.id ? planHighlight.range : null}
               key={tab.id}
-              onChange={(sql) => editSql(tab.id, sql)}
+              onChange={(sql) => {
+                setPlanHighlight(null);
+                editSql(tab.id, sql);
+              }}
               onRun={runActiveTab}
               tables={tables}
               value={tab.sql}
@@ -348,6 +357,19 @@ export const QueryWorkspace = forwardRef<QueryWorkspaceHandle, QueryWorkspacePro
             <PlanPanel
               mode="explain"
               onRun={() => runActivePlan("explain")}
+              onSelectNode={(node) => {
+                if (
+                  !node ||
+                  !planStates.explain.sql ||
+                  !activeTab ||
+                  activeTab.sql !== planStates.explain.sql
+                ) {
+                  setPlanHighlight(null);
+                  return;
+                }
+                const range = mapPlanNodeToSql(node, planStates.explain.sql);
+                setPlanHighlight(range ? { tabId: activeTab.id, range } : null);
+              }}
               state={planStates.explain}
             />
           )}
@@ -355,6 +377,19 @@ export const QueryWorkspace = forwardRef<QueryWorkspaceHandle, QueryWorkspacePro
             <PlanPanel
               mode="profile"
               onRun={() => runActivePlan("profile")}
+              onSelectNode={(node) => {
+                if (
+                  !node ||
+                  !planStates.profile.sql ||
+                  !activeTab ||
+                  activeTab.sql !== planStates.profile.sql
+                ) {
+                  setPlanHighlight(null);
+                  return;
+                }
+                const range = mapPlanNodeToSql(node, planStates.profile.sql);
+                setPlanHighlight(range ? { tabId: activeTab.id, range } : null);
+              }}
               state={planStates.profile}
             />
           )}
@@ -472,10 +507,12 @@ function ResultPanel({
 function PlanPanel({
   mode,
   onRun,
+  onSelectNode,
   state,
 }: {
   mode: "explain" | "profile";
   onRun: () => void;
+  onSelectNode: (node: import("../../lib/commands").PlanNode | null) => void;
   state: ReturnType<typeof useQueryPlan>["states"]["explain"];
 }) {
   if (state.status === "loading") {
@@ -502,7 +539,7 @@ function PlanPanel({
     );
   }
   if (state.status === "ready" && state.plan.mode === mode) {
-    return <QueryFlow plan={state.plan} />;
+    return <QueryFlow onSelectNode={onSelectNode} plan={state.plan} />;
   }
   return (
     <div className="panel-placeholder">

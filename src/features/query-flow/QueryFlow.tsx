@@ -8,14 +8,20 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { useMemo, useState } from "react";
-import type { QueryPlan } from "../../lib/commands";
+import type { PlanNode, QueryPlan } from "../../lib/commands";
 import { layoutPlan } from "./layout";
 import { NodeInspector } from "./NodeInspector";
 import { PlanNodeCard } from "./PlanNode";
 
 const nodeTypes: NodeTypes = { plan: PlanNodeCard };
 
-export function QueryFlow({ plan }: { plan: QueryPlan }) {
+export function QueryFlow({
+  onSelectNode,
+  plan,
+}: {
+  onSelectNode?: (node: PlanNode | null) => void;
+  plan: QueryPlan;
+}) {
   const layout = useMemo(() => layoutPlan(plan.nodes, plan.edges), [plan]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selected = plan.nodes.find((node) => node.id === selectedId) ?? null;
@@ -49,8 +55,14 @@ export function QueryFlow({ plan }: { plan: QueryPlan }) {
             nodesConnectable={false}
             nodesDraggable={false}
             nodeTypes={nodeTypes}
-            onNodeClick={(_event, node) => setSelectedId(node.id)}
-            onPaneClick={() => setSelectedId(null)}
+            onNodeClick={(_event, node) => {
+              setSelectedId(node.id);
+              onSelectNode?.(plan.nodes.find((candidate) => candidate.id === node.id) ?? null);
+            }}
+            onPaneClick={() => {
+              setSelectedId(null);
+              onSelectNode?.(null);
+            }}
             panOnDrag
             proOptions={{ hideAttribution: true }}
             zoomOnDoubleClick={false}

@@ -174,6 +174,72 @@ describe("QueryWorkspace", () => {
     expect(screen.getByText("100")).toBeInTheDocument();
   });
 
+  it("highlights the mapped SQL range for a selected node and clears unmappable nodes", async () => {
+    vi.mocked(explainQueryPlan).mockResolvedValue({
+      mode: "explain",
+      nodes: [
+        {
+          id: "n0",
+          operator: "scan",
+          nativeName: "SEQ_SCAN",
+          source: "fixture.main.orders",
+          estimatedRows: 100,
+          actualRows: null,
+          timingMs: null,
+          rowsScanned: null,
+          details: {},
+        },
+        {
+          id: "n1",
+          operator: "projection",
+          nativeName: "PROJECTION",
+          source: null,
+          estimatedRows: 100,
+          actualRows: null,
+          timingMs: null,
+          rowsScanned: null,
+          details: {},
+        },
+      ],
+      edges: [{ id: "e0", source: "n0", target: "n1" }],
+      rootIds: ["n1"],
+      rawPlan: "[]",
+      fallbackReason: null,
+    });
+    const ref = createRef<QueryWorkspaceHandle>();
+    const { container } = render(
+      <QueryWorkspace
+        activePanel="flow"
+        bottomOpen
+        bottomPanelHeight={292}
+        catalog={catalog}
+        onSetBottomHeight={vi.fn()}
+        onToggleBottom={vi.fn()}
+        onUpdatePanel={vi.fn()}
+        projectId="p1"
+        ref={ref}
+      />,
+    );
+    act(() => ref.current?.insertSql("SELECT * FROM orders"));
+    fireEvent.click(screen.getByRole("button", { name: "Explain" }));
+
+    const scanNode = await screen.findByText("Read data");
+    fireEvent.click(scanNode);
+    const highlight = await waitFor(() => {
+      const found = container.querySelector(".cm-plan-highlight");
+      expect(found).not.toBeNull();
+      return found!;
+    });
+    expect(highlight.textContent).toBe("orders");
+
+    fireEvent.click(screen.getByText("Choose columns"));
+    await waitFor(() => expect(container.querySelector(".cm-plan-highlight")).toBeNull());
+
+    act(() => ref.current?.insertSql(" -- changed after Explain"));
+    fireEvent.click(screen.getByText("Read data"));
+    await waitFor(() => expect(container.querySelector(".cm-plan-highlight")).toBeNull());
+  });
+
   it("shows raw fallback when structured plan parsing is unavailable", async () => {
     vi.mocked(explainQueryPlan).mockResolvedValue({
       mode: "explain",

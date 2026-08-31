@@ -2,12 +2,12 @@ import { useCallback, useState } from "react";
 import { explainQueryPlan, type PlanMode, type QueryPlan } from "../../lib/commands";
 
 export type PlanViewState =
-  | { status: "empty"; plan: null; error: null }
-  | { status: "loading"; plan: null; error: null }
-  | { status: "ready"; plan: QueryPlan; error: null }
-  | { status: "error"; plan: null; error: string };
+  | { status: "empty"; plan: null; error: null; sql: null }
+  | { status: "loading"; plan: null; error: null; sql: string }
+  | { status: "ready"; plan: QueryPlan; error: null; sql: string }
+  | { status: "error"; plan: null; error: string; sql: string };
 
-const emptyState = (): PlanViewState => ({ status: "empty", plan: null, error: null });
+const emptyState = (): PlanViewState => ({ status: "empty", plan: null, error: null, sql: null });
 
 export function useQueryPlan(projectId: string): {
   states: Record<PlanMode, PlanViewState>;
@@ -24,13 +24,13 @@ export function useQueryPlan(projectId: string): {
       if (!projectId || !sql.trim()) return;
       setStates((current) => ({
         ...current,
-        [mode]: { status: "loading", plan: null, error: null },
+        [mode]: { status: "loading", plan: null, error: null, sql },
       }));
       try {
         const plan = await explainQueryPlan(projectId, sql, mode);
         setStates((current) => ({
           ...current,
-          [mode]: { status: "ready", plan, error: null },
+          [mode]: { status: "ready", plan, error: null, sql },
         }));
       } catch (error) {
         setStates((current) => ({
@@ -39,6 +39,7 @@ export function useQueryPlan(projectId: string): {
             status: "error",
             plan: null,
             error: error instanceof Error ? error.message : String(error),
+            sql,
           },
         }));
       }
