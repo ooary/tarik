@@ -1020,9 +1020,11 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
 
 ## EPIC E7 — Beginner-friendly query flow
 
-**Status:** `READY` - E6 provisionally approved; preparation/design audit starts before T1.
+**Status:** `IN PROGRESS` - preparation/design audit complete; E7-T1 fixture capture ready.
 
 **Outcome:** Explain and Profile plans become understandable node graphs.
+
+**Preparation:** See `docs/design/E7-DESIGN-GRAPH.md` for native DuckDB JSON formats, normalized graph boundaries, Explain-vs-Profile semantics, fallback rules, scope, test layers, and implementation order.
 
 - [ ] **E7-T1 Capture stable DuckDB Explain/Profile fixtures**
   - Depends on: E6-T1, E5.5-T4
