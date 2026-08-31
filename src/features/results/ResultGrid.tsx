@@ -5,7 +5,10 @@ import { getResultPage, type ResultPageView } from "../../lib/commands";
 
 const ROW_HEIGHT = 34;
 const ROW_NUMBER_WIDTH = 68;
-const COLUMN_WIDTH = 150;
+const DEFAULT_COLUMN_WIDTH = 150;
+const MIN_COLUMN_WIDTH = 80;
+const MAX_COLUMN_WIDTH = 640;
+const COLUMN_RESIZE_STEP = 16;
 const PAGE_ROWS = 500;
 
 export interface ResultColumn {
@@ -45,14 +48,20 @@ export function formatValue(value: unknown): string {
  */
 export function ResultGrid({ resultId, rowTotal }: { resultId: string; rowTotal: number }) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const resizeCleanupRef = useRef<(() => void) | null>(null);
   const [page, setPage] = useState<ResultPageView | null>(null);
   const [load, setLoad] = useState<{ status: "loading" | "ready" | "error"; message?: string }>({
     status: "loading",
   });
   const [activeRow, setActiveRow] = useState(0);
+  const [columnWidths, setColumnWidths] = useState<number[]>([]);
 
   const columns = useMemo(() => parseColumns(page?.columns), [page]);
   const rows = useMemo(() => page?.rows ?? [], [page]);
+  const columnWidth = useCallback(
+    (columnIndex: number) => columnWidths[columnIndex] ?? DEFAULT_COLUMN_WIDTH,
+    [columnWidths],
+  );
 
   const rowVirtualizer = useVirtualizer({
     count: rows.length,
@@ -67,7 +76,7 @@ export function ResultGrid({ resultId, rowTotal }: { resultId: string; rowTotal:
     horizontal: true,
     count: columns.length + 1,
     getScrollElement: () => scrollRef.current,
-    estimateSize: (index) => (index === 0 ? ROW_NUMBER_WIDTH : COLUMN_WIDTH),
+    estimateSize: (index) => (index === 0 ? ROW_NUMBER_WIDTH : columnWidth(index - 1)),
     // Without this, the pre-measure virtual window may contain only the row
     // number column, which looks like the result has no data columns.
     initialRect: { width: 900, height: 240 },
@@ -99,6 +108,7 @@ export function ResultGrid({ resultId, rowTotal }: { resultId: string; rowTotal:
     let cancelled = false;
     setLoad({ status: "loading" });
     setPage(null);
+    setColumnWidths([]);
     getResultPage(resultId, 0)
       .then((next) => {
         if (cancelled) return;
@@ -115,6 +125,62 @@ export function ResultGrid({ resultId, rowTotal }: { resultId: string; rowTotal:
       cancelled = true;
     };
   }, [resultId]);
+
+  useEffect(() => {
+    // TanStack caches measured sizes. Update its item measurements after a
+    // drag or keyboard resize so all following column offsets are recomputed.
+    columnWidths.forEach((width, columnIndex) => {
+      columnVirtualizer.resizeItem(columnIndex + 1, width);
+    });
+  }, [columnVirtualizer, columnWidths]);
+
+  function setColumnWidth(columnIndex: number, width: number) {
+    const bounded = Math.min(MAX_COLUMN_WIDTH, Math.max(MIN_COLUMN_WIDTH, Math.round(width)));
+    setColumnWidths((current) => {
+      const next = [...current];
+      next[columnIndex] = bounded;
+      return next;
+    });
+  }
+
+  function startColumnResize(event: React.PointerEvent<HTMLSpanElement>, columnIndex: number) {
+    event.preventDefault();
+    event.stopPropagation();
+    resizeCleanupRef.current?.();
+    const startX = event.clientX;
+    const startWidth = columnWidth(columnIndex);
+    const move = (moveEvent: PointerEvent) => {
+      setColumnWidth(columnIndex, startWidth + moveEvent.clientX - startX);
+    };
+    const stop = () => {
+      document.removeEventListener("pointermove", move);
+      document.removeEventListener("pointerup", stop);
+      document.body.classList.remove("result-column-resizing");
+      resizeCleanupRef.current = null;
+    };
+    resizeCleanupRef.current = stop;
+    document.body.classList.add("result-column-resizing");
+    document.addEventListener("pointermove", move);
+    document.addEventListener("pointerup", stop, { once: true });
+  }
+
+  useEffect(
+    () => () => {
+      resizeCleanupRef.current?.();
+    },
+    [],
+  );
+
+  function resizeColumnWithKeyboard(
+    event: React.KeyboardEvent<HTMLSpanElement>,
+    columnIndex: number,
+  ) {
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    event.preventDefault();
+    event.stopPropagation();
+    const direction = event.key === "ArrowLeft" ? -1 : 1;
+    setColumnWidth(columnIndex, columnWidth(columnIndex) + direction * COLUMN_RESIZE_STEP);
+  }
 
   function onKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
     if (rows.length === 0) return;
@@ -172,12 +238,20 @@ export function ResultGrid({ resultId, rowTotal }: { resultId: string; rowTotal:
       : Array.from({ length: Math.min(columns.length + 1, 7) }, (_, index) => ({
           index,
           key: index,
-          size: index === 0 ? ROW_NUMBER_WIDTH : COLUMN_WIDTH,
-          start: index === 0 ? 0 : ROW_NUMBER_WIDTH + (index - 1) * COLUMN_WIDTH,
+          size: index === 0 ? ROW_NUMBER_WIDTH : columnWidth(index - 1),
+          start:
+            index === 0
+              ? 0
+              : ROW_NUMBER_WIDTH +
+                columns
+                  .slice(0, index - 1)
+                  .reduce((total, _column, columnIndex) => total + columnWidth(columnIndex), 0),
         }));
   const pageCount = Math.max(1, Math.ceil(rowTotal / PAGE_ROWS));
   const currentPage = Math.floor((page?.offset ?? 0) / PAGE_ROWS);
-  const gridWidth = columns.length * COLUMN_WIDTH + ROW_NUMBER_WIDTH;
+  const gridWidth =
+    ROW_NUMBER_WIDTH +
+    columns.reduce((total, _column, columnIndex) => total + columnWidth(columnIndex), 0);
 
   return (
     <div className="result-surface">
@@ -254,8 +328,28 @@ export function ResultGrid({ resultId, rowTotal }: { resultId: string; rowTotal:
                       width: virtualColumn.size,
                     }}
                   >
-                    {column.name}
-                    <small className="column-type">{column.nativeType}</small>
+                    <span className="result-grid-header-label">
+                      {column.name}
+                      <small className="column-type">{column.nativeType}</small>
+                    </span>
+                    <span
+                      aria-label={`Resize ${column.name} column`}
+                      aria-orientation="vertical"
+                      aria-valuemax={MAX_COLUMN_WIDTH}
+                      aria-valuemin={MIN_COLUMN_WIDTH}
+                      aria-valuenow={columnWidth(virtualColumn.index - 1)}
+                      className="result-column-resizer"
+                      onDoubleClick={(event) => {
+                        event.stopPropagation();
+                        setColumnWidth(virtualColumn.index - 1, DEFAULT_COLUMN_WIDTH);
+                      }}
+                      onKeyDown={(event) =>
+                        resizeColumnWithKeyboard(event, virtualColumn.index - 1)
+                      }
+                      onPointerDown={(event) => startColumnResize(event, virtualColumn.index - 1)}
+                      role="separator"
+                      tabIndex={0}
+                    />
                   </span>
                 );
               })}
@@ -305,7 +399,7 @@ export function ResultGrid({ resultId, rowTotal }: { resultId: string; rowTotal:
                     return (
                       <span
                         className={`result-grid-cell ${row[columnIndex] === null ? "cell-null" : ""}`}
-                        key={column.name}
+                        key={`${column.name}-${columnIndex}`}
                         style={{
                           left: virtualColumn.start,
                           position: "absolute",

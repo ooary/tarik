@@ -999,6 +999,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
     - `src/features/editor/` results panel now renders the grid for successful row-returning executions; DML completions keep the concise completion message.
     - jsdom cannot measure layout, so the bounded-DOM test asserts the virtualizer's initial overscan window (<30 rows) for a 500-row page of a 24,318-row result; manual review will confirm large-fixture behavior. Release actions land with E6-T5.
     - Post-review fix `876ec03`: `ResultGrid` passed the entire page to `parseColumns` instead of `page.columns`, so the toolbar count appeared but the grid had only the 68px row-number column. The grid now parses the real column array, fixes header/viewport geometry, and renders a bounded 16-row first-paint fallback while ResizeObserver initializes. Regression asserts headers and real cell values render.
+    - Post-review enhancement: result columns are individually resizable from the header edge (80-640 px), keyboard-accessible with Left/Right on the separator, double-click resets to 150 px, and TanStack column measurements/offsets update without disabling virtualization. Widths reset for each new result schema; global drag listeners/cursor are structurally cleaned up.
 
 - [x] **E6-T5 Add result lifecycle and memory instrumentation** — owner: lead-agent
   - Depends on: E6-T3, E6-T4

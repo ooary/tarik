@@ -168,6 +168,36 @@ describe("QueryWorkspace", () => {
     expect(container.querySelector(".result-duration")).toHaveTextContent("Completed in 1.8s");
   });
 
+  it("resizes result columns by pointer and keyboard", async () => {
+    render(
+      <QueryWorkspace
+        activePanel="results"
+        bottomOpen
+        bottomPanelHeight={292}
+        catalog={catalog}
+        onSetBottomHeight={vi.fn()}
+        onToggleBottom={vi.fn()}
+        onUpdatePanel={vi.fn()}
+        projectId="p1"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Run query/ }));
+    const resizer = await screen.findByRole("separator", { name: "Resize country column" });
+    expect(resizer).toHaveAttribute("aria-valuenow", "150");
+
+    fireEvent.pointerDown(resizer, { clientX: 100 });
+    fireEvent.pointerMove(document, { clientX: 180 });
+    fireEvent.pointerUp(document);
+    expect(resizer).toHaveAttribute("aria-valuenow", "230");
+
+    fireEvent.keyDown(resizer, { key: "ArrowLeft" });
+    expect(resizer).toHaveAttribute("aria-valuenow", "214");
+
+    fireEvent.doubleClick(resizer);
+    expect(resizer).toHaveAttribute("aria-valuenow", "150");
+  });
+
   it("keeps the grid DOM bounded while browsing a large result", async () => {
     const pageWithRows = {
       ...firstPage,

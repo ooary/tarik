@@ -858,15 +858,62 @@ tbody tr:hover {
 }
 
 .result-grid-header-cell {
-  flex-direction: column;
+  position: relative;
   justify-content: center;
   color: var(--text-secondary);
   font-weight: 650;
 }
 
+.result-grid-header-label {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  justify-content: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .result-grid-header-cell .column-type {
   color: var(--text-faint);
   font-size: 9px;
+}
+
+.result-column-resizer {
+  position: absolute;
+  z-index: 3;
+  top: 0;
+  right: -4px;
+  width: 9px;
+  height: 100%;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.result-column-resizer::after {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  bottom: 4px;
+  width: 1px;
+  background: transparent;
+  content: "";
+}
+
+.result-column-resizer:hover::after,
+.result-column-resizer:focus-visible::after,
+.result-column-resizing .result-column-resizer::after {
+  background: var(--accent-solid);
+}
+
+.result-column-resizer:focus-visible {
+  outline: none;
+}
+
+.result-column-resizing,
+.result-column-resizing * {
+  cursor: col-resize !important;
+  user-select: none !important;
 }
 
 .result-grid-row:hover {
