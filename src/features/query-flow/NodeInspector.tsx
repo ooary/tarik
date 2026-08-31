@@ -1,0 +1,91 @@
+import type { PlanNode, PlanMode } from "../../lib/commands";
+import { explainOperator, importantDetails } from "./explanations";
+
+export function NodeInspector({ node, mode }: { node: PlanNode | null; mode: PlanMode }) {
+  if (!node) {
+    return (
+      <aside className="flow-inspector flow-inspector-empty" aria-label="Plan node inspector">
+        <strong>Select an operation</strong>
+        <span>Choose a node to see what it does and which rows it processes.</span>
+      </aside>
+    );
+  }
+  const explanation = explainOperator(node);
+  const details = importantDetails(node);
+  return (
+    <aside className="flow-inspector" aria-label="Plan node inspector">
+      <header>
+        <span>{mode === "profile" ? "Actual operation" : "Estimated operation"}</span>
+        <h3>{explanation.title}</h3>
+        <code>{node.nativeName}</code>
+      </header>
+      <p>{explanation.summary}</p>
+      <dl className="flow-inspector-io">
+        <div>
+          <dt>Input</dt>
+          <dd>{explanation.inputLabel}</dd>
+        </div>
+        <div>
+          <dt>Output</dt>
+          <dd>{explanation.outputLabel}</dd>
+        </div>
+      </dl>
+      <dl className="flow-inspector-metrics">
+        {node.source && (
+          <div>
+            <dt>Source</dt>
+            <dd>{node.source}</dd>
+          </div>
+        )}
+        {node.estimatedRows != null && (
+          <div>
+            <dt>Estimated rows</dt>
+            <dd>{node.estimatedRows.toLocaleString("en-US")}</dd>
+          </div>
+        )}
+        {node.actualRows != null && (
+          <div>
+            <dt>Actual rows</dt>
+            <dd>{node.actualRows.toLocaleString("en-US")}</dd>
+          </div>
+        )}
+        {node.timingMs != null && (
+          <div>
+            <dt>Operator time</dt>
+            <dd>{formatMilliseconds(node.timingMs)}</dd>
+          </div>
+        )}
+        {node.rowsScanned != null && (
+          <div>
+            <dt>Rows scanned</dt>
+            <dd>{node.rowsScanned.toLocaleString("en-US")}</dd>
+          </div>
+        )}
+      </dl>
+      {details.length > 0 && (
+        <section>
+          <h4>DuckDB details</h4>
+          <dl className="flow-inspector-details">
+            {details.map((detail) => (
+              <div key={detail.label}>
+                <dt>{detail.label}</dt>
+                <dd>{detail.value}</dd>
+              </div>
+            ))}
+          </dl>
+        </section>
+      )}
+      {!explanation.known && (
+        <p className="flow-inspector-note">
+          No verified beginner explanation is available for this operator.
+        </p>
+      )}
+    </aside>
+  );
+}
+
+function formatMilliseconds(value: number): string {
+  if (value < 0.01) return "<0.01 ms";
+  if (value < 10) return `${value.toFixed(2)} ms`;
+  return `${value.toFixed(1)} ms`;
+}

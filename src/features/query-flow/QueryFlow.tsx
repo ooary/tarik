@@ -7,15 +7,18 @@ import {
   type NodeTypes,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import type { QueryPlan } from "../../lib/commands";
 import { layoutPlan } from "./layout";
+import { NodeInspector } from "./NodeInspector";
 import { PlanNodeCard } from "./PlanNode";
 
 const nodeTypes: NodeTypes = { plan: PlanNodeCard };
 
 export function QueryFlow({ plan }: { plan: QueryPlan }) {
   const layout = useMemo(() => layoutPlan(plan.nodes, plan.edges), [plan]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selected = plan.nodes.find((node) => node.id === selectedId) ?? null;
 
   if (plan.fallbackReason || plan.nodes.length === 0) {
     return (
@@ -31,36 +34,41 @@ export function QueryFlow({ plan }: { plan: QueryPlan }) {
   }
 
   return (
-    <div className="query-flow" data-mode={plan.mode}>
-      <ReactFlowProvider>
-        <ReactFlow
-          aria-label={`${plan.mode === "profile" ? "Profile" : "Explain"} query flow`}
-          edges={layout.edges}
-          elementsSelectable
-          fitView
-          fitViewOptions={{ padding: 0.18, maxZoom: 1.1 }}
-          maxZoom={1.6}
-          minZoom={0.25}
-          nodes={layout.nodes}
-          nodesConnectable={false}
-          nodesDraggable={false}
-          nodeTypes={nodeTypes}
-          panOnDrag
-          proOptions={{ hideAttribution: true }}
-          zoomOnDoubleClick={false}
-        >
-          <Background
-            color="var(--border-subtle)"
-            gap={18}
-            size={1}
-            variant={BackgroundVariant.Dots}
-          />
-          <Controls position="bottom-right" showInteractive={false} />
-        </ReactFlow>
-      </ReactFlowProvider>
-      <span className="flow-mode-label">
-        {plan.mode === "profile" ? "Actual execution profile" : "Estimated execution plan"}
-      </span>
+    <div className="query-flow-shell">
+      <div className="query-flow" data-mode={plan.mode}>
+        <ReactFlowProvider>
+          <ReactFlow
+            aria-label={`${plan.mode === "profile" ? "Profile" : "Explain"} query flow`}
+            edges={layout.edges}
+            elementsSelectable
+            fitView
+            fitViewOptions={{ padding: 0.18, maxZoom: 1.1 }}
+            maxZoom={1.6}
+            minZoom={0.25}
+            nodes={layout.nodes}
+            nodesConnectable={false}
+            nodesDraggable={false}
+            nodeTypes={nodeTypes}
+            onNodeClick={(_event, node) => setSelectedId(node.id)}
+            onPaneClick={() => setSelectedId(null)}
+            panOnDrag
+            proOptions={{ hideAttribution: true }}
+            zoomOnDoubleClick={false}
+          >
+            <Background
+              color="var(--border-subtle)"
+              gap={18}
+              size={1}
+              variant={BackgroundVariant.Dots}
+            />
+            <Controls position="bottom-right" showInteractive={false} />
+          </ReactFlow>
+        </ReactFlowProvider>
+        <span className="flow-mode-label">
+          {plan.mode === "profile" ? "Actual execution profile" : "Estimated execution plan"}
+        </span>
+      </div>
+      <NodeInspector mode={plan.mode} node={selected} />
     </div>
   );
 }

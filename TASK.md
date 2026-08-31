@@ -1072,7 +1072,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
     - Explain toolbar action captures the active immutable editor text without running it and switches to Flow. Profile has an explicit Run Profile action because it executes SQL. Explain/Profile retain independent last states.
     - Loading skeleton, empty actions, structured error, raw structured-fallback, and ready graph states are covered. Tests verify deterministic join convergence/layout, Explain wiring, fallback UI, and accessible Flow/Profile empty states.
 
-- [ ] **E7-T4 Add beginner explanations and node inspector**
+- [x] **E7-T4 Add beginner explanations and node inspector** — owner: lead-agent
   - Depends on: E7-T3
   - Owns: flow explanation dictionary and inspector UI
   - Deliverables:
@@ -1082,6 +1082,10 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: unknown operators show truthful generic details, not invented explanations.
   - Tests: explanation mapping and inspector states.
   - Commit: `feat(flow): explain query nodes for beginners`
+  - Notes:
+    - Explanation dictionary covers scan, filter, projection, join, aggregate, sort, limit, union, window, and result in plain functional language with truthful input/output descriptions.
+    - Selecting a node opens the inspector with explicit `Estimated operation` vs `Actual operation`, source, estimated rows, actual rows, operator timing, rows scanned, and ordered native details (join type/conditions, filters, groups/aggregates, projections, order/top, table/type).
+    - Unknown operators retain their native title/details and explicitly say no verified beginner explanation exists; no guessed semantics. Tests cover every common operator, unknown truthfulness, detail ordering, empty inspector, node selection, estimated labeling, and metric display.
 
 - [ ] **E7-T5 Link flow nodes to relevant SQL when reliably available**
   - Depends on: E7-T4

@@ -162,10 +162,16 @@ describe("QueryWorkspace", () => {
       expect(explainQueryPlan).toHaveBeenCalledWith("p1", "SELECT * FROM orders", "explain"),
     );
     expect(onUpdatePanel).toHaveBeenCalledWith("flow");
-    expect(await screen.findByText("Read data")).toBeInTheDocument();
+    const node = await screen.findByText("Read data");
+    expect(node).toBeInTheDocument();
     expect(container.querySelector(".flow-mode-label")).toHaveTextContent(
       "Estimated execution plan",
     );
+    expect(screen.getByText("Select an operation")).toBeInTheDocument();
+    fireEvent.click(node);
+    expect(await screen.findByText(/DuckDB reads rows from/)).toBeInTheDocument();
+    expect(screen.getByText("Estimated rows")).toBeInTheDocument();
+    expect(screen.getByText("100")).toBeInTheDocument();
   });
 
   it("shows raw fallback when structured plan parsing is unavailable", async () => {

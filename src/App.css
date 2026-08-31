@@ -1036,9 +1036,16 @@ tbody tr:hover {
   }
 }
 
+.query-flow-shell {
+  display: grid;
+  height: calc(100% - 42px);
+  min-height: 0;
+  grid-template-columns: minmax(0, 1fr) 280px;
+}
+
 .query-flow {
   position: relative;
-  height: calc(100% - 42px);
+  min-width: 0;
   min-height: 0;
   background: var(--surface-editor);
 }
@@ -1186,4 +1193,96 @@ tbody tr:hover {
   font-family: var(--font-mono);
   font-size: 10px;
   white-space: pre-wrap;
+}
+
+.flow-inspector {
+  min-width: 0;
+  overflow: auto;
+  border-left: 1px solid var(--border-default);
+  padding: 14px;
+  color: var(--text-secondary);
+  background: var(--surface-raised);
+  font-size: 11px;
+}
+
+.flow-inspector header > span {
+  color: var(--text-muted);
+  font-size: 9px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.flow-inspector h3 {
+  margin: 5px 0 2px;
+  color: var(--text-primary);
+  font-size: 15px;
+}
+
+.flow-inspector code {
+  color: var(--text-faint);
+  font-size: 9px;
+}
+
+.flow-inspector p {
+  line-height: 1.55;
+}
+
+.flow-inspector dl {
+  display: grid;
+  gap: 0;
+  margin: 12px 0;
+}
+
+.flow-inspector dl > div {
+  display: grid;
+  gap: 4px;
+  border-bottom: 1px solid var(--border-subtle);
+  padding: 8px 0;
+}
+
+.flow-inspector dt {
+  color: var(--text-muted);
+  font-size: 9px;
+  font-weight: 650;
+}
+
+.flow-inspector dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.flow-inspector-io {
+  grid-template-columns: 1fr 1fr;
+  gap: 12px !important;
+}
+
+.flow-inspector h4 {
+  margin: 18px 0 2px;
+  color: var(--text-primary);
+  font-size: 11px;
+}
+
+.flow-inspector-note {
+  border: 1px solid var(--border-subtle);
+  padding: 8px;
+  color: var(--text-muted);
+  background: var(--surface-hover);
+}
+
+.flow-inspector-empty {
+  display: grid;
+  place-content: center;
+  gap: 6px;
+  text-align: center;
+}
+
+.flow-inspector-empty strong {
+  color: var(--text-primary);
+}
+
+@media (max-width: 900px) {
+  .query-flow-shell {
+    grid-template-columns: minmax(0, 1fr) 220px;
+  }
 }
