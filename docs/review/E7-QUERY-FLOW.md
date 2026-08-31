@@ -1,0 +1,109 @@
+# EPIC E7 Review — Beginner-friendly query flow
+
+**Status:** REVIEW  
+**Scope:** Explain/Profile capture, normalized DuckDB plan graph, XYFlow visualization, beginner inspector, and conservative SQL-range mapping.
+
+## Build and launch
+
+```bash
+scripts/build-engine.sh
+npm run tauri dev
+```
+
+Open a project with at least two imported or linked relations. The checks below can use your own names; substitute them in the sample SQL.
+
+## 1. Explain does not execute SQL
+
+1. Put a read query in the editor, for example:
+
+   ```sql
+   SELECT * FROM orders WHERE amount > 20 ORDER BY amount DESC LIMIT 10;
+   ```
+
+2. Click **Explain**.
+3. Confirm the lower panel switches to **Flow** and labels it **Estimated execution plan**.
+4. Confirm nodes show estimated rows, not actual runtime/timing claims.
+5. Use a harmless DDL statement such as `CREATE TABLE e7_explain_guard AS SELECT 1 AS id;` and click **Explain** only.
+6. Refresh the catalog and confirm `e7_explain_guard` was **not** created.
+
+## 2. Directed graph and controls
+
+1. Explain a two-input join:
+
+   ```sql
+   SELECT c.customer_name, count(*) AS orders
+   FROM orders o
+   JOIN customers c ON o.customer_id = c.id
+   GROUP BY c.customer_name
+   ORDER BY orders DESC
+   LIMIT 10;
+   ```
+
+2. Confirm both read/source nodes are left of and visibly converge into one Join node.
+3. Confirm later group/sort/limit/result steps continue toward the right.
+4. Pan, zoom, fit, and select nodes. Confirm controls remain compact and the graph remains readable.
+5. Resize the bottom panel and app window. Confirm no node/inspector content overlaps outside the panel.
+
+## 3. Beginner inspector
+
+1. Select Read data, Join, Group and summarize, Sort, and Limit nodes.
+2. Confirm the inspector shows:
+   - a plain-language description;
+   - clear Input and Output meanings;
+   - native DuckDB operator name;
+   - source and estimated rows when reported;
+   - join type/conditions, filters, groups/aggregates, projections, sort keys, or limits when DuckDB reports them.
+3. Click empty graph space and confirm the inspector returns to **Select an operation**.
+4. Confirm no operator explanation makes claims beyond the native details shown.
+
+## 4. Profile executes and reports actuals
+
+1. Use a read-only query first and open **Profile**.
+2. Click **Run Profile**.
+3. Confirm the panel says **Actual execution profile** and nodes/inspector show actual rows and timing where available.
+4. Confirm Explain and Profile retain independent last plans when switching tabs.
+5. Profile a failed SQL statement and confirm a structured error with **Try again** appears.
+6. Profile a DDL/DML statement only after acknowledging that Profile executes SQL. Confirm the statement's effect occurs exactly once.
+
+## 5. SQL-range bridge (best effort)
+
+1. Explain the join query from section 2.
+2. Select:
+   - Read data → the matching table token should highlight;
+   - Join → the unique `JOIN` keyword should highlight;
+   - Group and summarize → `GROUP BY` should highlight;
+   - Sort → `ORDER BY` should highlight;
+   - Limit → `LIMIT` should highlight.
+3. Select Choose columns/Projection and confirm an unsupported mapping does not highlight unrelated SQL.
+4. Try a nested query with two `WHERE` clauses. Select a Filter node and confirm Tarik does **not** knowingly choose one ambiguous range.
+5. Edit SQL after producing the plan, then select a node. Confirm no stale/wrong range is left highlighted.
+6. Switch query tabs and confirm a highlight does not leak into another tab.
+
+## 6. Fallback and error resilience
+
+1. Confirm empty Flow/Profile tabs show explicit Run Explain/Run Profile actions.
+2. Confirm loading state appears while a plan/profile is being captured.
+3. If a future or malformed native plan is encountered, confirm Tarik shows **Structured graph unavailable** with the raw plan rather than crashing or inventing nodes.
+4. Confirm closing/reopening the project still permits normal query execution after Explain/Profile use.
+
+## Automated verification recorded
+
+- `cargo fmt --all --check`
+- `cargo clippy --workspace --all-targets -- -D warnings`
+- `cargo test --workspace` (13 passing result groups)
+- `npm run lint` (0 errors; four known test-shim warnings)
+- `npm run typecheck`
+- `npm test` (7 passing command/protocol tests)
+- `npm run test:ui` (65 passing UI/unit tests)
+- `npm run build`
+
+## Sign-off
+
+- [ ] Explain semantics and estimated labeling approved
+- [ ] Join graph/layout and controls approved
+- [ ] Beginner inspector/details approved
+- [ ] Profile execution and actual labeling approved
+- [ ] Best-effort SQL highlighting approved
+- [ ] Fallback/error states approved
+
+When all items pass, reply **“E7 approved”**. E8 remains blocked until that approval.
