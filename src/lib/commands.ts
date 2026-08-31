@@ -317,6 +317,44 @@ export interface ExecutionError {
   message: string;
 }
 
+export type PlanMode = "explain" | "profile";
+
+export interface PlanNode {
+  id: string;
+  operator: string;
+  nativeName: string;
+  source: string | null;
+  estimatedRows: number | null;
+  actualRows: number | null;
+  timingMs: number | null;
+  rowsScanned: number | null;
+  details: Record<string, unknown>;
+}
+
+export interface PlanEdge {
+  id: string;
+  source: string;
+  target: string;
+}
+
+export interface QueryPlan {
+  mode: PlanMode;
+  nodes: PlanNode[];
+  edges: PlanEdge[];
+  rootIds: string[];
+  rawPlan: string;
+  fallbackReason: string | null;
+}
+
+export function explainQueryPlan(
+  projectId: string,
+  sql: string,
+  mode: PlanMode,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<QueryPlan> {
+  return invokeCommand<QueryPlan>("explain_query_plan", { projectId, sql, mode });
+}
+
 export function executeQuery(
   projectId: string,
   tabId: string,

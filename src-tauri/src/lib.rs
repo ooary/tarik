@@ -1,6 +1,7 @@
 mod engine_manager;
 mod metadata;
 mod paths;
+mod plan;
 mod projects;
 mod query;
 mod results;
@@ -147,6 +148,7 @@ pub fn run() {
             projects::commands::repair_linked_source,
             projects::commands::drop_catalog_object,
             projects::commands::remove_linked_source,
+            plan::commands::explain_query_plan,
             query::commands::execute_query,
             query::commands::get_query_status,
             query::commands::cancel_query,

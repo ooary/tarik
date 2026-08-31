@@ -1040,7 +1040,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
     - Fixtures cover scan, pushed filter/projection, hash join, aggregate, sort/limit (`TOP_N`), union, CTE, and window; database qualifiers are sanitized to `fixture`, volatile profile timing/query/memory values are zeroed, and no machine paths remain.
     - `manifest.json` pins version/format and records raw JSON/text preservation as the fallback. Mechanical tests validate JSON, one connected Explain root, profile connectivity/metrics, required operator families, manifest completeness, and path sanitization.
 
-- [ ] **E7-T2 Parse DuckDB plans into a normalized graph**
+- [x] **E7-T2 Parse DuckDB plans into a normalized graph** — owner: lead-agent
   - Depends on: E7-T1, E5.5-T4
   - Owns: `src-tauri/src/plan/`
   - Deliverables:
@@ -1050,6 +1050,11 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: all fixture operators produce connected, deterministic graphs.
   - Tests: golden parser tests and malformed-plan fallback.
   - Commit: `feat(plan): normalize duckdb query plans`
+  - Notes:
+    - `src-tauri/src/plan/` captures native JSON through the existing async engine lifecycle (`EXPLAIN (FORMAT JSON)` or explicit `EXPLAIN (ANALYZE, FORMAT JSON)`), reads the one-row payload, and structurally releases its temporary result pages on decode success/failure.
+    - Explain/Profile have explicit parsers behind stable `QueryPlan`, `PlanNode`, `PlanEdge`, and `PlanMode`. IDs/edges are deterministic preorder; edges flow from child/input to parent/result. Explain preserves estimated cardinality; Profile preserves actual cardinality, milliseconds, rows scanned, and native details.
+    - Common native operators normalize to scan/join/aggregate/filter/projection/sort/limit/union/window/result. Unknown names are kept as `unknown` with native name/details. Invalid/malformed JSON returns an empty normalized graph plus `rawPlan` and `fallbackReason`, never drops the source.
+    - Tests cover every fixture, deterministic connectivity, two-input joins, profile metrics, unknown operator preservation, malformed fallback, a real sidecar Explain/release roundtrip, and the typed frontend command.
 
 - [ ] **E7-T3 Build XYFlow query graph**
   - Depends on: E7-T2, E1-T2

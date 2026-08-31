@@ -140,6 +140,27 @@ test("source inspection, link, import, repair, and removal use typed commands", 
   );
 });
 
+test("query plans use the typed project/sql/mode command", async () => {
+  const { explainQueryPlan } = await loadCommandsModule();
+  const calls = [];
+  const invoke = async (command, args) => {
+    calls.push({ command, args });
+    return {
+      mode: "explain",
+      nodes: [],
+      edges: [],
+      rootIds: [],
+      rawPlan: "",
+      fallbackReason: null,
+    };
+  };
+
+  await explainQueryPlan("p1", "SELECT 1", "explain", invoke);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].command, "explain_query_plan");
+  assert.deepEqual({ ...calls[0].args }, { projectId: "p1", sql: "SELECT 1", mode: "explain" });
+});
+
 test("session snapshots use typed metadata commands", async () => {
   const { saveQuerySession, loadQuerySession } = await loadCommandsModule();
   const snapshot = {
