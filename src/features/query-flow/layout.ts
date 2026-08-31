@@ -1,4 +1,4 @@
-import type { Edge, Node } from "@xyflow/react";
+import { MarkerType, type Edge, type Node } from "@xyflow/react";
 import type { PlanEdge, PlanNode } from "../../lib/commands";
 
 const NODE_WIDTH = 220;
@@ -8,6 +8,7 @@ const ROW_GAP = 34;
 
 export interface PlanNodeData extends Record<string, unknown> {
   planNode: PlanNode;
+  traversalDelayMs: number;
 }
 
 /**
@@ -56,7 +57,7 @@ export function layoutPlan(
     return {
       id: node.id,
       type: "plan",
-      data: { planNode: node },
+      data: { planNode: node, traversalDelayMs: level * 620 },
       position: {
         x: level * (NODE_WIDTH + COLUMN_GAP),
         y: (totalHeight - levelHeight) / 2 + index * (NODE_HEIGHT + ROW_GAP),
@@ -71,7 +72,9 @@ export function layoutPlan(
     id: edge.id,
     source: edge.source,
     target: edge.target,
-    type: "smoothstep",
+    type: "traversal",
+    data: { traversalDelayMs: depth(edge.source) * 620 + 100 },
+    markerEnd: { type: MarkerType.ArrowClosed },
     animated: false,
   }));
   return { nodes: positioned, edges: flowEdges };

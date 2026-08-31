@@ -40,11 +40,23 @@ Open a project with at least two imported or linked relations. The checks below 
    ```
 
 2. Confirm both read/source nodes are left of and visibly converge into one Join node.
-3. Confirm later group/sort/limit/result steps continue toward the right.
-4. Pan, zoom, fit, and select nodes. Confirm controls remain compact and the graph remains readable.
-5. Resize the bottom panel and app window. Confirm no node/inspector content overlaps outside the panel.
+3. Confirm persistent connector lines and arrowheads remain visible between every connected node.
+4. Confirm a restrained pulse travels once from source to result and each reached node gets a brief border cue. The animation must not loop.
+5. Confirm later group/sort/limit/result steps continue toward the right.
+6. Pan, zoom, fit, and select nodes. Confirm controls remain compact and the graph remains readable.
+7. Resize the bottom panel and app window. Confirm no node/inspector content overlaps outside the panel.
+8. Enable reduced motion at OS/browser level and reopen Flow. Confirm connectors remain visible but traversal motion is effectively disabled.
 
-## 3. Beginner inspector
+## 3. Automatic flow on Run
+
+1. Return to Results, then click **Run query** on a harmless read query.
+2. Confirm Tarik immediately opens Flow and briefly shows **Preparing flow** while capturing a non-executing estimated plan.
+3. Confirm the graph appears and animates, then the real query starts exactly once.
+4. Confirm the Result tab still contains the normal running/succeeded result and can be selected at any time.
+5. Run a harmless DDL statement and confirm it takes effect exactly once, not twice. Automatic Flow must use Explain, never Profile.
+6. Use invalid SQL. Confirm the Flow error is visible and the actual execution still reports its normal structured SQL error.
+
+## 4. Beginner inspector
 
 1. Select Read data, Join, Group and summarize, Sort, and Limit nodes.
 2. Confirm the inspector shows:
@@ -56,7 +68,7 @@ Open a project with at least two imported or linked relations. The checks below 
 3. Click empty graph space and confirm the inspector returns to **Select an operation**.
 4. Confirm no operator explanation makes claims beyond the native details shown.
 
-## 4. Profile executes and reports actuals
+## 5. Profile executes and reports actuals
 
 1. Use a read-only query first and open **Profile**.
 2. Click **Run Profile**.
@@ -65,7 +77,7 @@ Open a project with at least two imported or linked relations. The checks below 
 5. Profile a failed SQL statement and confirm a structured error with **Try again** appears.
 6. Profile a DDL/DML statement only after acknowledging that Profile executes SQL. Confirm the statement's effect occurs exactly once.
 
-## 5. SQL-range bridge (best effort)
+## 6. SQL-range bridge (best effort)
 
 1. Explain the join query from section 2.
 2. Select:
@@ -79,7 +91,7 @@ Open a project with at least two imported or linked relations. The checks below 
 5. Edit SQL after producing the plan, then select a node. Confirm no stale/wrong range is left highlighted.
 6. Switch query tabs and confirm a highlight does not leak into another tab.
 
-## 6. Fallback and error resilience
+## 7. Fallback and error resilience
 
 1. Confirm empty Flow/Profile tabs show explicit Run Explain/Run Profile actions.
 2. Confirm loading state appears while a plan/profile is being captured.
@@ -94,13 +106,14 @@ Open a project with at least two imported or linked relations. The checks below 
 - `npm run lint` (0 errors; four known test-shim warnings)
 - `npm run typecheck`
 - `npm test` (7 passing command/protocol tests)
-- `npm run test:ui` (65 passing UI/unit tests)
+- `npm run test:ui` (66 passing UI/unit tests)
 - `npm run build`
 
 ## Sign-off
 
 - [ ] Explain semantics and estimated labeling approved
-- [ ] Join graph/layout and controls approved
+- [ ] Join graph/connectors/traversal and controls approved
+- [ ] Automatic estimated Flow on Run approved
 - [ ] Beginner inspector/details approved
 - [ ] Profile execution and actual labeling approved
 - [ ] Best-effort SQL highlighting approved

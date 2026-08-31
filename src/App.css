@@ -1056,8 +1056,47 @@ tbody tr:hover {
 }
 
 .query-flow .react-flow__edge-path {
-  stroke: var(--border-strong);
-  stroke-width: 1.5;
+  stroke: var(--border-control);
+  stroke-width: 1.75;
+}
+
+.query-flow .react-flow__arrowhead polyline {
+  fill: var(--border-control);
+  stroke: var(--border-control);
+}
+
+.query-flow .flow-edge-pulse {
+  pointer-events: none;
+  stroke: var(--accent-solid);
+  stroke-dasharray: 0.09 0.91;
+  stroke-dashoffset: 1;
+  stroke-linecap: round;
+  stroke-width: 2.5;
+  vector-effect: non-scaling-stroke;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .query-flow .flow-edge-pulse {
+    animation: flow-edge-traversal 1.05s cubic-bezier(0.4, 0, 0.2, 1) both;
+    animation-delay: var(--flow-traversal-delay, 0ms);
+  }
+}
+
+@keyframes flow-edge-traversal {
+  0% {
+    opacity: 0;
+    stroke-dashoffset: 1;
+  }
+
+  12%,
+  78% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0;
+    stroke-dashoffset: 0;
+  }
 }
 
 .query-flow .react-flow__controls {
@@ -1093,6 +1132,29 @@ tbody tr:hover {
 .flow-node-selected {
   border-color: var(--accent-solid);
   outline: 2px solid color-mix(in srgb, var(--accent-solid) 22%, transparent);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .flow-node-traversal {
+    animation: flow-node-arrival 520ms cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation-delay: var(--flow-node-delay, 0ms);
+  }
+}
+
+@keyframes flow-node-arrival {
+  0% {
+    border-color: var(--border-default);
+    transform: translateX(-3px);
+  }
+
+  45% {
+    border-color: var(--accent-solid);
+  }
+
+  100% {
+    border-color: var(--border-default);
+    transform: translateX(0);
+  }
 }
 
 .flow-node-heading {

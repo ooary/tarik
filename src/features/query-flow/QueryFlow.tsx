@@ -4,16 +4,19 @@ import {
   Controls,
   ReactFlow,
   ReactFlowProvider,
+  type EdgeTypes,
   type NodeTypes,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { useMemo, useState } from "react";
 import type { PlanNode, QueryPlan } from "../../lib/commands";
+import { FlowEdge } from "./FlowEdge";
 import { layoutPlan } from "./layout";
 import { NodeInspector } from "./NodeInspector";
 import { PlanNodeCard } from "./PlanNode";
 
 const nodeTypes: NodeTypes = { plan: PlanNodeCard };
+const edgeTypes: EdgeTypes = { traversal: FlowEdge };
 
 export function QueryFlow({
   onSelectNode,
@@ -46,6 +49,7 @@ export function QueryFlow({
           <ReactFlow
             aria-label={`${plan.mode === "profile" ? "Profile" : "Explain"} query flow`}
             edges={layout.edges}
+            edgeTypes={edgeTypes}
             elementsSelectable
             fitView
             fitViewOptions={{ padding: 0.18, maxZoom: 1.1 }}

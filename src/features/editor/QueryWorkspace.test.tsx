@@ -271,6 +271,7 @@ describe("QueryWorkspace", () => {
 
   it("runs the active tab and shows the running state", async () => {
     vi.mocked(getQueryStatus).mockResolvedValue({ ...runningView, tabId: "t1" });
+    const onUpdatePanel = vi.fn();
     const { container } = render(
       <QueryWorkspace
         activePanel="results"
@@ -279,13 +280,20 @@ describe("QueryWorkspace", () => {
         catalog={catalog}
         onSetBottomHeight={vi.fn()}
         onToggleBottom={vi.fn()}
-        onUpdatePanel={vi.fn()}
+        onUpdatePanel={onUpdatePanel}
         projectId="p1"
       />,
     );
 
     fireEvent.click(screen.getByRole("button", { name: /Run query/ }));
-    expect(executeQuery).toHaveBeenCalledWith("p1", expect.any(String), expect.any(String));
+    expect(onUpdatePanel).toHaveBeenCalledWith("flow");
+    await waitFor(() =>
+      expect(explainQueryPlan).toHaveBeenCalledWith("p1", expect.any(String), "explain"),
+    );
+    await waitFor(() =>
+      expect(executeQuery).toHaveBeenCalledWith("p1", expect.any(String), expect.any(String)),
+    );
+    expect(executeQuery).toHaveBeenCalledTimes(1);
     expect(
       await screen.findByText("Running", { selector: ".result-state strong" }),
     ).toBeInTheDocument();

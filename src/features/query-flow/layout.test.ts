@@ -56,5 +56,8 @@ describe("layoutPlan", () => {
       ["n1", "n0"],
       ["n2", "n0"],
     ]);
+    expect(first.edges.every((edge) => edge.type === "traversal")).toBe(true);
+    expect(first.edges.every((edge) => edge.markerEnd != null)).toBe(true);
+    expect(first.edges.map((edge) => edge.data?.traversalDelayMs)).toEqual([100, 100]);
   });
 });

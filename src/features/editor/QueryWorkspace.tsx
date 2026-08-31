@@ -70,6 +70,7 @@ export const QueryWorkspace = forwardRef<QueryWorkspaceHandle, QueryWorkspacePro
     const sectionRef = useRef<HTMLElement>(null);
     const { executions, run, cancel, forget } = useQueryExecution(projectId, onQuerySucceeded);
     const [runError, setRunError] = useState<string | null>(null);
+    const [autoRunPending, setAutoRunPending] = useState(false);
     const [planHighlight, setPlanHighlight] = useState<{ tabId: string; range: SqlRange } | null>(
       null,
     );
@@ -83,12 +84,22 @@ export const QueryWorkspace = forwardRef<QueryWorkspaceHandle, QueryWorkspacePro
       activeExecution?.state === "queued" || activeExecution?.state === "running";
 
     const runActiveTab = () => {
-      if (!projectId || !activeTab || executionActive) return;
+      if (!projectId || !activeTab || executionActive || autoRunPending) return;
+      const { id: tabId, sql } = activeTab;
       setRunError(null);
-      run(activeTab.id, activeTab.sql).catch((error: unknown) => {
-        setRunError(error instanceof Error ? error.message : String(error));
-      });
+      setPlanHighlight(null);
+      setAutoRunPending(true);
+      onUpdatePanel("flow");
       if (!bottomOpen) onToggleBottom();
+      // Explain is non-executing and deliberately completes before the real
+      // submission. This gives Run an estimated path animation without ever
+      // profiling or executing DDL/DML twice.
+      void runPlan(sql, "explain")
+        .then(() => run(tabId, sql))
+        .catch((error: unknown) => {
+          setRunError(error instanceof Error ? error.message : String(error));
+        })
+        .finally(() => setAutoRunPending(false));
     };
 
     const runActivePlan = (mode: "explain" | "profile") => {
@@ -234,12 +245,14 @@ export const QueryWorkspace = forwardRef<QueryWorkspaceHandle, QueryWorkspacePro
         <div className="editor-toolbar">
           <div className="toolbar-group">
             <button
+              aria-label={autoRunPending ? "Preparing query flow" : "Run query"}
               className="run-button"
-              disabled={executionActive || !activeTab || !projectId}
+              disabled={executionActive || autoRunPending || !activeTab || !projectId}
               onClick={runActiveTab}
               type="button"
             >
-              <PlayIcon aria-hidden="true" size={14} weight="fill" /> Run query <kbd>Ctrl</kbd>
+              <PlayIcon aria-hidden="true" size={14} weight="fill" />
+              {autoRunPending ? "Preparing flow" : "Run query"} <kbd>Ctrl</kbd>
               <kbd>Enter</kbd>
             </button>
             <button

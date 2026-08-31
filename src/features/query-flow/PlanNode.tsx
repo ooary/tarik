@@ -1,4 +1,5 @@
 import { Handle, Position, type NodeProps } from "@xyflow/react";
+import type { CSSProperties } from "react";
 import type { PlanNodeData } from "./layout";
 
 export function PlanNodeCard({ data, selected }: NodeProps & { data: PlanNodeData }) {
@@ -9,8 +10,14 @@ export function PlanNodeCard({ data, selected }: NodeProps & { data: PlanNodeDat
       : node.estimatedRows != null
         ? `~${node.estimatedRows.toLocaleString("en-US")} estimated rows`
         : null;
+  const traversalStyle = {
+    "--flow-node-delay": `${data.traversalDelayMs}ms`,
+  } as CSSProperties;
   return (
-    <div className={`flow-node ${selected ? "flow-node-selected" : ""}`}>
+    <div
+      className={`flow-node flow-node-traversal ${selected ? "flow-node-selected" : ""}`}
+      style={traversalStyle}
+    >
       <Handle aria-label="Input" position={Position.Left} type="target" />
       <div className="flow-node-heading">
         <strong>{displayOperator(node.operator, node.nativeName)}</strong>

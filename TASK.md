@@ -1068,8 +1068,9 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Commit: `feat(flow): visualize query execution plans`
   - Notes:
     - Added official `@xyflow/react`. Deterministic layout puts source/input depth on the left and result/root on the right; nodes at each depth retain normalized preorder. Two scan inputs receive distinct rows and converge into one join. Pan/zoom/fit and restrained controls are enabled; minimap is intentionally omitted at current graph sizes.
+    - Review fix: persistent connector strokes now use the defined `--border-control` token (the original undefined `--border-strong` token made edges invisible). Arrowheads show source-to-result direction. A one-shot depth-staggered accent pulse and brief node-arrival border cue communicate traversal; reduced-motion keeps static connectors and suppresses motion.
     - Node cards show beginner operation label, native operator, source, estimated or actual rows, and profile timing. Flow is labeled `Estimated execution plan`; Profile is labeled `Actual execution profile`.
-    - Explain toolbar action captures the active immutable editor text without running it and switches to Flow. Profile has an explicit Run Profile action because it executes SQL. Explain/Profile retain independent last states.
+    - Explain toolbar action captures the active immutable editor text without running it and switches to Flow. Normal Run now opens Flow and completes a non-executing Explain capture before submitting the real SQL exactly once, so DDL/DML is never doubled; Profile remains explicit because it executes SQL. Explain/Profile retain independent last states.
     - Loading skeleton, empty actions, structured error, raw structured-fallback, and ready graph states are covered. Tests verify deterministic join convergence/layout, Explain wiring, fallback UI, and accessible Flow/Profile empty states.
 
 - [x] **E7-T4 Add beginner explanations and node inspector** — owner: lead-agent
