@@ -153,6 +153,84 @@ fn session_open_import_catalog_close_roundtrip() {
 }
 
 #[test]
+fn catalog_drop_object_deletes_tables_and_views_with_quoted_names() {
+    let mut engine = spawn_engine();
+    let database = temp_path("drop-object", ".duckdb");
+    engine.assert_ok(
+        "session.open",
+        json!({
+            "sessionId": "drop-session",
+            "locator": { "engineId": "duckdb", "payload": { "path": database } }
+        }),
+    );
+
+    engine.assert_ok(
+        "query.execute",
+        json!({
+            "sessionId": "drop-session",
+            "executionId": "drop-setup",
+            "sql": "CREATE TABLE \"order items\" (id INTEGER); CREATE VIEW \"order view\" AS SELECT * FROM \"order items\";",
+            "cacheDir": CACHE_DIR,
+        }),
+    );
+    assert_eq!(
+        poll_terminal(&mut engine, "drop-setup")["state"],
+        "succeeded"
+    );
+    let catalog = engine.assert_ok("catalog.inspect", json!({ "sessionId": "drop-session" }));
+    let objects = catalog["objects"].as_array().unwrap();
+    let table = objects
+        .iter()
+        .find(|object| object["name"] == "order items")
+        .unwrap();
+    assert!(objects
+        .iter()
+        .any(|object| object["name"] == "order view" && object["kind"] == "view"));
+    let database_name = table["database"].as_str().unwrap();
+
+    engine.assert_ok(
+        "catalog.drop_object",
+        json!({
+            "sessionId": "drop-session",
+            "database": database_name,
+            "schema": "main",
+            "name": "order view",
+            "kind": "view",
+        }),
+    );
+    engine.assert_ok(
+        "catalog.drop_object",
+        json!({
+            "sessionId": "drop-session",
+            "database": database_name,
+            "schema": "main",
+            "name": "order items",
+            "kind": "table",
+        }),
+    );
+    let catalog = engine.assert_ok("catalog.inspect", json!({ "sessionId": "drop-session" }));
+    let objects = catalog["objects"].as_array().unwrap();
+    assert!(!objects.iter().any(|object| object["name"] == "order items"));
+    assert!(!objects.iter().any(|object| object["name"] == "order view"));
+
+    // The wrong kind cannot silently delete the remaining relation type.
+    let response = engine.request(
+        "catalog.drop_object",
+        json!({
+            "sessionId": "drop-session",
+            "database": database_name,
+            "schema": "main",
+            "name": "not-there",
+            "kind": "invalid",
+        }),
+    );
+    assert_eq!(response["error"]["code"], "source.invalid_options");
+
+    engine.child.kill().ok();
+    let _ = std::fs::remove_file(&database);
+}
+
+#[test]
 fn unknown_method_and_missing_session_surface_structured_errors() {
     let mut engine = spawn_engine();
 

@@ -8,6 +8,7 @@ import {
   chooseSourceFile,
   closeProject,
   createProject,
+  dropCatalogObject,
   getActiveProject,
   getRuntimeInfo,
   getWorkbenchPreferences,
@@ -35,6 +36,7 @@ vi.mock("./lib/commands", () => ({
   chooseSourceFile: vi.fn(),
   closeProject: vi.fn(),
   createProject: vi.fn(),
+  dropCatalogObject: vi.fn(),
   getActiveProject: vi.fn(),
   getRuntimeInfo: vi.fn(),
   getWorkbenchPreferences: vi.fn(),
@@ -73,6 +75,7 @@ const sourceInspection = {
 
 describe("Tarik workbench shell", () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     runtimeInfoMock.mockReset();
     vi.mocked(getWorkbenchPreferences).mockResolvedValue(null);
     vi.mocked(setWorkbenchPreferences).mockResolvedValue(undefined);
@@ -158,6 +161,7 @@ describe("Tarik workbench shell", () => {
       duckdbPath: "/data/existing.duckdb",
     });
     vi.mocked(closeProject).mockResolvedValue(true);
+    vi.mocked(dropCatalogObject).mockResolvedValue(true);
     runtimeInfoMock.mockResolvedValue({
       appName: "Tarik",
       appVersion: "0.1.0",
@@ -302,6 +306,110 @@ describe("Tarik workbench shell", () => {
     expect(screen.getByTitle("Estimated: 1,200 rows")).toBeInTheDocument();
     expect(chooseDuckDbFile).toHaveBeenCalled();
     expect(openProject).toHaveBeenCalledWith("Existing", "/data/existing.duckdb");
+  });
+
+  it("deletes a table from the project and refreshes Explorer", async () => {
+    const activeProject = {
+      id: "project-1",
+      name: "Local analysis",
+      duckdbPath: "/data/project.duckdb",
+    };
+    const catalogWithTable = {
+      objects: [
+        {
+          database: "project",
+          schema: "main",
+          name: "orders",
+          kind: "table" as const,
+          estimatedRowCount: 3,
+        },
+      ],
+      columns: [],
+    };
+    vi.mocked(getActiveProject).mockResolvedValue(activeProject);
+    vi.mocked(inspectProjectCatalog)
+      .mockResolvedValueOnce(catalogWithTable)
+      .mockResolvedValueOnce({ objects: [], columns: [] });
+    vi.mocked(listSources).mockResolvedValue([
+      {
+        id: "source-1",
+        projectId: "project-1",
+        displayName: "orders",
+        kind: "duckdb_table",
+        state: "ready",
+        sourcePath: "/data/orders.csv",
+        duckdbName: "orders",
+        options: {},
+        createdAt: "1",
+        updatedAt: "1",
+      },
+    ]);
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    render(<App />);
+
+    const row = await screen.findByTitle("main.orders");
+    fireEvent.contextMenu(row.closest("button")!);
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Delete table" }));
+
+    await waitFor(() =>
+      expect(dropCatalogObject).toHaveBeenCalledWith(
+        "project-1",
+        "project",
+        "main",
+        "orders",
+        "table",
+      ),
+    );
+    expect(confirm).toHaveBeenCalledWith(
+      expect.stringContaining("The original source file is preserved:\n/data/orders.csv"),
+    );
+    await waitFor(() => expect(screen.queryByText("orders")).not.toBeInTheDocument());
+    confirm.mockRestore();
+  });
+
+  it("uses Remove link for a linked Parquet catalog view", async () => {
+    vi.mocked(getActiveProject).mockResolvedValue({
+      id: "project-1",
+      name: "Local analysis",
+      duckdbPath: "/data/project.duckdb",
+    });
+    vi.mocked(inspectProjectCatalog).mockResolvedValue({
+      objects: [
+        {
+          database: "project",
+          schema: "main",
+          name: "orders_link",
+          kind: "view",
+          estimatedRowCount: null,
+        },
+      ],
+      columns: [],
+    });
+    vi.mocked(listSources).mockResolvedValue([
+      {
+        id: "source-2",
+        projectId: "project-1",
+        displayName: "orders_link",
+        kind: "linked_parquet",
+        state: "ready",
+        sourcePath: "/data/orders.parquet",
+        duckdbName: "orders_link",
+        options: {},
+        createdAt: "1",
+        updatedAt: "1",
+      },
+    ]);
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    render(<App />);
+
+    const row = await screen.findByTitle("main.orders_link");
+    fireEvent.contextMenu(row.closest("button")!);
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Remove link" }));
+
+    await waitFor(() => expect(removeLinkedSource).toHaveBeenCalledWith("source-2"));
+    expect(dropCatalogObject).not.toHaveBeenCalled();
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining("The Parquet file is preserved"));
+    confirm.mockRestore();
   });
 
   it("opens the CSV import wizard and imports confirmed options", async () => {

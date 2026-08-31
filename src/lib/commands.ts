@@ -272,6 +272,23 @@ export function repairLinkedSource(
   return invokeCommand<SourceMutationResult>("repair_linked_source", { sourceId, replacement });
 }
 
+export function dropCatalogObject(
+  projectId: string,
+  databaseName: string,
+  schema: string,
+  name: string,
+  kind: CatalogObjectKind,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<boolean> {
+  return invokeCommand<boolean>("drop_catalog_object", {
+    projectId,
+    databaseName,
+    schema,
+    name,
+    kind,
+  });
+}
+
 export function removeLinkedSource(
   sourceId: string,
   invokeCommand: InvokeCommand = invoke,

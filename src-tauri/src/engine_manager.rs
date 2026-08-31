@@ -138,6 +138,25 @@ impl EngineManager {
         serde_json::from_value(value).map_err(|error| format!("catalog decode failed: {error}"))
     }
 
+    pub fn drop_catalog_object(
+        &self,
+        database: &str,
+        schema: &str,
+        name: &str,
+        kind: &str,
+    ) -> Result<(), String> {
+        self.session_request(
+            "catalog.drop_object",
+            serde_json::json!({
+                "database": database,
+                "schema": schema,
+                "name": name,
+                "kind": kind,
+            }),
+        )
+        .map(|_| ())
+    }
+
     pub fn inspect_source(
         &self,
         path: &str,

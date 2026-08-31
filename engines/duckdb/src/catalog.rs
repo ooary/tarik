@@ -50,3 +50,30 @@ pub fn inspect(connection: &Connection) -> Result<CatalogSnapshot, EngineError> 
 
     Ok(CatalogSnapshot { objects, columns })
 }
+
+/// Drop one user-visible catalog object with safely quoted identifiers.
+/// The caller supplies the object kind from a fresh catalog snapshot so a
+/// table can never be accidentally treated as a view (or vice versa).
+pub fn drop_object(
+    connection: &Connection,
+    database: &str,
+    schema: &str,
+    name: &str,
+    kind: &str,
+) -> Result<(), EngineError> {
+    let database = crate::sources::quote_identifier(database)?;
+    let schema = crate::sources::quote_identifier(schema)?;
+    let name = crate::sources::quote_identifier(name)?;
+    let qualified = format!("{database}.{schema}.{name}");
+    let sql = match kind {
+        "table" => format!("DROP TABLE {qualified}"),
+        "view" => format!("DROP VIEW {qualified}"),
+        _ => {
+            return Err(EngineError::InvalidOptions(
+                "catalog object kind must be table or view",
+            ));
+        }
+    };
+    connection.execute_batch(&sql)?;
+    Ok(())
+}

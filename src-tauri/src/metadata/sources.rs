@@ -166,6 +166,17 @@ impl SourcesRepository {
             > 0)
     }
 
+    pub fn remove_by_object_name(
+        &self,
+        project_id: &str,
+        duckdb_name: &str,
+    ) -> Result<usize, MetadataError> {
+        Ok(self.database.connection()?.execute(
+            "DELETE FROM sources WHERE project_id = ?1 AND duckdb_name = ?2",
+            (project_id, duckdb_name),
+        )?)
+    }
+
     pub fn get_source(&self, id: &str) -> Result<Option<SourceRecord>, MetadataError> {
         let connection = self.database.connection()?;
         let result = connection.query_row(
@@ -336,6 +347,13 @@ mod tests {
         let loaded = repository.get_source("source-1").unwrap().unwrap();
         assert_eq!(loaded.state, SourceState::Missing);
         assert_eq!(loaded.source_path.as_deref(), Some("/data/orders.parquet"));
+        assert_eq!(
+            repository
+                .remove_by_object_name(&loaded.project_id, "orders")
+                .unwrap(),
+            1
+        );
+        assert!(repository.get_source("source-1").unwrap().is_none());
     }
 
     #[test]

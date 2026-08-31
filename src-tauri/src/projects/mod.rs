@@ -330,6 +330,39 @@ impl ProjectManager {
         self.engine.drop_link(&source).map_err(ProjectError::Engine)
     }
 
+    pub fn drop_catalog_object(
+        &self,
+        database: &str,
+        schema: &str,
+        name: &str,
+        kind: &str,
+    ) -> Result<(), ProjectError> {
+        self.require_active()?;
+        // Validate against a fresh engine snapshot so stale frontend state
+        // cannot change the object kind or target a non-existent relation.
+        let snapshot = self.engine.catalog().map_err(ProjectError::Engine)?;
+        let object = snapshot
+            .objects
+            .iter()
+            .find(|object| {
+                object.database == database && object.schema == schema && object.name == name
+            })
+            .ok_or_else(|| ProjectError::UnknownCatalogObject {
+                database: database.to_string(),
+                schema: schema.to_string(),
+                name: name.to_string(),
+            })?;
+        if object.kind != kind {
+            return Err(ProjectError::CatalogObjectKindMismatch {
+                expected: object.kind.clone(),
+                actual: kind.to_string(),
+            });
+        }
+        self.engine
+            .drop_catalog_object(database, schema, name, kind)
+            .map_err(ProjectError::Engine)
+    }
+
     pub fn interrupt(&self) -> Result<bool, ProjectError> {
         self.require_active()?;
         Ok(false)
@@ -451,6 +484,14 @@ pub enum ProjectError {
     NotAFile(PathBuf),
     #[error("recent project was not found: {0}")]
     UnknownProject(String),
+    #[error("catalog object was not found: {database}.{schema}.{name}")]
+    UnknownCatalogObject {
+        database: String,
+        schema: String,
+        name: String,
+    },
+    #[error("catalog object kind changed; expected {expected}, request was {actual}")]
+    CatalogObjectKindMismatch { expected: String, actual: String },
     #[error("project path is not valid UTF-8: {0}")]
     InvalidPath(PathBuf),
     #[error("managed project path is outside the Tarik projects directory: {0}")]

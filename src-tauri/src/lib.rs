@@ -145,6 +145,7 @@ pub fn run() {
             projects::commands::import_source_table,
             projects::commands::cancel_source_operation,
             projects::commands::repair_linked_source,
+            projects::commands::drop_catalog_object,
             projects::commands::remove_linked_source,
             query::commands::execute_query,
             query::commands::get_query_status,

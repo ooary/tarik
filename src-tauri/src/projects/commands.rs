@@ -210,6 +210,32 @@ pub async fn repair_linked_source(
 }
 
 #[tauri::command]
+pub async fn drop_catalog_object(
+    project_id: String,
+    database_name: String,
+    schema: String,
+    name: String,
+    kind: String,
+    manager: State<'_, ProjectManager>,
+    metadata: State<'_, MetadataDb>,
+) -> Result<bool, String> {
+    let active = manager
+        .active()
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| "no DuckDB project is open".to_string())?;
+    if active.id != project_id {
+        return Err("catalog object does not belong to the active project".to_string());
+    }
+    let manager = manager.inner().clone();
+    let object_name = name.clone();
+    blocking(move || manager.drop_catalog_object(&database_name, &schema, &name, &kind)).await?;
+    SourcesRepository::new(metadata.inner().clone())
+        .remove_by_object_name(&project_id, &object_name)
+        .map_err(|error| error.to_string())?;
+    Ok(true)
+}
+
+#[tauri::command]
 pub async fn remove_linked_source(
     source_id: String,
     manager: State<'_, ProjectManager>,

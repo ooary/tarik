@@ -105,6 +105,7 @@ test("source inspection, link, import, repair, and removal use typed commands", 
     listSources,
     cancelSourceOperation,
     repairLinkedSource,
+    dropCatalogObject,
     removeLinkedSource,
   } = await loadCommandsModule();
   const calls = [];
@@ -121,6 +122,7 @@ test("source inspection, link, import, repair, and removal use typed commands", 
   await listSources("p1", invoke);
   assert.equal(await cancelSourceOperation(invoke), true);
   await repairLinkedSource("s1", "/data/replacement.parquet", invoke);
+  await dropCatalogObject("p1", "project", "main", "orders", "table", invoke);
   assert.equal(await removeLinkedSource("s1", invoke), true);
 
   assert.deepEqual(
@@ -132,6 +134,7 @@ test("source inspection, link, import, repair, and removal use typed commands", 
       "list_sources",
       "cancel_source_operation",
       "repair_linked_source",
+      "drop_catalog_object",
       "remove_linked_source",
     ],
   );

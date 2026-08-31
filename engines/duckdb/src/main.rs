@@ -77,6 +77,16 @@ fn dispatch(
             let connection = sessions.get(&session_id)?;
             Ok(serde_json::to_value(catalog::inspect(connection)?)?)
         }
+        "catalog.drop_object" => {
+            let session_id = required_string(params, "sessionId")?;
+            let database = required_string(params, "database")?;
+            let schema = required_string(params, "schema")?;
+            let name = required_string(params, "name")?;
+            let kind = required_string(params, "kind")?;
+            let connection = sessions.get(&session_id)?;
+            catalog::drop_object(connection, &database, &schema, &name, &kind)?;
+            Ok(Value::Null)
+        }
         "source.inspect" => {
             let path = required_string(params, "path")?;
             // JSON null means "no CSV options" (e.g. Parquet or default CSV parse).

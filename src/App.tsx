@@ -17,8 +17,9 @@ import {
   chooseParquetFile,
   chooseSourceFile,
   closeProject,
-  releaseAllResults,
   createProject,
+  dropCatalogObject,
+  releaseAllResults,
   getActiveProject,
   getRuntimeInfo,
   getWorkbenchPreferences,
@@ -295,6 +296,39 @@ function App() {
     }
   }
 
+  async function removeCatalogObject(object: ProjectCatalog["objects"][number]) {
+    if (!project) return;
+    const sourceMetadata = sources.find((source) => source.duckdbName === object.name);
+    if (object.kind === "view" && sourceMetadata?.kind === "linked_parquet") {
+      await removeSource(sourceMetadata);
+      return;
+    }
+    const label = object.kind === "table" ? "Delete table" : "Delete view";
+    const fileNote = sourceMetadata?.sourcePath
+      ? `\n\nThe original source file is preserved:\n${sourceMetadata.sourcePath}`
+      : "";
+    if (
+      !window.confirm(
+        `${label} "${object.name}"?\n\nThis permanently removes it from the active DuckDB project.${fileNote}`,
+      )
+    ) {
+      return;
+    }
+    setSourceError(null);
+    try {
+      await dropCatalogObject(
+        project.id,
+        object.database,
+        object.schema,
+        object.name,
+        object.kind,
+      );
+      await refreshProjectData(project);
+    } catch (error) {
+      setSourceError(String(error));
+    }
+  }
+
   async function renameLocalProject(recent: RecentProject) {
     const newName = window.prompt("New project name", recent.name)?.trim();
     if (!newName || newName === recent.name) return;
@@ -456,6 +490,16 @@ function App() {
                           {
                             label: "Copy qualified name",
                             onSelect: () => void navigator.clipboard?.writeText(qualifiedName),
+                          },
+                          {
+                            danger: object.kind === "table",
+                            label:
+                              object.kind === "view" && sourceMetadata?.kind === "linked_parquet"
+                                ? "Remove link"
+                                : object.kind === "table"
+                                  ? "Delete table"
+                                  : "Delete view",
+                            onSelect: () => removeCatalogObject(object),
                           },
                         ]}
                         key={`${object.database}.${object.schema}.${object.name}`}
