@@ -1056,7 +1056,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
     - Common native operators normalize to scan/join/aggregate/filter/projection/sort/limit/union/window/result. Unknown names are kept as `unknown` with native name/details. Invalid/malformed JSON returns an empty normalized graph plus `rawPlan` and `fallbackReason`, never drops the source.
     - Tests cover every fixture, deterministic connectivity, two-input joins, profile metrics, unknown operator preservation, malformed fallback, a real sidecar Explain/release roundtrip, and the typed frontend command.
 
-- [ ] **E7-T3 Build XYFlow query graph**
+- [x] **E7-T3 Build XYFlow query graph** — owner: lead-agent
   - Depends on: E7-T2, E1-T2
   - Owns: `src/features/query-flow/`
   - Deliverables:
@@ -1066,6 +1066,11 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: two-input joins visibly converge into one join node.
   - Tests: graph mapping, selection, keyboard navigation, snapshot fixtures.
   - Commit: `feat(flow): visualize query execution plans`
+  - Notes:
+    - Added official `@xyflow/react`. Deterministic layout puts source/input depth on the left and result/root on the right; nodes at each depth retain normalized preorder. Two scan inputs receive distinct rows and converge into one join. Pan/zoom/fit and restrained controls are enabled; minimap is intentionally omitted at current graph sizes.
+    - Node cards show beginner operation label, native operator, source, estimated or actual rows, and profile timing. Flow is labeled `Estimated execution plan`; Profile is labeled `Actual execution profile`.
+    - Explain toolbar action captures the active immutable editor text without running it and switches to Flow. Profile has an explicit Run Profile action because it executes SQL. Explain/Profile retain independent last states.
+    - Loading skeleton, empty actions, structured error, raw structured-fallback, and ready graph states are covered. Tests verify deterministic join convergence/layout, Explain wiring, fallback UI, and accessible Flow/Profile empty states.
 
 - [ ] **E7-T4 Add beginner explanations and node inspector**
   - Depends on: E7-T3

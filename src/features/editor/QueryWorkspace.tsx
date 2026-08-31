@@ -11,6 +11,8 @@ import * as Tabs from "@radix-ui/react-tabs";
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { ContextMenu } from "../../components/ui";
 import type { ProjectCatalog } from "../../lib/commands";
+import { QueryFlow } from "../query-flow/QueryFlow";
+import { useQueryPlan } from "../query-flow/useQueryPlan";
 import { ResultGrid } from "../results/ResultGrid";
 import { useQueryExecution, type TabExecution } from "../results/useQueryExecution";
 import { SqlEditor } from "./SqlEditor";
@@ -67,6 +69,7 @@ export const QueryWorkspace = forwardRef<QueryWorkspaceHandle, QueryWorkspacePro
     const sectionRef = useRef<HTMLElement>(null);
     const { executions, run, cancel, forget } = useQueryExecution(projectId, onQuerySucceeded);
     const [runError, setRunError] = useState<string | null>(null);
+    const { states: planStates, runPlan, clearPlan } = useQueryPlan(projectId);
 
     const activeTab = tabs.find((tab) => tab.id === activeTabId);
     const activeExecution: TabExecution | undefined = activeTab
@@ -84,8 +87,16 @@ export const QueryWorkspace = forwardRef<QueryWorkspaceHandle, QueryWorkspacePro
       if (!bottomOpen) onToggleBottom();
     };
 
+    const runActivePlan = (mode: "explain" | "profile") => {
+      if (!projectId || !activeTab || !activeTab.sql.trim()) return;
+      onUpdatePanel(mode === "explain" ? "flow" : "profile");
+      if (!bottomOpen) onToggleBottom();
+      void runPlan(activeTab.sql, mode);
+    };
+
     const closeTabAndForget = (tabId: string) => {
       forget(tabId);
+      clearPlan();
       closeTab(tabId);
     };
 
@@ -226,7 +237,12 @@ export const QueryWorkspace = forwardRef<QueryWorkspaceHandle, QueryWorkspacePro
               <PlayIcon aria-hidden="true" size={14} weight="fill" /> Run query <kbd>Ctrl</kbd>
               <kbd>Enter</kbd>
             </button>
-            <button className="toolbar-button" type="button">
+            <button
+              className="toolbar-button"
+              disabled={!activeTab?.sql.trim() || planStates.explain.status === "loading"}
+              onClick={() => runActivePlan("explain")}
+              type="button"
+            >
               Explain
             </button>
           </div>
@@ -328,19 +344,19 @@ export const QueryWorkspace = forwardRef<QueryWorkspaceHandle, QueryWorkspacePro
           {bottomOpen && activePanel === "results" && (
             <ResultPanel execution={activeExecution} runError={runError} />
           )}
-          {bottomOpen && activePanel !== "results" && (
-            <div className="panel-placeholder">
-              <strong>
-                {activePanel === "flow"
-                  ? "Query flow is ready"
-                  : "Profile is ready after execution"}
-              </strong>
-              <span>
-                {activePanel === "flow"
-                  ? "Run the query to inspect how DuckDB connects each operation."
-                  : "Execute this statement to see actual operator timing."}
-              </span>
-            </div>
+          {bottomOpen && activePanel === "flow" && (
+            <PlanPanel
+              mode="explain"
+              onRun={() => runActivePlan("explain")}
+              state={planStates.explain}
+            />
+          )}
+          {bottomOpen && activePanel === "profile" && (
+            <PlanPanel
+              mode="profile"
+              onRun={() => runActivePlan("profile")}
+              state={planStates.profile}
+            />
           )}
         </div>
       </section>
@@ -451,4 +467,54 @@ function ResultPanel({
         </div>
       );
   }
+}
+
+function PlanPanel({
+  mode,
+  onRun,
+  state,
+}: {
+  mode: "explain" | "profile";
+  onRun: () => void;
+  state: ReturnType<typeof useQueryPlan>["states"]["explain"];
+}) {
+  if (state.status === "loading") {
+    return (
+      <div className="flow-loading" role="status">
+        <span />
+        <span />
+        <span />
+        <strong>{mode === "profile" ? "Running query profile" : "Building query plan"}</strong>
+      </div>
+    );
+  }
+  if (state.status === "error") {
+    return (
+      <div className="result-state">
+        <div className="ui-inline-error" role="alert">
+          <strong>Plan failed</strong>
+          <span>{state.error}</span>
+        </div>
+        <button className="toolbar-button" onClick={onRun} type="button">
+          Try again
+        </button>
+      </div>
+    );
+  }
+  if (state.status === "ready" && state.plan.mode === mode) {
+    return <QueryFlow plan={state.plan} />;
+  }
+  return (
+    <div className="panel-placeholder">
+      <strong>{mode === "profile" ? "No execution profile yet" : "No query flow yet"}</strong>
+      <span>
+        {mode === "profile"
+          ? "Profile runs the query and shows actual rows and operator timing."
+          : "Explain shows DuckDB's estimated operations without running the query."}
+      </span>
+      <button className="toolbar-button" onClick={onRun} type="button">
+        {mode === "profile" ? "Run Profile" : "Run Explain"}
+      </button>
+    </div>
+  );
 }

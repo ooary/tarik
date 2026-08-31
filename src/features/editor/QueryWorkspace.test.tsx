@@ -6,6 +6,7 @@ import {
   executeQuery,
   getQueryStatus,
   getResultPage,
+  explainQueryPlan,
   loadQuerySession,
   saveQuerySession,
 } from "../../lib/commands";
@@ -16,6 +17,7 @@ vi.mock("../../lib/commands", () => ({
   saveQuerySession: vi.fn(),
   executeQuery: vi.fn(),
   getQueryStatus: vi.fn(),
+  explainQueryPlan: vi.fn(),
   cancelQuery: vi.fn(),
   forgetTabExecution: vi.fn(),
   getResultPage: vi.fn(),
@@ -88,6 +90,26 @@ describe("QueryWorkspace", () => {
     vi.mocked(getQueryStatus).mockResolvedValue({ ...succeededView, tabId: "t1" });
     vi.mocked(cancelQuery).mockResolvedValue({ ...runningView, tabId: "t1" });
     vi.mocked(getResultPage).mockResolvedValue({ ...firstPage });
+    vi.mocked(explainQueryPlan).mockResolvedValue({
+      mode: "explain",
+      nodes: [
+        {
+          id: "n0",
+          operator: "scan",
+          nativeName: "SEQ_SCAN",
+          source: "fixture.main.orders",
+          estimatedRows: 100,
+          actualRows: null,
+          timingMs: null,
+          rowsScanned: null,
+          details: {},
+        },
+      ],
+      edges: [],
+      rootIds: ["n0"],
+      rawPlan: "[]",
+      fallbackReason: null,
+    });
   });
 
   it("adds tabs and exposes SQL insertion/preview actions", async () => {
@@ -115,6 +137,64 @@ describe("QueryWorkspace", () => {
 
     act(() => ref.current?.insertSql('"main"."orders"'));
     expect(container.querySelector(".cm-content")).toHaveTextContent('"main"."orders"');
+  });
+
+  it("runs Explain from the active editor and switches to Flow", async () => {
+    const onUpdatePanel = vi.fn();
+    const ref = createRef<QueryWorkspaceHandle>();
+    const { container } = render(
+      <QueryWorkspace
+        activePanel="flow"
+        bottomOpen
+        bottomPanelHeight={292}
+        catalog={catalog}
+        onSetBottomHeight={vi.fn()}
+        onToggleBottom={vi.fn()}
+        onUpdatePanel={onUpdatePanel}
+        projectId="p1"
+        ref={ref}
+      />,
+    );
+    act(() => ref.current?.insertSql("SELECT * FROM orders"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Explain" }));
+    await waitFor(() =>
+      expect(explainQueryPlan).toHaveBeenCalledWith("p1", "SELECT * FROM orders", "explain"),
+    );
+    expect(onUpdatePanel).toHaveBeenCalledWith("flow");
+    expect(await screen.findByText("Read data")).toBeInTheDocument();
+    expect(container.querySelector(".flow-mode-label")).toHaveTextContent(
+      "Estimated execution plan",
+    );
+  });
+
+  it("shows raw fallback when structured plan parsing is unavailable", async () => {
+    vi.mocked(explainQueryPlan).mockResolvedValue({
+      mode: "explain",
+      nodes: [],
+      edges: [],
+      rootIds: [],
+      rawPlan: "raw future plan",
+      fallbackReason: "unknown structured shape",
+    });
+    const ref = createRef<QueryWorkspaceHandle>();
+    render(
+      <QueryWorkspace
+        activePanel="flow"
+        bottomOpen
+        bottomPanelHeight={292}
+        catalog={catalog}
+        onSetBottomHeight={vi.fn()}
+        onToggleBottom={vi.fn()}
+        onUpdatePanel={vi.fn()}
+        projectId="p1"
+        ref={ref}
+      />,
+    );
+    act(() => ref.current?.insertSql("SELECT 1"));
+    fireEvent.click(screen.getByRole("button", { name: "Explain" }));
+    expect(await screen.findByText("Structured graph unavailable")).toBeInTheDocument();
+    expect(screen.getByText("unknown structured shape")).toBeInTheDocument();
   });
 
   it("runs the active tab and shows the running state", async () => {
