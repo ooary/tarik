@@ -925,7 +925,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
 
 ## EPIC E6 — Query execution and bounded result browsing
 
-**Status:** `REVIEW` - T1-T5 implemented; waiting for manual large-result and memory review per the EPIC order.
+**Status:** `PROVISIONALLY APPROVED` (2026-08-31) - user authorized E7 to proceed after validating query results, table queries, column rendering/resizing, catalog auto-refresh, and table/link removal. E6 remains reopenable for review fixes until final release acceptance.
 
 **Outcome:** Cancellable execution with large-result browsing that has a defined memory ceiling.
 
@@ -1019,6 +1019,8 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
 ---
 
 ## EPIC E7 — Beginner-friendly query flow
+
+**Status:** `READY` - E6 provisionally approved; preparation/design audit starts before T1.
 
 **Outcome:** Explain and Profile plans become understandable node graphs.
 
