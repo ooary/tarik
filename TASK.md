@@ -1026,7 +1026,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
 
 **Preparation:** See `docs/design/E7-DESIGN-GRAPH.md` for native DuckDB JSON formats, normalized graph boundaries, Explain-vs-Profile semantics, fallback rules, scope, test layers, and implementation order.
 
-- [ ] **E7-T1 Capture stable DuckDB Explain/Profile fixtures**
+- [x] **E7-T1 Capture stable DuckDB Explain/Profile fixtures** — owner: lead-agent
   - Depends on: E6-T1, E5.5-T4
   - Owns: plan fixtures and compatibility notes
   - Deliverables:
@@ -1035,6 +1035,10 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: fixtures contain no machine-specific absolute paths.
   - Tests: fixture loading/validation.
   - Commit: `test(plan): add duckdb plan fixtures`
+  - Notes:
+    - Captured from pinned DuckDB 1.5.5: `EXPLAIN (FORMAT JSON)` physical trees (`name`, `children`, `extra_info`) and `EXPLAIN (ANALYZE, FORMAT JSON)` profile trees (`operator_name/type`, actual cardinality, timing, rows scanned, children).
+    - Fixtures cover scan, pushed filter/projection, hash join, aggregate, sort/limit (`TOP_N`), union, CTE, and window; database qualifiers are sanitized to `fixture`, volatile profile timing/query/memory values are zeroed, and no machine paths remain.
+    - `manifest.json` pins version/format and records raw JSON/text preservation as the fallback. Mechanical tests validate JSON, one connected Explain root, profile connectivity/metrics, required operator families, manifest completeness, and path sanitization.
 
 - [ ] **E7-T2 Parse DuckDB plans into a normalized graph**
   - Depends on: E7-T1, E5.5-T4

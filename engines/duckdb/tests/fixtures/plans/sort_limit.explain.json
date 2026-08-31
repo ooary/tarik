@@ -1,0 +1,78 @@
+[
+  {
+    "children": [
+      {
+        "children": [
+          {
+            "children": [
+              {
+                "children": [
+                  {
+                    "children": [],
+                    "extra_info": {
+                      "Estimated Cardinality": "100",
+                      "Projections": ["id", "customer_id", "amount", "region_id"],
+                      "Table": "\"fixture\".main.orders",
+                      "Type": "Sequential Scan"
+                    },
+                    "name": "SEQ_SCAN"
+                  },
+                  {
+                    "children": [
+                      {
+                        "children": [],
+                        "extra_info": {
+                          "Estimated Cardinality": "100",
+                          "Filters": "optional: Dynamic Filter (amount)",
+                          "Projections": "amount",
+                          "Table": "\"fixture\".main.orders",
+                          "Type": "Sequential Scan"
+                        },
+                        "name": "SEQ_SCAN"
+                      }
+                    ],
+                    "extra_info": {
+                      "Order By": "\"fixture\".main.orders.amount DESC",
+                      "Top": "5"
+                    },
+                    "name": "TOP_N"
+                  }
+                ],
+                "extra_info": {
+                  "Conditions": "rowid = rowid",
+                  "Estimated Cardinality": "0",
+                  "Join Type": "SEMI"
+                },
+                "name": "HASH_JOIN"
+              }
+            ],
+            "extra_info": {
+              "Estimated Cardinality": "0",
+              "Projections": [
+                "__internal_compress_integral_utinyint(#0, 1)",
+                "__internal_compress_integral_utinyint(#1, 0)",
+                "#2",
+                "__internal_compress_integral_utinyint(#3, 0)"
+              ]
+            },
+            "name": "PROJECTION"
+          }
+        ],
+        "extra_info": {
+          "Order By": "\"fixture\".main.orders.amount DESC"
+        },
+        "name": "ORDER_BY"
+      }
+    ],
+    "extra_info": {
+      "Estimated Cardinality": "0",
+      "Projections": [
+        "__internal_decompress_integral_bigint(#0, 1)",
+        "__internal_decompress_integral_bigint(#1, 0)",
+        "#2",
+        "__internal_decompress_integral_bigint(#3, 0)"
+      ]
+    },
+    "name": "PROJECTION"
+  }
+]

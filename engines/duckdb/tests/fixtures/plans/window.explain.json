@@ -1,0 +1,38 @@
+[
+  {
+    "children": [
+      {
+        "children": [
+          {
+            "children": [
+              {
+                "children": [],
+                "extra_info": {
+                  "Estimated Cardinality": "100",
+                  "Projections": ["id", "customer_id", "amount"],
+                  "Table": "\"fixture\".main.orders",
+                  "Type": "Sequential Scan"
+                },
+                "name": "SEQ_SCAN"
+              }
+            ],
+            "extra_info": {
+              "Projections": "ROW_NUMBER() OVER (PARTITION BY customer_id ORDER BY amount DESC NULLS LAST)"
+            },
+            "name": "WINDOW"
+          }
+        ],
+        "extra_info": {
+          "Estimated Cardinality": "100",
+          "Projections": ["#0", "#1", "#2", "#3"]
+        },
+        "name": "PROJECTION"
+      }
+    ],
+    "extra_info": {
+      "Estimated Cardinality": "100",
+      "Projections": ["id", "rn"]
+    },
+    "name": "PROJECTION"
+  }
+]

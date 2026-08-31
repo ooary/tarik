@@ -1,0 +1,48 @@
+[
+  {
+    "children": [
+      {
+        "children": [
+          {
+            "children": [
+              {
+                "children": [
+                  {
+                    "children": [],
+                    "extra_info": {
+                      "Estimated Cardinality": "100",
+                      "Projections": ["customer_id", "amount"],
+                      "Table": "\"fixture\".main.orders",
+                      "Type": "Sequential Scan"
+                    },
+                    "name": "SEQ_SCAN"
+                  }
+                ],
+                "extra_info": {
+                  "Estimated Cardinality": "100",
+                  "Projections": ["__internal_compress_integral_utinyint(#0, 0)", "#1"]
+                },
+                "name": "PROJECTION"
+              }
+            ],
+            "extra_info": {
+              "Estimated Cardinality": "100",
+              "Projections": ["customer_id", "amount"]
+            },
+            "name": "PROJECTION"
+          }
+        ],
+        "extra_info": {
+          "Aggregates": "sum(#1)",
+          "Groups": "#0"
+        },
+        "name": "PERFECT_HASH_GROUP_BY"
+      }
+    ],
+    "extra_info": {
+      "Estimated Cardinality": "10",
+      "Projections": ["__internal_decompress_integral_bigint(#0, 0)", "#1"]
+    },
+    "name": "PROJECTION"
+  }
+]

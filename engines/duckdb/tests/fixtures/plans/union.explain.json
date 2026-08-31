@@ -1,0 +1,28 @@
+[
+  {
+    "children": [
+      {
+        "children": [],
+        "extra_info": {
+          "Estimated Cardinality": "10",
+          "Projections": "id",
+          "Table": "\"fixture\".main.customers",
+          "Type": "Sequential Scan"
+        },
+        "name": "SEQ_SCAN"
+      },
+      {
+        "children": [],
+        "extra_info": {
+          "Estimated Cardinality": "3",
+          "Projections": "id",
+          "Table": "\"fixture\".main.regions",
+          "Type": "Sequential Scan"
+        },
+        "name": "SEQ_SCAN"
+      }
+    ],
+    "extra_info": {},
+    "name": "UNION"
+  }
+]

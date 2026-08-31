@@ -1,0 +1,16 @@
+{
+  "duckdbVersion": "1.5.5",
+  "format": "DuckDB EXPLAIN (FORMAT JSON) / EXPLAIN (ANALYZE, FORMAT JSON)",
+  "fixtures": [
+    "aggregate.explain.json",
+    "cte.explain.json",
+    "filter_projection.explain.json",
+    "join.explain.json",
+    "join_aggregate_sort_limit.profile.json",
+    "scan.explain.json",
+    "sort_limit.explain.json",
+    "union.explain.json",
+    "window.explain.json"
+  ],
+  "fallback": "Preserve raw plan text/JSON when structured parsing fails or operators are unknown."
+}
