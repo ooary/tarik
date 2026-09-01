@@ -30,6 +30,8 @@ pub struct PlanNode {
     pub timing_ms: Option<f64>,
     pub rows_scanned: Option<u64>,
     pub details: BTreeMap<String, Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub presentation_note: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -145,7 +147,7 @@ pub fn normalize_plan(mode: PlanMode, raw_plan: &str) -> QueryPlan {
         PlanMode::Profile => builder.parse_profile_root(&parsed),
     };
     match result {
-        Ok(()) if !builder.plan.nodes.is_empty() => builder.plan,
+        Ok(()) if !builder.plan.nodes.is_empty() => beginner_plan(builder.plan),
         Ok(()) => QueryPlan::fallback(mode, raw_plan.to_string(), "plan contained no operators"),
         Err(reason) => QueryPlan::fallback(mode, raw_plan.to_string(), reason),
     }
@@ -204,6 +206,7 @@ impl PlanBuilder {
             timing_ms: None,
             rows_scanned: None,
             details,
+            presentation_note: None,
         });
         let children = object
             .get("children")
@@ -247,6 +250,7 @@ impl PlanBuilder {
             rows_scanned: value_u64(object.get("operator_rows_scanned"))
                 .or_else(|| value_u64(object.get("cumulative_rows_scanned"))),
             details,
+            presentation_note: None,
         });
         let children = object
             .get("children")
@@ -266,6 +270,158 @@ impl PlanBuilder {
             source: source.to_string(),
             target: target.to_string(),
         });
+    }
+}
+
+/// Convert DuckDB's physical tree into a beginner-facing graph without
+/// inventing behavior. Administrative Profile wrappers collapse into one
+/// result boundary, while a filter explicitly reported inside a scan is
+/// expanded so its post-filter cardinality is not mislabeled as rows read.
+fn beginner_plan(plan: QueryPlan) -> QueryPlan {
+    let mut nodes = Vec::new();
+    let mut source_endpoint = BTreeMap::new();
+    let mut target_endpoint = BTreeMap::new();
+
+    for node in &plan.nodes {
+        if node.operator == "result" {
+            continue;
+        }
+        let read_id = format!("native:read:{}", node.id);
+        if node.operator == "scan" && node.details.contains_key("Filters") {
+            let mut read = node.clone();
+            read.id = read_id.clone();
+            read.estimated_rows = None;
+            read.actual_rows = None;
+            read.details.remove("Filters");
+            read.presentation_note = Some(
+                "DuckDB applied the filter inside this scan. Tarik shows the filter as the next step for clarity; operator time covers the combined scan and filter work."
+                    .to_string(),
+            );
+            nodes.push(read);
+
+            let filter_id = format!("native:filter:{}", node.id);
+            let mut details = BTreeMap::new();
+            if let Some(filters) = node.details.get("Filters") {
+                details.insert("Filters".to_string(), filters.clone());
+            }
+            nodes.push(PlanNode {
+                id: filter_id.clone(),
+                operator: "filter".to_string(),
+                native_name: "PUSHED_DOWN_FILTER".to_string(),
+                source: None,
+                estimated_rows: node.estimated_rows,
+                actual_rows: node.actual_rows,
+                timing_ms: None,
+                rows_scanned: None,
+                details,
+                presentation_note: Some(
+                    "DuckDB applied this filter inside the table scan. Tarik displays it as a separate beginner step; it is not a separate physical operator."
+                        .to_string(),
+                ),
+            });
+            source_endpoint.insert(node.id.clone(), filter_id);
+            target_endpoint.insert(node.id.clone(), read_id);
+        } else {
+            let mut kept = node.clone();
+            kept.id = read_id.clone();
+            nodes.push(kept);
+            source_endpoint.insert(node.id.clone(), read_id.clone());
+            target_endpoint.insert(node.id.clone(), read_id);
+        }
+    }
+
+    let result_wrappers: Vec<_> = plan
+        .nodes
+        .iter()
+        .filter(|node| node.operator == "result")
+        .map(|node| node.native_name.clone())
+        .collect();
+    let mut edges = Vec::new();
+    for edge in &plan.edges {
+        let Some(source) = source_endpoint.get(&edge.source) else {
+            continue;
+        };
+        let Some(target) = target_endpoint.get(&edge.target) else {
+            continue;
+        };
+        edges.push((source.clone(), target.clone()));
+    }
+    for node in &plan.nodes {
+        if node.operator == "scan" && node.details.contains_key("Filters") {
+            edges.push((
+                format!("native:read:{}", node.id),
+                format!("native:filter:{}", node.id),
+            ));
+        }
+    }
+
+    let targeted: std::collections::HashSet<_> =
+        edges.iter().map(|(source, _)| source.clone()).collect();
+    let physical_roots: Vec<_> = nodes
+        .iter()
+        .filter(|node| !targeted.contains(&node.id))
+        .map(|node| node.id.clone())
+        .collect();
+    let final_actual = physical_roots
+        .iter()
+        .filter_map(|id| nodes.iter().find(|node| &node.id == id)?.actual_rows)
+        .sum::<u64>();
+    let has_final_actual = physical_roots.iter().any(|id| {
+        nodes
+            .iter()
+            .any(|node| &node.id == id && node.actual_rows.is_some())
+    });
+    let result_id = "beginner:result".to_string();
+    let mut details = BTreeMap::new();
+    if !result_wrappers.is_empty() {
+        details.insert(
+            "Native wrappers".to_string(),
+            Value::String(result_wrappers.join(" → ")),
+        );
+    }
+    nodes.push(PlanNode {
+        id: result_id.clone(),
+        operator: "result".to_string(),
+        native_name: "QUERY_RESULT".to_string(),
+        source: None,
+        estimated_rows: None,
+        actual_rows: has_final_actual.then_some(final_actual),
+        timing_ms: None,
+        rows_scanned: None,
+        details,
+        presentation_note: Some(
+            "Tarik collapses DuckDB's administrative Profile wrappers into one result boundary."
+                .to_string(),
+        ),
+    });
+    for root in physical_roots {
+        edges.push((root, result_id.clone()));
+    }
+
+    let ids: BTreeMap<_, _> = nodes
+        .iter()
+        .enumerate()
+        .map(|(index, node)| (node.id.clone(), format!("n{index}")))
+        .collect();
+    for node in &mut nodes {
+        node.id = ids[&node.id].clone();
+    }
+    let edges = edges
+        .into_iter()
+        .enumerate()
+        .map(|(index, (source, target))| PlanEdge {
+            id: format!("e{index}"),
+            source: ids[&source].clone(),
+            target: ids[&target].clone(),
+        })
+        .collect();
+    QueryPlan {
+        mode: plan.mode,
+        nodes,
+        edges,
+        root_ids: vec![ids[&result_id].clone()],
+        raw_plan: plan.raw_plan,
+        fallback_reason: plan.fallback_reason,
     }
 }
 
@@ -408,6 +564,147 @@ mod tests {
             .iter()
             .find(|node| node.id == edge.source)
             .is_some_and(|node| node.operator == "scan")));
+    }
+
+    #[test]
+    fn pushed_down_scan_filter_becomes_read_then_filter_then_result() {
+        let raw = r#"[{"name":"PROJECTION","children":[{"name":"SEQ_SCAN","children":[],"extra_info":{"Table":"project.main.ppob_product","Filters":"ProductId='LA100'","Estimated Cardinality":"2","Projections":["ProductId"]}}],"extra_info":{"Estimated Cardinality":"2","Projections":["ProductId"]}}]"#;
+        let plan = normalize_plan(PlanMode::Explain, raw);
+        assert_connected(&plan);
+        assert_eq!(
+            plan.nodes
+                .iter()
+                .map(|node| node.operator.as_str())
+                .collect::<Vec<_>>(),
+            ["projection", "scan", "filter", "result"]
+        );
+        let read = plan
+            .nodes
+            .iter()
+            .find(|node| node.operator == "scan")
+            .unwrap();
+        let filter = plan
+            .nodes
+            .iter()
+            .find(|node| node.operator == "filter")
+            .unwrap();
+        assert_eq!(read.estimated_rows, None);
+        assert!(!read.details.contains_key("Filters"));
+        assert_eq!(filter.estimated_rows, Some(2));
+        assert_eq!(filter.details["Filters"], "ProductId='LA100'");
+        assert!(plan
+            .edges
+            .iter()
+            .any(|edge| edge.source == read.id && edge.target == filter.id));
+        assert_eq!(
+            plan.nodes
+                .iter()
+                .filter(|node| node.operator == "result")
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn filtered_join_input_still_converges_with_the_other_scan() {
+        let raw = r#"[{"name":"HASH_JOIN","children":[{"name":"SEQ_SCAN","children":[],"extra_info":{"Table":"project.main.orders","Filters":"amount>20","Estimated Cardinality":"20"}},{"name":"SEQ_SCAN","children":[],"extra_info":{"Table":"project.main.customers","Estimated Cardinality":"10"}}],"extra_info":{"Join Type":"INNER","Conditions":"customer_id=id","Estimated Cardinality":"18"}}]"#;
+        let plan = normalize_plan(PlanMode::Explain, raw);
+        assert_connected(&plan);
+        let join = plan
+            .nodes
+            .iter()
+            .find(|node| node.operator == "join")
+            .unwrap();
+        let incoming: Vec<_> = plan
+            .edges
+            .iter()
+            .filter(|edge| edge.target == join.id)
+            .collect();
+        assert_eq!(incoming.len(), 2);
+        let input_operators: std::collections::HashSet<_> = incoming
+            .iter()
+            .map(|edge| {
+                plan.nodes
+                    .iter()
+                    .find(|node| node.id == edge.source)
+                    .unwrap()
+                    .operator
+                    .as_str()
+            })
+            .collect();
+        assert_eq!(
+            input_operators,
+            std::collections::HashSet::from(["filter", "scan"])
+        );
+        let filter = plan
+            .nodes
+            .iter()
+            .find(|node| node.operator == "filter")
+            .unwrap();
+        let filter_input = plan
+            .edges
+            .iter()
+            .find(|edge| edge.target == filter.id)
+            .unwrap();
+        let filtered_read = plan
+            .nodes
+            .iter()
+            .find(|node| node.id == filter_input.source)
+            .unwrap();
+        assert_eq!(filtered_read.source.as_deref(), Some("project.main.orders"));
+    }
+
+    #[test]
+    fn profile_collapses_wrappers_and_redistributes_filtered_scan_metrics() {
+        let raw = r#"{"rows_returned":1,"children":[{"operator_name":"EXPLAIN_ANALYZE","operator_cardinality":0,"operator_timing":0,"children":[{"operator_name":"PROJECTION","operator_cardinality":1,"operator_timing":0.00001,"extra_info":{"Estimated Cardinality":"2","Projections":["ProductId"]},"children":[{"operator_name":"SEQ_SCAN","operator_cardinality":1,"operator_rows_scanned":736,"operator_timing":0.00012,"extra_info":{"Table":"project.main.ppob_product","Filters":"ProductId='LA100'","Estimated Cardinality":"2","Projections":["ProductId"]},"children":[]}]}]}]}"#;
+        let plan = normalize_plan(PlanMode::Profile, raw);
+        assert_connected(&plan);
+        assert_eq!(
+            plan.nodes
+                .iter()
+                .filter(|node| node.operator == "result")
+                .count(),
+            1
+        );
+        assert!(!plan
+            .nodes
+            .iter()
+            .any(|node| node.native_name == "EXPLAIN_ANALYZE" || node.native_name == "QUERY"));
+        let read = plan
+            .nodes
+            .iter()
+            .find(|node| node.operator == "scan")
+            .unwrap();
+        let filter = plan
+            .nodes
+            .iter()
+            .find(|node| node.operator == "filter")
+            .unwrap();
+        let projection = plan
+            .nodes
+            .iter()
+            .find(|node| node.operator == "projection")
+            .unwrap();
+        let result = plan
+            .nodes
+            .iter()
+            .find(|node| node.operator == "result")
+            .unwrap();
+        assert_eq!(read.rows_scanned, Some(736));
+        assert!((read.timing_ms.unwrap() - 0.12).abs() < f64::EPSILON * 10.0);
+        assert_eq!((read.estimated_rows, read.actual_rows), (None, None));
+        assert_eq!(
+            (filter.estimated_rows, filter.actual_rows),
+            (Some(2), Some(1))
+        );
+        assert_eq!(filter.timing_ms, None);
+        assert_eq!(
+            (projection.estimated_rows, projection.actual_rows),
+            (Some(2), Some(1))
+        );
+        assert!((projection.timing_ms.unwrap() - 0.01).abs() < f64::EPSILON * 10.0);
+        assert_eq!(result.actual_rows, Some(1));
+        assert_eq!(result.details["Native wrappers"], "QUERY → EXPLAIN_ANALYZE");
     }
 
     #[test]

@@ -329,6 +329,7 @@ export interface PlanNode {
   timingMs: number | null;
   rowsScanned: number | null;
   details: Record<string, unknown>;
+  presentationNote?: string;
 }
 
 export interface PlanEdge {
