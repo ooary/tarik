@@ -1,4 +1,5 @@
 import type { PlanNode, PlanMode } from "../../lib/commands";
+import { estimateAccuracy } from "./cardinality";
 import { explainOperator, importantDetails } from "./explanations";
 
 export function NodeInspector({ node, mode }: { node: PlanNode | null; mode: PlanMode }) {
@@ -12,6 +13,7 @@ export function NodeInspector({ node, mode }: { node: PlanNode | null; mode: Pla
   }
   const explanation = explainOperator(node);
   const details = importantDetails(node);
+  const accuracy = estimateAccuracy(node.estimatedRows, node.actualRows);
   return (
     <aside className="flow-inspector" aria-label="Plan node inspector">
       <header>
@@ -43,6 +45,18 @@ export function NodeInspector({ node, mode }: { node: PlanNode | null; mode: Pla
             {node.actualRows.toLocaleString("en-US")} rows actually left this operation during
             Profile.
           </span>
+          {accuracy && (
+            <div className="flow-accuracy-summary">
+              <span className={`flow-accuracy-badge flow-accuracy-${accuracy.level}`}>
+                {accuracy.label}
+              </span>
+              <span>{accuracy.description}</span>
+              <small>
+                This badge measures estimate accuracy, not whether the query is fast or efficient.
+                Check operator time and rows scanned for performance.
+              </small>
+            </div>
+          )}
         </div>
       )}
       <dl className="flow-inspector-io">

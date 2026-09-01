@@ -37,6 +37,8 @@
   --accent-contrast: #f8fcfa;
   --focus-ring: #267653;
   --status-ready: #30845e;
+  --status-warning: #826315;
+  --status-warning-surface: #fff9e6;
   --status-error: #9d3e38;
   --status-error-border: #e4bebb;
   --status-error-surface: #fff4f3;
@@ -80,6 +82,8 @@
   --accent-contrast: #101713;
   --focus-ring: #75bd98;
   --status-ready: #65b78f;
+  --status-warning: #d5b55a;
+  --status-warning-surface: #2a2518;
   --status-error: #e58c84;
   --status-error-border: #713d39;
   --status-error-surface: #2c1c1b;
@@ -116,6 +120,8 @@
     --accent-contrast: #101713;
     --focus-ring: #75bd98;
     --status-ready: #65b78f;
+    --status-warning: #d5b55a;
+    --status-warning-surface: #2a2518;
     --status-error: #e58c84;
     --status-error-border: #713d39;
     --status-error-surface: #2c1c1b;

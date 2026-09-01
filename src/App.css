@@ -1119,7 +1119,7 @@ tbody tr:hover {
 .flow-node {
   display: grid;
   width: 220px;
-  min-height: 92px;
+  min-height: 112px;
   gap: 6px;
   border: 1px solid var(--border-default);
   border-radius: var(--radius-control);
@@ -1190,10 +1190,42 @@ tbody tr:hover {
 
 .flow-node-metrics {
   display: flex;
-  gap: 8px;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 5px 8px;
+  align-items: center;
   color: var(--text-muted);
   font-family: var(--font-mono);
   font-size: 9px;
+}
+
+.flow-accuracy-badge {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  padding: 2px 5px;
+  font-family: var(--font-mono);
+  font-size: 8px;
+  font-weight: 650;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.flow-accuracy-good {
+  color: var(--status-ready);
+  background: color-mix(in srgb, var(--status-ready) 10%, transparent);
+}
+
+.flow-accuracy-warning {
+  color: var(--status-warning);
+  background: var(--status-warning-surface);
+}
+
+.flow-accuracy-poor {
+  color: var(--status-error);
+  background: var(--status-error-surface);
 }
 
 .flow-node .react-flow__handle {
@@ -1363,6 +1395,19 @@ tbody tr:hover {
 .flow-actual-note strong {
   color: var(--text-primary);
   font-size: 10px;
+}
+
+.flow-accuracy-summary {
+  display: grid;
+  gap: 6px;
+  border-top: 1px solid var(--border-subtle);
+  margin-top: 4px;
+  padding-top: 8px;
+}
+
+.flow-accuracy-summary small {
+  color: var(--text-faint);
+  line-height: 1.45;
 }
 
 .flow-inspector-empty {

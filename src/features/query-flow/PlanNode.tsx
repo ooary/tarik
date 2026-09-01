@@ -1,15 +1,19 @@
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import type { CSSProperties } from "react";
+import { estimateAccuracy } from "./cardinality";
 import type { PlanNodeData } from "./layout";
 
 export function PlanNodeCard({ data, selected }: NodeProps & { data: PlanNodeData }) {
   const node = data.planNode;
+  const accuracy = estimateAccuracy(node.estimatedRows, node.actualRows);
   const metric =
-    node.actualRows != null
-      ? `Actual output · ${node.actualRows.toLocaleString("en-US")} rows`
-      : node.estimatedRows != null
-        ? `DuckDB estimate · ~${node.estimatedRows.toLocaleString("en-US")} output rows`
-        : null;
+    node.actualRows != null && node.estimatedRows != null
+      ? `Est. ~${node.estimatedRows.toLocaleString("en-US")} · Actual ${node.actualRows.toLocaleString("en-US")}`
+      : node.actualRows != null
+        ? `Actual output · ${node.actualRows.toLocaleString("en-US")} rows`
+        : node.estimatedRows != null
+          ? `DuckDB estimate · ~${node.estimatedRows.toLocaleString("en-US")} output rows`
+          : null;
   const metricTitle =
     node.actualRows != null
       ? "Rows that actually left this operation during Profile"
@@ -36,6 +40,14 @@ export function PlanNodeCard({ data, selected }: NodeProps & { data: PlanNodeDat
       )}
       <div className="flow-node-metrics">
         {metric && <span title={metricTitle}>{metric}</span>}
+        {accuracy && (
+          <span
+            className={`flow-accuracy-badge flow-accuracy-${accuracy.level}`}
+            title={`${accuracy.description} This measures estimate accuracy, not query speed.`}
+          >
+            {accuracy.label}
+          </span>
+        )}
         {node.timingMs != null && <span>{formatTime(node.timingMs)}</span>}
       </div>
       <Handle aria-label="Output" position={Position.Right} type="source" />

@@ -74,10 +74,16 @@ Open a project with at least two imported or linked relations. The checks below 
 
 1. Use a read-only query first and open **Profile**.
 2. Click **Run Profile**.
-3. Confirm the panel says **Actual execution profile**, explains that row counts show what happened during execution, and labels nodes `Actual output · N rows`.
-4. Confirm Explain and Profile retain independent last plans when switching tabs.
-5. Profile a failed SQL statement and confirm a structured error with **Try again** appears.
-6. Profile a DDL/DML statement only after acknowledging that Profile executes SQL. Confirm the statement's effect occurs exactly once.
+3. Confirm the panel says **Actual execution profile** and explains that row counts show what happened during execution.
+4. On operators where DuckDB reports both values, confirm nodes show `Est. ~N · Actual N` plus a textual estimate-accuracy badge:
+   - difference below `10×` → green;
+   - `10×` through `100×` → yellow;
+   - above `100×` → red.
+5. Confirm both over-estimates and under-estimates are labeled, and zero mismatches use `∞×` without crashing.
+6. Select a compared node and confirm the inspector explains the factor measures estimate accuracy, not query speed. Use operator time and rows scanned to assess performance.
+7. Confirm Explain and Profile retain independent last plans when switching tabs.
+8. Profile a failed SQL statement and confirm a structured error with **Try again** appears.
+9. Profile a DDL/DML statement only after acknowledging that Profile executes SQL. Confirm the statement's effect occurs exactly once.
 
 ## 6. SQL-range bridge (best effort)
 
@@ -108,7 +114,7 @@ Open a project with at least two imported or linked relations. The checks below 
 - `npm run lint` (0 errors; four known test-shim warnings)
 - `npm run typecheck`
 - `npm test` (7 passing command/protocol tests)
-- `npm run test:ui` (66 passing UI/unit tests)
+- `npm run test:ui` (77 passing UI/unit tests)
 - `npm run build`
 
 ## Sign-off

@@ -39,11 +39,37 @@ describe("PlanNodeCard row labels", () => {
     );
   });
 
-  it("labels Profile cardinality as measured actual output", () => {
+  it("compares Profile estimate and actual output with a ratio badge", () => {
     renderNode({
       id: "n0",
       operator: "filter",
       nativeName: "FILTER",
+      source: null,
+      estimatedRows: 147,
+      actualRows: 4,
+      timingMs: 0.01,
+      rowsScanned: 734,
+      details: {},
+    });
+    expect(screen.getByText("Est. ~147 · Actual 4")).toHaveAttribute(
+      "title",
+      "Rows that actually left this operation during Profile",
+    );
+    expect(screen.getByText("Over-estimate · 36.8×")).toHaveClass(
+      "flow-accuracy-badge",
+      "flow-accuracy-warning",
+    );
+    expect(screen.getByText("Over-estimate · 36.8×")).toHaveAttribute(
+      "title",
+      expect.stringMatching(/estimate accuracy, not query speed/i),
+    );
+  });
+
+  it("shows actual output alone when DuckDB provides no estimate", () => {
+    renderNode({
+      id: "n0",
+      operator: "result",
+      nativeName: "QUERY",
       source: null,
       estimatedRows: null,
       actualRows: 2,
@@ -51,9 +77,7 @@ describe("PlanNodeCard row labels", () => {
       rowsScanned: 734,
       details: {},
     });
-    expect(screen.getByText("Actual output · 2 rows")).toHaveAttribute(
-      "title",
-      "Rows that actually left this operation during Profile",
-    );
+    expect(screen.getByText("Actual output · 2 rows")).toBeInTheDocument();
+    expect(screen.queryByText(/estimate/i)).not.toBeInTheDocument();
   });
 });

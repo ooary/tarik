@@ -2,7 +2,7 @@ import { MarkerType, type Edge, type Node } from "@xyflow/react";
 import type { PlanEdge, PlanNode } from "../../lib/commands";
 
 const NODE_WIDTH = 220;
-const NODE_HEIGHT = 92;
+const NODE_HEIGHT = 112;
 const COLUMN_GAP = 110;
 const ROW_GAP = 34;
 
