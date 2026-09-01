@@ -47,7 +47,7 @@ export function QueryFlow({
       <div className="query-flow" data-mode={plan.mode}>
         <ReactFlowProvider>
           <ReactFlow
-            aria-label={`${plan.mode === "profile" ? "Profile" : "Explain"} query flow`}
+            aria-label={`${plan.mode === "profile" ? "Actual" : "Estimated"} query flow`}
             edges={layout.edges}
             edgeTypes={edgeTypes}
             elementsSelectable
@@ -82,12 +82,12 @@ export function QueryFlow({
         </ReactFlowProvider>
         <div className="flow-mode-label">
           <strong>
-            {plan.mode === "profile" ? "Actual execution profile" : "Estimated execution plan"}
+            {plan.mode === "profile" ? "Actual Flow · DuckDB Profile" : "Estimate · DuckDB Explain"}
           </strong>
           <span>
             {plan.mode === "profile"
-              ? "Row counts show what happened during execution."
-              : "Row counts are DuckDB planning guesses, not query results."}
+              ? "Measured rows, rows scanned, and operator time from executing this SQL."
+              : "Planned operations and row-count guesses—not query results."}
           </span>
         </div>
       </div>

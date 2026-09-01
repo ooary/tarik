@@ -63,6 +63,10 @@ describe("PlanNodeCard row labels", () => {
       "title",
       expect.stringMatching(/estimate accuracy, not query speed/i),
     );
+    expect(screen.getByText("Operator time · 0.01 ms")).toHaveAttribute(
+      "title",
+      "Time spent in this DuckDB operator",
+    );
   });
 
   it("shows actual output alone when DuckDB provides no estimate", () => {

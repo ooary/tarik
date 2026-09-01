@@ -22,8 +22,8 @@ const explanations: Record<string, Omit<OperatorExplanation, "known">> = {
     outputLabel: "Rows matching the filter",
   },
   projection: {
-    title: "Choose columns",
-    summary: "DuckDB selects or calculates the columns needed by later steps.",
+    title: "Return columns",
+    summary: "DuckDB selects or calculates the columns returned to later steps.",
     inputLabel: "Input columns",
     outputLabel: "Selected or calculated columns",
   },

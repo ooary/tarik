@@ -549,13 +549,13 @@ describe("Tarik workbench shell", () => {
   it("switches result surfaces with accessible tabs", () => {
     render(<App />);
 
-    fireEvent.click(screen.getByRole("tab", { name: "Flow" }));
-    expect(screen.getByText("No query flow yet")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Run Explain" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "Estimate" }));
+    expect(screen.getByText("No estimate yet")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Build Estimate" })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("tab", { name: "Profile" }));
-    expect(screen.getByText("No execution profile yet")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Run Profile" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "Actual Flow" }));
+    expect(screen.getByText("No actual flow yet")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Run Actual Flow" })).toBeInTheDocument();
   });
 
   it("collapses and expands the bottom panel", () => {

@@ -1376,7 +1376,8 @@ tbody tr:hover {
 
 .flow-inspector-note,
 .flow-estimate-note,
-.flow-actual-note {
+.flow-actual-note,
+.flow-interpretation-note {
   border: 1px solid var(--border-subtle);
   padding: 8px;
   color: var(--text-muted);
@@ -1384,7 +1385,8 @@ tbody tr:hover {
 }
 
 .flow-estimate-note,
-.flow-actual-note {
+.flow-actual-note,
+.flow-interpretation-note {
   display: grid;
   gap: 5px;
   margin: 12px 0;
@@ -1392,7 +1394,8 @@ tbody tr:hover {
 }
 
 .flow-estimate-note strong,
-.flow-actual-note strong {
+.flow-actual-note strong,
+.flow-interpretation-note strong {
   color: var(--text-primary);
   font-size: 10px;
 }

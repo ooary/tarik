@@ -22,6 +22,12 @@ export function NodeInspector({ node, mode }: { node: PlanNode | null; mode: Pla
         <code>{node.nativeName}</code>
       </header>
       <p>{explanation.summary}</p>
+      {node.presentationNote && (
+        <div className="flow-interpretation-note" role="note">
+          <strong>Beginner presentation</strong>
+          <span>{node.presentationNote}</span>
+        </div>
+      )}
       {mode === "explain" && node.estimatedRows != null && (
         <div className="flow-estimate-note" role="note">
           <strong>Planning estimate, not result count</strong>
@@ -32,7 +38,7 @@ export function NodeInspector({ node, mode }: { node: PlanNode | null; mode: Pla
           </span>
           {node.operator === "projection" && (
             <span>
-              Choose columns normally keeps the same row count as its input because it changes
+              Return columns normally keeps the same row count as its input because it changes
               columns, not which rows match.
             </span>
           )}

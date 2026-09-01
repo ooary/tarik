@@ -32,6 +32,22 @@ describe("NodeInspector cardinality comparison", () => {
     ).toBeInTheDocument();
   });
 
+  it("discloses interpreted pushed-down filters", () => {
+    render(
+      <NodeInspector
+        mode="profile"
+        node={{
+          ...filter,
+          nativeName: "PUSHED_DOWN_FILTER",
+          presentationNote:
+            "DuckDB applied this filter inside the table scan. Tarik displays it as a separate beginner step; it is not a separate physical operator.",
+        }}
+      />,
+    );
+    expect(screen.getByText("Beginner presentation")).toBeInTheDocument();
+    expect(screen.getByText(/not a separate physical operator/)).toBeInTheDocument();
+  });
+
   it("does not show a ratio in estimated-only Flow", () => {
     render(<NodeInspector mode="explain" node={{ ...filter, actualRows: null }} />);
     expect(screen.getByText("Planning estimate, not result count")).toBeInTheDocument();

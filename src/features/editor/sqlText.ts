@@ -15,6 +15,48 @@ export function previewTableSql(schema: string, object: string, limit = 100): st
  * semicolons inside literals do not split; matches the engine-side splitter's
  * observable behavior for typical editor content.
  */
+export function isClearlyReadOnlySql(sql: string): boolean {
+  if (countSqlStatements(sql) !== 1) return false;
+  const keyword = firstSqlKeyword(sql);
+  return (
+    keyword === "SELECT" || keyword === "VALUES" || keyword === "SHOW" || keyword === "DESCRIBE"
+  );
+}
+
+function firstSqlKeyword(sql: string): string | null {
+  let index = 0;
+  while (index < sql.length) {
+    if (/\s/.test(sql[index])) {
+      index += 1;
+      continue;
+    }
+    if (sql[index] === "-" && sql[index + 1] === "-") {
+      index += 2;
+      while (index < sql.length && sql[index] !== "\n") index += 1;
+      continue;
+    }
+    if (sql[index] === "/" && sql[index + 1] === "*") {
+      let depth = 1;
+      index += 2;
+      while (index < sql.length && depth > 0) {
+        if (sql[index] === "/" && sql[index + 1] === "*") {
+          depth += 1;
+          index += 2;
+        } else if (sql[index] === "*" && sql[index + 1] === "/") {
+          depth -= 1;
+          index += 2;
+        } else {
+          index += 1;
+        }
+      }
+      continue;
+    }
+    const match = /^[A-Za-z_]+/.exec(sql.slice(index));
+    return match?.[0].toUpperCase() ?? null;
+  }
+  return null;
+}
+
 export function countSqlStatements(sql: string): number {
   let count = 0;
   let hasContent = false;

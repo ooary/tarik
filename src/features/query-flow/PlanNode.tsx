@@ -48,7 +48,11 @@ export function PlanNodeCard({ data, selected }: NodeProps & { data: PlanNodeDat
             {accuracy.label}
           </span>
         )}
-        {node.timingMs != null && <span>{formatTime(node.timingMs)}</span>}
+        {node.timingMs != null && (
+          <span title="Time spent in this DuckDB operator">
+            Operator time · {formatTime(node.timingMs)}
+          </span>
+        )}
       </div>
       <Handle aria-label="Output" position={Position.Right} type="source" />
     </div>
@@ -61,7 +65,7 @@ function displayOperator(operator: string, nativeName: string): string {
     join: "Join",
     aggregate: "Group & summarize",
     filter: "Filter rows",
-    projection: "Choose columns",
+    projection: "Return columns",
     sort: "Sort",
     limit: "Limit rows",
     union: "Combine results",

@@ -18,7 +18,7 @@ import { ResultGrid } from "../results/ResultGrid";
 import { useQueryExecution, type TabExecution } from "../results/useQueryExecution";
 import { SqlEditor } from "./SqlEditor";
 import type { SqlTable } from "./sqlCompletion";
-import { countSqlStatements } from "./sqlText";
+import { countSqlStatements, isClearlyReadOnlySql } from "./sqlText";
 import { useQueryTabs } from "./useQueryTabs";
 
 type Panel = "results" | "flow" | "profile";
@@ -104,6 +104,15 @@ export const QueryWorkspace = forwardRef<QueryWorkspaceHandle, QueryWorkspacePro
 
     const runActivePlan = (mode: "explain" | "profile") => {
       if (!projectId || !activeTab || !activeTab.sql.trim()) return;
+      if (
+        mode === "profile" &&
+        !isClearlyReadOnlySql(activeTab.sql) &&
+        !window.confirm(
+          "Run Actual Flow?\n\nActual Flow executes this SQL to collect operator metrics. INSERT, UPDATE, DELETE, CREATE, ALTER, and DROP may modify your project.",
+        )
+      ) {
+        return;
+      }
       setPlanHighlight(null);
       onUpdatePanel(mode === "explain" ? "flow" : "profile");
       if (!bottomOpen) onToggleBottom();
@@ -326,14 +335,14 @@ export const QueryWorkspace = forwardRef<QueryWorkspaceHandle, QueryWorkspacePro
                   onClick={() => onUpdatePanel("flow")}
                   value="flow"
                 >
-                  Flow
+                  Estimate
                 </Tabs.Trigger>
                 <Tabs.Trigger
                   className="result-tab"
                   onClick={() => onUpdatePanel("profile")}
                   value="profile"
                 >
-                  Profile
+                  Actual Flow
                 </Tabs.Trigger>
               </Tabs.List>
             </Tabs.Root>
@@ -534,7 +543,7 @@ function PlanPanel({
         <span />
         <span />
         <span />
-        <strong>{mode === "profile" ? "Running query profile" : "Building query plan"}</strong>
+        <strong>{mode === "profile" ? "Measuring actual flow" : "Building estimate"}</strong>
       </div>
     );
   }
@@ -556,14 +565,14 @@ function PlanPanel({
   }
   return (
     <div className="panel-placeholder">
-      <strong>{mode === "profile" ? "No execution profile yet" : "No query flow yet"}</strong>
+      <strong>{mode === "profile" ? "No actual flow yet" : "No estimate yet"}</strong>
       <span>
         {mode === "profile"
-          ? "Profile runs the query and shows actual rows and operator timing."
-          : "Explain shows DuckDB's estimated operations without running the query."}
+          ? "Actual Flow runs the SQL using DuckDB Profile and shows measured rows, rows scanned, and operator time."
+          : "Estimate shows DuckDB's plan and row-count guesses without running the SQL."}
       </span>
       <button className="toolbar-button" onClick={onRun} type="button">
-        {mode === "profile" ? "Run Profile" : "Run Explain"}
+        {mode === "profile" ? "Run Actual Flow" : "Build Estimate"}
       </button>
     </div>
   );

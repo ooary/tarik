@@ -165,10 +165,10 @@ describe("QueryWorkspace", () => {
     const node = await screen.findByText("Read data");
     expect(node).toBeInTheDocument();
     expect(container.querySelector(".flow-mode-label")).toHaveTextContent(
-      "Estimated execution plan",
+      "Estimate · DuckDB Explain",
     );
     expect(container.querySelector(".flow-mode-label")).toHaveTextContent(
-      "Row counts are DuckDB planning guesses, not query results.",
+      "Planned operations and row-count guesses—not query results.",
     );
     expect(screen.getByText("Select an operation")).toBeInTheDocument();
     fireEvent.click(node);
@@ -236,15 +236,76 @@ describe("QueryWorkspace", () => {
     });
     expect(highlight.textContent).toBe("orders");
 
-    fireEvent.click(screen.getByText("Choose columns"));
+    fireEvent.click(screen.getByText("Return columns"));
     expect(
-      await screen.findByText(/Choose columns normally keeps the same row count as its input/),
+      await screen.findByText(/Return columns normally keeps the same row count as its input/),
     ).toBeInTheDocument();
     await waitFor(() => expect(container.querySelector(".cm-plan-highlight")).toBeNull());
 
     act(() => ref.current?.insertSql(" -- changed after Explain"));
     fireEvent.click(screen.getByText("Read data"));
     await waitFor(() => expect(container.querySelector(".cm-plan-highlight")).toBeNull());
+  });
+
+  it("runs Actual Flow without a warning for a clearly read-only query", async () => {
+    const ref = createRef<QueryWorkspaceHandle>();
+    render(
+      <QueryWorkspace
+        activePanel="profile"
+        bottomOpen
+        bottomPanelHeight={292}
+        catalog={catalog}
+        onSetBottomHeight={vi.fn()}
+        onToggleBottom={vi.fn()}
+        onUpdatePanel={vi.fn()}
+        projectId="p1"
+        ref={ref}
+      />,
+    );
+    act(() => ref.current?.insertSql("SELECT * FROM orders"));
+    const confirm = vi.spyOn(window, "confirm");
+
+    fireEvent.click(screen.getByRole("button", { name: "Run Actual Flow" }));
+    await waitFor(() =>
+      expect(explainQueryPlan).toHaveBeenCalledWith("p1", "SELECT * FROM orders", "profile"),
+    );
+    expect(confirm).not.toHaveBeenCalled();
+    confirm.mockRestore();
+  });
+
+  it("requires confirmation before Actual Flow executes potentially mutating SQL", async () => {
+    const ref = createRef<QueryWorkspaceHandle>();
+    render(
+      <QueryWorkspace
+        activePanel="profile"
+        bottomOpen
+        bottomPanelHeight={292}
+        catalog={catalog}
+        onSetBottomHeight={vi.fn()}
+        onToggleBottom={vi.fn()}
+        onUpdatePanel={vi.fn()}
+        projectId="p1"
+        ref={ref}
+      />,
+    );
+    act(() => ref.current?.insertSql("CREATE TABLE guarded AS SELECT 1"));
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    const callsBeforeCancel = vi.mocked(explainQueryPlan).mock.calls.length;
+
+    fireEvent.click(screen.getByRole("button", { name: "Run Actual Flow" }));
+    expect(confirm).toHaveBeenCalledWith(expect.stringMatching(/executes this SQL.*may modify/s));
+    expect(explainQueryPlan).toHaveBeenCalledTimes(callsBeforeCancel);
+
+    confirm.mockReturnValue(true);
+    fireEvent.click(screen.getByRole("button", { name: "Run Actual Flow" }));
+    await waitFor(() =>
+      expect(explainQueryPlan).toHaveBeenCalledWith(
+        "p1",
+        "CREATE TABLE guarded AS SELECT 1",
+        "profile",
+      ),
+    );
+    confirm.mockRestore();
   });
 
   it("shows raw fallback when structured plan parsing is unavailable", async () => {

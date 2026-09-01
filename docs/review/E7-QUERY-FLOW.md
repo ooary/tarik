@@ -1,7 +1,7 @@
 # EPIC E7 Review — Beginner-friendly query flow
 
 **Status:** REVIEW  
-**Scope:** Explain/Profile capture, normalized DuckDB plan graph, XYFlow visualization, beginner inspector, and conservative SQL-range mapping.
+**Scope:** Estimate/Actual Flow capture, interpreted DuckDB plan graph, XYFlow visualization, beginner inspector, and conservative SQL-range mapping.
 
 ## Build and launch
 
@@ -21,7 +21,7 @@ Open a project with at least two imported or linked relations. The checks below 
    ```
 
 2. Click **Explain**.
-3. Confirm the lower panel switches to **Flow** and labels it **Estimated execution plan**.
+3. Confirm the lower panel switches to **Estimate** and labels it **Estimate · DuckDB Explain**.
 4. Confirm the header says row counts are DuckDB planning guesses, not query results. Estimated nodes should read `DuckDB estimate · ~N output rows`, not imply actual rows.
 5. Use a harmless DDL statement such as `CREATE TABLE e7_explain_guard AS SELECT 1 AS id;` and click **Explain** only.
 6. Refresh the catalog and confirm `e7_explain_guard` was **not** created.
@@ -45,45 +45,48 @@ Open a project with at least two imported or linked relations. The checks below 
 5. Confirm later group/sort/limit/result steps continue toward the right.
 6. Pan, zoom, fit, and select nodes. Confirm controls remain compact and the graph remains readable.
 7. Resize the bottom panel and app window. Confirm no node/inspector content overlaps outside the panel.
-8. Enable reduced motion at OS/browser level and reopen Flow. Confirm connectors remain visible but traversal motion is effectively disabled.
+8. Enable reduced motion at OS/browser level and reopen Estimate. Confirm connectors remain visible but traversal motion is effectively disabled.
 
-## 3. Automatic flow on Run
+## 3. Automatic Estimate on Run
 
 1. Return to Results, then click **Run query** on a harmless read query.
-2. Confirm Tarik immediately opens Flow and briefly shows **Preparing flow** while capturing a non-executing estimated plan.
+2. Confirm Tarik immediately opens Estimate and briefly shows **Preparing flow** while capturing a non-executing plan.
 3. Confirm the graph appears and animates, then the real query starts exactly once.
 4. Confirm the Result tab still contains the normal running/succeeded result and can be selected at any time.
-5. Run a harmless DDL statement and confirm it takes effect exactly once, not twice. Automatic Flow must use Explain, never Profile.
-6. Use invalid SQL. Confirm the Flow error is visible and the actual execution still reports its normal structured SQL error.
+5. Run a harmless DDL statement and confirm it takes effect exactly once, not twice. Automatic Estimate must use Explain, never Actual Flow/Profile.
+6. Use invalid SQL. Confirm the Estimate error is visible and the actual execution still reports its normal structured SQL error.
 
-## 4. Beginner inspector
+## 4. Beginner inspector and interpreted operators
 
-1. Select Read data, Join, Group and summarize, Sort, and Limit nodes.
+1. Select Read data, Filter rows, Join, Group and summarize, Sort, Return columns, and Limit nodes.
 2. Confirm the inspector shows:
    - a plain-language description;
    - clear Input and Output meanings;
    - native DuckDB operator name;
-   - a prominent `Planning estimate, not result count` explanation in Flow;
+   - a prominent `Planning estimate, not result count` explanation in Estimate;
    - source and `DuckDB estimated output` when reported;
    - join type/conditions, filters, groups/aggregates, projections, sort keys, or limits when DuckDB reports them.
 3. For a Filter followed by Choose columns, confirm both may repeat the same estimate and the projection inspector explains that choosing columns normally changes columns, not which rows match.
 4. Click empty graph space and confirm the inspector returns to **Select an operation**.
-5. Confirm no operator explanation makes claims beyond the native details shown.
+5. For a filter pushed into DuckDB's scan, confirm the graph shows Read data → Filter rows, the filter condition appears, rows scanned and combined operator time remain on Read data, and estimated/actual output appears on Filter rows.
+6. Confirm the inspector says the Filter is a beginner presentation of fused native scan work—not a separate physical DuckDB operator.
+7. Confirm Actual Flow contains exactly one Query result node even when native details list QUERY and EXPLAIN_ANALYZE wrappers.
+8. Confirm no operator explanation makes claims beyond the native details shown.
 
-## 5. Profile executes and reports actuals
+## 5. Actual Flow executes and reports measured metrics
 
-1. Use a read-only query first and open **Profile**.
-2. Click **Run Profile**.
-3. Confirm the panel says **Actual execution profile** and explains that row counts show what happened during execution.
+1. Use a read-only query first and open **Actual Flow**.
+2. Click **Run Actual Flow**.
+3. Confirm the panel says **Actual Flow · DuckDB Profile**, shows measured output, rows scanned, and explicit **Operator time** where DuckDB reports it.
 4. On operators where DuckDB reports both values, confirm nodes show `Est. ~N · Actual N` plus a textual estimate-accuracy badge:
    - difference below `10×` → green;
    - `10×` through `100×` → yellow;
    - above `100×` → red.
 5. Confirm both over-estimates and under-estimates are labeled, and zero mismatches use `∞×` without crashing.
 6. Select a compared node and confirm the inspector explains the factor measures estimate accuracy, not query speed. Use operator time and rows scanned to assess performance.
-7. Confirm Explain and Profile retain independent last plans when switching tabs.
-8. Profile a failed SQL statement and confirm a structured error with **Try again** appears.
-9. Profile a DDL/DML statement only after acknowledging that Profile executes SQL. Confirm the statement's effect occurs exactly once.
+7. Confirm Estimate and Actual Flow retain independent last plans when switching tabs.
+8. Run Actual Flow for a failed SQL statement and confirm a structured error with **Try again** appears.
+9. Run Actual Flow for a DDL/DML statement. Confirm the mutation warning says Actual Flow executes SQL, cancelling does nothing, and accepting executes the statement exactly once.
 
 ## 6. SQL-range bridge (best effort)
 
@@ -101,10 +104,10 @@ Open a project with at least two imported or linked relations. The checks below 
 
 ## 7. Fallback and error resilience
 
-1. Confirm empty Flow/Profile tabs show explicit Run Explain/Run Profile actions.
-2. Confirm loading state appears while a plan/profile is being captured.
+1. Confirm empty Estimate/Actual Flow tabs show explicit Build Estimate/Run Actual Flow actions.
+2. Confirm loading state appears while an Estimate/Actual Flow is being captured.
 3. If a future or malformed native plan is encountered, confirm Tarik shows **Structured graph unavailable** with the raw plan rather than crashing or inventing nodes.
-4. Confirm closing/reopening the project still permits normal query execution after Explain/Profile use.
+4. Confirm closing/reopening the project still permits normal query execution after Estimate/Actual Flow use.
 
 ## Automated verification recorded
 
@@ -114,16 +117,16 @@ Open a project with at least two imported or linked relations. The checks below 
 - `npm run lint` (0 errors; four known test-shim warnings)
 - `npm run typecheck`
 - `npm test` (7 passing command/protocol tests)
-- `npm run test:ui` (77 passing UI/unit tests)
+- `npm run test:ui` (81 passing UI/unit tests)
 - `npm run build`
 
 ## Sign-off
 
-- [ ] Explain semantics and estimated labeling approved
+- [ ] Estimate semantics and labeling approved
 - [ ] Join graph/connectors/traversal and controls approved
-- [ ] Automatic estimated Flow on Run approved
+- [ ] Automatic Estimate on Run approved
 - [ ] Beginner inspector/details approved
-- [ ] Profile execution and actual labeling approved
+- [ ] Actual Flow execution and actual labeling approved
 - [ ] Best-effort SQL highlighting approved
 - [ ] Fallback/error states approved
 
