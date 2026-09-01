@@ -20,6 +20,31 @@ export function NodeInspector({ node, mode }: { node: PlanNode | null; mode: Pla
         <code>{node.nativeName}</code>
       </header>
       <p>{explanation.summary}</p>
+      {mode === "explain" && node.estimatedRows != null && (
+        <div className="flow-estimate-note" role="note">
+          <strong>Planning estimate, not result count</strong>
+          <span>
+            DuckDB guessed that about {node.estimatedRows.toLocaleString("en-US")} rows would leave
+            this operation before running the query. This guess helps choose an execution strategy;
+            it does not filter, limit, or describe the actual result.
+          </span>
+          {node.operator === "projection" && (
+            <span>
+              Choose columns normally keeps the same row count as its input because it changes
+              columns, not which rows match.
+            </span>
+          )}
+        </div>
+      )}
+      {mode === "profile" && node.actualRows != null && (
+        <div className="flow-actual-note" role="note">
+          <strong>Measured during execution</strong>
+          <span>
+            {node.actualRows.toLocaleString("en-US")} rows actually left this operation during
+            Profile.
+          </span>
+        </div>
+      )}
       <dl className="flow-inspector-io">
         <div>
           <dt>Input</dt>
@@ -39,14 +64,14 @@ export function NodeInspector({ node, mode }: { node: PlanNode | null; mode: Pla
         )}
         {node.estimatedRows != null && (
           <div>
-            <dt>Estimated rows</dt>
-            <dd>{node.estimatedRows.toLocaleString("en-US")}</dd>
+            <dt>DuckDB estimated output</dt>
+            <dd>~{node.estimatedRows.toLocaleString("en-US")} rows</dd>
           </div>
         )}
         {node.actualRows != null && (
           <div>
-            <dt>Actual rows</dt>
-            <dd>{node.actualRows.toLocaleString("en-US")}</dd>
+            <dt>Actual output</dt>
+            <dd>{node.actualRows.toLocaleString("en-US")} rows</dd>
           </div>
         )}
         {node.timingMs != null && (

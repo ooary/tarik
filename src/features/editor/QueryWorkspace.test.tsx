@@ -167,11 +167,15 @@ describe("QueryWorkspace", () => {
     expect(container.querySelector(".flow-mode-label")).toHaveTextContent(
       "Estimated execution plan",
     );
+    expect(container.querySelector(".flow-mode-label")).toHaveTextContent(
+      "Row counts are DuckDB planning guesses, not query results.",
+    );
     expect(screen.getByText("Select an operation")).toBeInTheDocument();
     fireEvent.click(node);
     expect(await screen.findByText(/DuckDB reads rows from/)).toBeInTheDocument();
-    expect(screen.getByText("Estimated rows")).toBeInTheDocument();
-    expect(screen.getByText("100")).toBeInTheDocument();
+    expect(screen.getByText("Planning estimate, not result count")).toBeInTheDocument();
+    expect(screen.getByText("DuckDB estimated output")).toBeInTheDocument();
+    expect(screen.getByText("~100 rows")).toBeInTheDocument();
   });
 
   it("highlights the mapped SQL range for a selected node and clears unmappable nodes", async () => {
@@ -233,6 +237,9 @@ describe("QueryWorkspace", () => {
     expect(highlight.textContent).toBe("orders");
 
     fireEvent.click(screen.getByText("Choose columns"));
+    expect(
+      await screen.findByText(/Choose columns normally keeps the same row count as its input/),
+    ).toBeInTheDocument();
     await waitFor(() => expect(container.querySelector(".cm-plan-highlight")).toBeNull());
 
     act(() => ref.current?.insertSql(" -- changed after Explain"));

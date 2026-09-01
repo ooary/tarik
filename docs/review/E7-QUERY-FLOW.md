@@ -22,7 +22,7 @@ Open a project with at least two imported or linked relations. The checks below 
 
 2. Click **Explain**.
 3. Confirm the lower panel switches to **Flow** and labels it **Estimated execution plan**.
-4. Confirm nodes show estimated rows, not actual runtime/timing claims.
+4. Confirm the header says row counts are DuckDB planning guesses, not query results. Estimated nodes should read `DuckDB estimate · ~N output rows`, not imply actual rows.
 5. Use a harmless DDL statement such as `CREATE TABLE e7_explain_guard AS SELECT 1 AS id;` and click **Explain** only.
 6. Refresh the catalog and confirm `e7_explain_guard` was **not** created.
 
@@ -63,16 +63,18 @@ Open a project with at least two imported or linked relations. The checks below 
    - a plain-language description;
    - clear Input and Output meanings;
    - native DuckDB operator name;
-   - source and estimated rows when reported;
+   - a prominent `Planning estimate, not result count` explanation in Flow;
+   - source and `DuckDB estimated output` when reported;
    - join type/conditions, filters, groups/aggregates, projections, sort keys, or limits when DuckDB reports them.
-3. Click empty graph space and confirm the inspector returns to **Select an operation**.
-4. Confirm no operator explanation makes claims beyond the native details shown.
+3. For a Filter followed by Choose columns, confirm both may repeat the same estimate and the projection inspector explains that choosing columns normally changes columns, not which rows match.
+4. Click empty graph space and confirm the inspector returns to **Select an operation**.
+5. Confirm no operator explanation makes claims beyond the native details shown.
 
 ## 5. Profile executes and reports actuals
 
 1. Use a read-only query first and open **Profile**.
 2. Click **Run Profile**.
-3. Confirm the panel says **Actual execution profile** and nodes/inspector show actual rows and timing where available.
+3. Confirm the panel says **Actual execution profile**, explains that row counts show what happened during execution, and labels nodes `Actual output · N rows`.
 4. Confirm Explain and Profile retain independent last plans when switching tabs.
 5. Profile a failed SQL statement and confirm a structured error with **Try again** appears.
 6. Profile a DDL/DML statement only after acknowledging that Profile executes SQL. Confirm the statement's effect occurs exactly once.

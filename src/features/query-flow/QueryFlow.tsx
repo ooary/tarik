@@ -80,9 +80,16 @@ export function QueryFlow({
             <Controls position="bottom-right" showInteractive={false} />
           </ReactFlow>
         </ReactFlowProvider>
-        <span className="flow-mode-label">
-          {plan.mode === "profile" ? "Actual execution profile" : "Estimated execution plan"}
-        </span>
+        <div className="flow-mode-label">
+          <strong>
+            {plan.mode === "profile" ? "Actual execution profile" : "Estimated execution plan"}
+          </strong>
+          <span>
+            {plan.mode === "profile"
+              ? "Row counts show what happened during execution."
+              : "Row counts are DuckDB planning guesses, not query results."}
+          </span>
+        </div>
       </div>
       <NodeInspector mode={plan.mode} node={selected} />
     </div>

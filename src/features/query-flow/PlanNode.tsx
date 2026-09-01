@@ -6,10 +6,16 @@ export function PlanNodeCard({ data, selected }: NodeProps & { data: PlanNodeDat
   const node = data.planNode;
   const metric =
     node.actualRows != null
-      ? `${node.actualRows.toLocaleString("en-US")} actual rows`
+      ? `Actual output · ${node.actualRows.toLocaleString("en-US")} rows`
       : node.estimatedRows != null
-        ? `~${node.estimatedRows.toLocaleString("en-US")} estimated rows`
+        ? `DuckDB estimate · ~${node.estimatedRows.toLocaleString("en-US")} output rows`
         : null;
+  const metricTitle =
+    node.actualRows != null
+      ? "Rows that actually left this operation during Profile"
+      : node.estimatedRows != null
+        ? "DuckDB's planning guess before execution—not the actual query result"
+        : undefined;
   const traversalStyle = {
     "--flow-node-delay": `${data.traversalDelayMs}ms`,
   } as CSSProperties;
@@ -29,7 +35,7 @@ export function PlanNodeCard({ data, selected }: NodeProps & { data: PlanNodeDat
         </span>
       )}
       <div className="flow-node-metrics">
-        {metric && <span>{metric}</span>}
+        {metric && <span title={metricTitle}>{metric}</span>}
         {node.timingMs != null && <span>{formatTime(node.timingMs)}</span>}
       </div>
       <Handle aria-label="Output" position={Position.Right} type="source" />

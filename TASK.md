@@ -1069,7 +1069,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Notes:
     - Added official `@xyflow/react`. Deterministic layout puts source/input depth on the left and result/root on the right; nodes at each depth retain normalized preorder. Two scan inputs receive distinct rows and converge into one join. Pan/zoom/fit and restrained controls are enabled; minimap is intentionally omitted at current graph sizes.
     - Review fix: persistent connector strokes now use the defined `--border-control` token (the original undefined `--border-strong` token made edges invisible). Arrowheads show source-to-result direction. A one-shot depth-staggered accent pulse and brief node-arrival border cue communicate traversal; reduced-motion keeps static connectors and suppresses motion.
-    - Node cards show beginner operation label, native operator, source, estimated or actual rows, and profile timing. Flow is labeled `Estimated execution plan`; Profile is labeled `Actual execution profile`.
+    - Node cards show beginner operation label, native operator, source, estimated or actual output rows, and profile timing. Flow explicitly says row counts are DuckDB planning guesses and labels cards `DuckDB estimate · ~N output rows`; Profile says row counts are measured during execution and labels cards `Actual output · N rows`.
     - Explain toolbar action captures the active immutable editor text without running it and switches to Flow. Normal Run now opens Flow and completes a non-executing Explain capture before submitting the real SQL exactly once, so DDL/DML is never doubled; Profile remains explicit because it executes SQL. Explain/Profile retain independent last states.
     - Loading skeleton, empty actions, structured error, raw structured-fallback, and ready graph states are covered. Tests verify deterministic join convergence/layout, Explain wiring, fallback UI, and accessible Flow/Profile empty states.
 
@@ -1085,7 +1085,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Commit: `feat(flow): explain query nodes for beginners`
   - Notes:
     - Explanation dictionary covers scan, filter, projection, join, aggregate, sort, limit, union, window, and result in plain functional language with truthful input/output descriptions.
-    - Selecting a node opens the inspector with explicit `Estimated operation` vs `Actual operation`, source, estimated rows, actual rows, operator timing, rows scanned, and ordered native details (join type/conditions, filters, groups/aggregates, projections, order/top, table/type).
+    - Selecting a node opens the inspector with explicit `Estimated operation` vs `Actual operation`, source, estimated output, actual output, operator timing, rows scanned, and ordered native details (join type/conditions, filters, groups/aggregates, projections, order/top, table/type). Flow includes a prominent `Planning estimate, not result count` note explaining that DuckDB's guess neither limits nor describes actual results; projection additionally explains why it normally repeats its input row estimate.
     - Unknown operators retain their native title/details and explicitly say no verified beginner explanation exists; no guessed semantics. Tests cover every common operator, unknown truthfulness, detail ordering, empty inspector, node selection, estimated labeling, and metric display.
 
 - [x] **E7-T5 Link flow nodes to relevant SQL when reliably available** — owner: lead-agent
