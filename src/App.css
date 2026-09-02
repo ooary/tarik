@@ -1281,6 +1281,41 @@ tbody tr:hover {
   font-size: 10px;
 }
 
+.flow-present-button {
+  position: absolute;
+  z-index: 5;
+  top: 10px;
+  right: 10px;
+  display: inline-flex;
+  min-height: 28px;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-control);
+  padding: 0 8px;
+  color: var(--text-secondary);
+  background: var(--surface-control);
+  font-size: 10px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.flow-present-button:hover {
+  border-color: var(--accent-solid);
+  color: var(--text-primary);
+  background: var(--surface-hover);
+}
+
+.flow-present-button:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--focus-ring) 42%, transparent);
+  outline-offset: 2px;
+}
+
+.flow-present-button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
 .flow-mode-label strong {
   color: var(--text-primary);
   font-size: 10px;

@@ -46,12 +46,14 @@ Open a project with at least two imported or linked relations. The checks below 
 6. Pan, zoom, fit, and select nodes. Confirm controls remain compact and the graph remains readable.
 7. Click **Open fullscreen** in Estimate. Confirm the graph, output tabs, controls, and inspector fill the application viewport while the editor remains unchanged behind the overlay.
 8. Confirm the graph refits to the larger canvas and a complex plan has substantially more room for nodes.
-9. Switch between Estimate and Actual Flow while fullscreen. Confirm fullscreen remains active and each graph retains its state.
-10. Press `Esc` and confirm the normal bottom panel returns with keyboard focus on the fullscreen button.
-11. Reopen fullscreen, then switch to Results. Confirm fullscreen exits automatically.
-12. Confirm Actual Flow offers the same fullscreen action, including empty/loading/error states.
-13. Resize the normal bottom panel and app window. Confirm no node/inspector content overlaps outside the panel.
-14. Enable reduced motion at OS/browser level and reopen Estimate. Confirm connectors remain visible but traversal motion is effectively disabled.
+9. Click **Present**. Confirm the graph smoothly focuses the upper-left source operation, selects its node, and opens its inspector. For a join with multiple sources, confirm the upper-left source is chosen consistently.
+10. Repeat Present in normal and fullscreen views. Confirm it works in both Estimate and Actual Flow.
+11. Switch between Estimate and Actual Flow while fullscreen. Confirm fullscreen remains active and each graph retains its state.
+12. Press `Esc` and confirm the normal bottom panel returns with keyboard focus on the fullscreen button.
+13. Reopen fullscreen, then switch to Results. Confirm fullscreen exits automatically.
+14. Confirm Actual Flow offers the same fullscreen action, including empty/loading/error states.
+15. Resize the normal bottom panel and app window. Confirm no node/inspector content overlaps outside the panel.
+16. Enable reduced motion at OS/browser level and reopen Estimate. Confirm connectors remain visible, traversal motion is suppressed, and Present focuses the start node without animated travel.
 
 ## 3. Automatic Estimate on Run
 

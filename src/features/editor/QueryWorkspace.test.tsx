@@ -171,8 +171,9 @@ describe("QueryWorkspace", () => {
       "Planned operations and row-count guesses—not query results.",
     );
     expect(screen.getByText("Select an operation")).toBeInTheDocument();
-    fireEvent.click(node);
+    fireEvent.click(screen.getByRole("button", { name: "Present flow from start" }));
     expect(await screen.findByText(/DuckDB reads rows from/)).toBeInTheDocument();
+    expect(node.closest(".flow-node")).toHaveClass("flow-node-selected");
     expect(screen.getByText("Planning estimate, not result count")).toBeInTheDocument();
     expect(screen.getByText("DuckDB estimated output")).toBeInTheDocument();
     expect(screen.getByText("~100 rows")).toBeInTheDocument();

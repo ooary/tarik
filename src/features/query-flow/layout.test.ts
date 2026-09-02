@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { PlanEdge, PlanNode } from "../../lib/commands";
-import { layoutPlan } from "./layout";
+import { layoutPlan, presentationStartNode } from "./layout";
 
 const nodes: PlanNode[] = [
   {
@@ -59,5 +59,12 @@ describe("layoutPlan", () => {
     expect(first.edges.every((edge) => edge.type === "traversal")).toBe(true);
     expect(first.edges.every((edge) => edge.markerEnd != null)).toBe(true);
     expect(first.edges.map((edge) => edge.data?.traversalDelayMs)).toEqual([100, 100]);
+    expect(presentationStartNode(first.nodes)?.id).toBe("n1");
+  });
+
+  it("selects the upper-left source deterministically for presentation", () => {
+    const layout = layoutPlan(nodes, edges);
+    expect(presentationStartNode([...layout.nodes].reverse())?.id).toBe("n1");
+    expect(presentationStartNode([])).toBeNull();
   });
 });

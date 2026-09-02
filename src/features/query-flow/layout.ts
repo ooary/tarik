@@ -11,6 +11,17 @@ export interface PlanNodeData extends Record<string, unknown> {
   traversalDelayMs: number;
 }
 
+export function presentationStartNode(nodes: Node<PlanNodeData>[]): Node<PlanNodeData> | null {
+  return (
+    [...nodes].sort(
+      (left, right) =>
+        left.position.x - right.position.x ||
+        left.position.y - right.position.y ||
+        numericId(left.id) - numericId(right.id),
+    )[0] ?? null
+  );
+}
+
 /**
  * Deterministic source-to-result layout. Edges already flow child -> parent;
  * node depth is the longest distance from an input/source. Every depth column
