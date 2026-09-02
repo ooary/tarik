@@ -1108,9 +1108,11 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
 
 ## EPIC E8 — Saved queries and historical executions
 
-**Status:** `IN PROGRESS` - preparation/design audit underway after deferred E7 review.
+**Status:** `IN PROGRESS` - preparation/design contract complete; E8-T1 ready.
 
 **Outcome:** Durable query library and useful local audit trail.
+
+**Preparation:** See `docs/design/E8-DESIGN-GRAPH.md` for explicit create/update semantics, folder behavior, bounded history pages, reopen-without-execution boundary, retention isolation, UI states, and test layers.
 
 - [ ] **E8-T1 Implement saved-query service and UI**
   - Depends on: E2-T4, E5-T2
