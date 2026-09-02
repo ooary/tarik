@@ -86,6 +86,20 @@ pub struct QueryHistoryPage {
     pub next_offset: Option<u32>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HistoryRetentionPolicy {
+    pub max_count: Option<u32>,
+    pub max_age_days: Option<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HistoryPruneSummary {
+    pub deleted: u64,
+    pub remaining: u64,
+}
+
 #[derive(Clone)]
 pub struct QueriesRepository {
     database: MetadataDb,
@@ -359,17 +373,73 @@ impl QueriesRepository {
             .entries)
     }
 
-    pub fn prune_history(&self, project_id: &str, keep: u32) -> Result<usize, MetadataError> {
+    pub fn apply_history_retention(
+        &self,
+        project_id: &str,
+        policy: &HistoryRetentionPolicy,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> Result<HistoryPruneSummary, MetadataError> {
+        if policy.max_count.is_none() && policy.max_age_days.is_none() {
+            return Err(MetadataError::InvalidHistoryRetention(
+                "choose max count, max age, or both",
+            ));
+        }
+        let mut connection = self.database.connection()?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let mut deleted = 0usize;
+        if let Some(days) = policy.max_age_days {
+            let cutoff = now - chrono::Duration::days(i64::from(days));
+            deleted += transaction.execute(
+                "DELETE FROM query_history WHERE project_id = ?1 AND executed_at < ?2",
+                (project_id, cutoff.to_rfc3339()),
+            )?;
+        }
+        if let Some(keep) = policy.max_count {
+            deleted += transaction.execute(
+                "DELETE FROM query_history WHERE project_id = ?1 AND id NOT IN (
+                    SELECT id FROM query_history WHERE project_id = ?1
+                    ORDER BY executed_at DESC, id DESC LIMIT ?2
+                 )",
+                (project_id, keep),
+            )?;
+        }
+        let remaining: u64 = transaction.query_row(
+            "SELECT count(*) FROM query_history WHERE project_id = ?1",
+            [project_id],
+            |row| row.get(0),
+        )?;
+        transaction.commit()?;
+        Ok(HistoryPruneSummary {
+            deleted: deleted as u64,
+            remaining,
+        })
+    }
+
+    pub fn clear_history(&self, project_id: &str) -> Result<HistoryPruneSummary, MetadataError> {
         let mut connection = self.database.connection()?;
         let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let deleted = transaction.execute(
-            "DELETE FROM query_history WHERE project_id = ?1 AND id NOT IN (
-                SELECT id FROM query_history WHERE project_id = ?1 ORDER BY executed_at DESC LIMIT ?2
-             )",
-            (project_id, keep),
+            "DELETE FROM query_history WHERE project_id = ?1",
+            [project_id],
         )?;
         transaction.commit()?;
-        Ok(deleted)
+        Ok(HistoryPruneSummary {
+            deleted: deleted as u64,
+            remaining: 0,
+        })
+    }
+
+    pub fn prune_history(&self, project_id: &str, keep: u32) -> Result<usize, MetadataError> {
+        Ok(self
+            .apply_history_retention(
+                project_id,
+                &HistoryRetentionPolicy {
+                    max_count: Some(keep),
+                    max_age_days: None,
+                },
+                chrono::Utc::now(),
+            )?
+            .deleted as usize)
     }
 }
 
@@ -627,6 +697,107 @@ mod tests {
             .execute("DELETE FROM projects WHERE id = ?1", [&project_id])
             .unwrap();
         assert!(repository.list_saved(&project_id, None).unwrap().is_empty());
+    }
+
+    #[test]
+    fn retention_by_age_and_count_is_transactional_and_isolated() {
+        let (repository, database, project_id) = setup();
+        let other_project = ProjectsRepository::new(database.clone())
+            .upsert(
+                "Other",
+                Path::new("/data/retention-other.duckdb"),
+                ProjectOwnership::External,
+            )
+            .unwrap();
+        let saved = repository
+            .create_saved(&SavedQueryDraft {
+                project_id: project_id.clone(),
+                folder_id: None,
+                name: "Keep me".into(),
+                sql_text: "select 1".into(),
+                tags: vec![],
+            })
+            .unwrap();
+        for (id, project, executed_at) in [
+            ("old", project_id.as_str(), "2026-01-01T00:00:00Z"),
+            ("recent-1", project_id.as_str(), "2026-01-09T00:00:00Z"),
+            ("recent-2", project_id.as_str(), "2026-01-10T00:00:00Z"),
+            ("other", other_project.id.as_str(), "2026-01-01T00:00:00Z"),
+        ] {
+            repository
+                .add_history(&QueryHistoryEntry {
+                    id: id.into(),
+                    project_id: project.into(),
+                    sql_text: format!("select '{id}'"),
+                    status: ExecutionStatus::Succeeded,
+                    duration_ms: Some(1),
+                    returned_rows: Some(1),
+                    error_code: None,
+                    error_message: None,
+                    executed_at: executed_at.into(),
+                })
+                .unwrap();
+        }
+        let now = chrono::DateTime::parse_from_rfc3339("2026-01-11T00:00:00Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+        let summary = repository
+            .apply_history_retention(
+                &project_id,
+                &HistoryRetentionPolicy {
+                    max_count: Some(1),
+                    max_age_days: Some(5),
+                },
+                now,
+            )
+            .unwrap();
+        assert_eq!(
+            summary,
+            HistoryPruneSummary {
+                deleted: 2,
+                remaining: 1
+            }
+        );
+        assert_eq!(
+            repository.list_history(&project_id, None, 10).unwrap()[0].id,
+            "recent-2"
+        );
+        assert_eq!(
+            repository
+                .list_history(&other_project.id, None, 10)
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(
+            repository.list_saved(&project_id, None).unwrap()[0].id,
+            saved.id
+        );
+
+        let cleared = repository.clear_history(&project_id).unwrap();
+        assert_eq!(
+            cleared,
+            HistoryPruneSummary {
+                deleted: 1,
+                remaining: 0
+            }
+        );
+        assert!(repository
+            .list_history(&project_id, None, 10)
+            .unwrap()
+            .is_empty());
+        assert_eq!(repository.list_saved(&project_id, None).unwrap().len(), 1);
+        assert!(matches!(
+            repository.apply_history_retention(
+                &project_id,
+                &HistoryRetentionPolicy {
+                    max_count: None,
+                    max_age_days: None
+                },
+                now,
+            ),
+            Err(MetadataError::InvalidHistoryRetention(_))
+        ));
     }
 
     #[test]

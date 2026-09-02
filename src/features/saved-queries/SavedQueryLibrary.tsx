@@ -10,6 +10,8 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { useEffect, useMemo, useState } from "react";
 import { Field } from "../../components/ui";
 import {
+  applyQueryHistoryRetention,
+  clearQueryHistory,
   createQueryFolder,
   createSavedQuery,
   deleteQueryFolder,
@@ -78,7 +80,12 @@ export function SavedQueryLibrary({
   const [historyTo, setHistoryTo] = useState("");
   const [historyOffset, setHistoryOffset] = useState(0);
   const [historyNextOffset, setHistoryNextOffset] = useState<number | null>(null);
+  const [historyRevision, setHistoryRevision] = useState(0);
   const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null);
+  const [retentionOpen, setRetentionOpen] = useState(false);
+  const [maxCount, setMaxCount] = useState("500");
+  const [maxAgeDays, setMaxAgeDays] = useState("90");
+  const [retentionSummary, setRetentionSummary] = useState<string | null>(null);
   const selected = queries.find((query) => query.id === selectedId) ?? null;
   const selectedHistory = history.find((entry) => entry.id === selectedHistoryId) ?? null;
 
@@ -153,7 +160,17 @@ export function SavedQueryLibrary({
       historySearch ? 180 : 0,
     );
     return () => window.clearTimeout(timeout);
-  }, [open, view, projectId, historyStatus, historySearch, historyFrom, historyTo, historyOffset]);
+  }, [
+    open,
+    view,
+    projectId,
+    historyStatus,
+    historySearch,
+    historyFrom,
+    historyTo,
+    historyOffset,
+    historyRevision,
+  ]);
 
   const startCreate = () => {
     setError(null);
@@ -248,6 +265,69 @@ export function SavedQueryLibrary({
       await refresh();
     } catch (cause) {
       setError(String(cause));
+    }
+  };
+
+  const applyRetention = async () => {
+    const count = maxCount.trim() ? Number.parseInt(maxCount, 10) : null;
+    const days = maxAgeDays.trim() ? Number.parseInt(maxAgeDays, 10) : null;
+    if (
+      (count != null && (!Number.isInteger(count) || count < 0)) ||
+      (days != null && (!Number.isInteger(days) || days < 0)) ||
+      (count == null && days == null)
+    ) {
+      setError("Choose a non-negative max count, max age, or both.");
+      return;
+    }
+    if (
+      !window.confirm(
+        `Apply history retention?\n\nThis permanently removes matching history for this project only. Saved queries and editor drafts are kept.`,
+      )
+    ) {
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const summary = await applyQueryHistoryRetention(projectId, {
+        maxCount: count,
+        maxAgeDays: days,
+      });
+      setRetentionSummary(
+        `Deleted ${summary.deleted.toLocaleString()} entries. ${summary.remaining.toLocaleString()} remain.`,
+      );
+      setHistoryOffset(0);
+      setHistoryRevision((current) => current + 1);
+      setRetentionOpen(false);
+    } catch (cause) {
+      setError(String(cause));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const clearHistory = async () => {
+    if (
+      !window.confirm(
+        "Clear all query history for this project?\n\nThis cannot be undone. Saved queries and editor drafts are kept.",
+      )
+    ) {
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const summary = await clearQueryHistory(projectId);
+      setHistory([]);
+      setSelectedHistoryId(null);
+      setHistoryNextOffset(null);
+      setHistoryOffset(0);
+      setHistoryRevision((current) => current + 1);
+      setRetentionSummary(`Deleted ${summary.deleted.toLocaleString()} history entries.`);
+    } catch (cause) {
+      setError(String(cause));
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -431,7 +511,57 @@ export function SavedQueryLibrary({
                 value={historyTo}
               />
             </label>
+            <button
+              aria-expanded={retentionOpen}
+              className="toolbar-button"
+              onClick={() => setRetentionOpen((current) => !current)}
+              type="button"
+            >
+              Retention
+            </button>
+            <button
+              className="toolbar-button danger-button"
+              onClick={() => void clearHistory()}
+              type="button"
+            >
+              Clear history
+            </button>
           </div>
+          {view === "history" && retentionOpen && (
+            <div className="history-retention-panel">
+              <Field
+                label="Keep newest entries"
+                min="0"
+                onChange={(event) => setMaxCount(event.target.value)}
+                type="number"
+                value={maxCount}
+              />
+              <Field
+                label="Maximum age in days"
+                min="0"
+                onChange={(event) => setMaxAgeDays(event.target.value)}
+                type="number"
+                value={maxAgeDays}
+              />
+              <span>
+                Leave one field blank to apply only the other. Saved queries and editor drafts are
+                never removed.
+              </span>
+              <button
+                className="run-button"
+                disabled={loading}
+                onClick={() => void applyRetention()}
+                type="button"
+              >
+                Apply retention
+              </button>
+            </div>
+          )}
+          {view === "history" && retentionSummary && (
+            <div className="history-retention-summary" role="status">
+              {retentionSummary}
+            </div>
+          )}
           {error && (
             <div className="ui-inline-error" role="alert">
               <strong>Query library error</strong>

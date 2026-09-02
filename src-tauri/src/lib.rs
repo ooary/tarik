@@ -132,6 +132,8 @@ pub fn run() {
             metadata::commands::list_query_history,
             metadata::commands::list_query_history_page,
             metadata::commands::prune_query_history,
+            metadata::commands::apply_query_history_retention,
+            metadata::commands::clear_query_history,
             metadata::commands::upsert_source,
             metadata::commands::list_sources,
             metadata::commands::remove_source,

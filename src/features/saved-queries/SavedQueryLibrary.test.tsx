@@ -1,6 +1,8 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  applyQueryHistoryRetention,
+  clearQueryHistory,
   createQueryFolder,
   createSavedQuery,
   deleteQueryFolder,
@@ -16,6 +18,8 @@ import {
 import { SavedQueryLibrary } from "./SavedQueryLibrary";
 
 vi.mock("../../lib/commands", () => ({
+  applyQueryHistoryRetention: vi.fn(),
+  clearQueryHistory: vi.fn(),
   createQueryFolder: vi.fn(),
   createSavedQuery: vi.fn(),
   deleteQueryFolder: vi.fn(),
@@ -78,6 +82,8 @@ describe("SavedQueryLibrary", () => {
       offset: 0,
       nextOffset: 25,
     });
+    vi.mocked(applyQueryHistoryRetention).mockResolvedValue({ deleted: 3, remaining: 2 });
+    vi.mocked(clearQueryHistory).mockResolvedValue({ deleted: 5, remaining: 0 });
     vi.mocked(createSavedQuery).mockResolvedValue({ ...saved, id: "q2", name: "Orders" });
     vi.mocked(updateSavedQuery).mockResolvedValue(saved);
     vi.mocked(createQueryFolder).mockResolvedValue(folder);
@@ -191,6 +197,48 @@ describe("SavedQueryLibrary", () => {
     await screen.findAllByText("SELECT * FROM missing_orders");
     fireEvent.click(screen.getByRole("button", { name: "Open in new tab" }));
     expect(onOpenSql).toHaveBeenCalledWith("SELECT * FROM missing_orders", "Failed query");
+  });
+
+  it("applies count and age retention only after confirmation", async () => {
+    renderLibrary();
+    fireEvent.click(screen.getByRole("tab", { name: "History" }));
+    await screen.findAllByText("SELECT * FROM missing_orders");
+    fireEvent.click(screen.getByRole("button", { name: "Retention" }));
+    fireEvent.change(screen.getByLabelText("Keep newest entries"), { target: { value: "100" } });
+    fireEvent.change(screen.getByLabelText("Maximum age in days"), { target: { value: "30" } });
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+
+    fireEvent.click(screen.getByRole("button", { name: "Apply retention" }));
+    expect(applyQueryHistoryRetention).not.toHaveBeenCalled();
+
+    confirm.mockReturnValue(true);
+    fireEvent.click(screen.getByRole("button", { name: "Apply retention" }));
+    await waitFor(() =>
+      expect(applyQueryHistoryRetention).toHaveBeenCalledWith("p1", {
+        maxCount: 100,
+        maxAgeDays: 30,
+      }),
+    );
+    expect(await screen.findByText("Deleted 3 entries. 2 remain.")).toBeInTheDocument();
+    expect(confirm).toHaveBeenCalledWith(
+      expect.stringMatching(/Saved queries and editor drafts are kept/),
+    );
+    confirm.mockRestore();
+  });
+
+  it("clears project history without touching saved queries", async () => {
+    renderLibrary();
+    fireEvent.click(screen.getByRole("tab", { name: "History" }));
+    await screen.findAllByText("SELECT * FROM missing_orders");
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    fireEvent.click(screen.getByRole("button", { name: "Clear history" }));
+    await waitFor(() => expect(clearQueryHistory).toHaveBeenCalledWith("p1"));
+    expect(await screen.findByText("Deleted 5 history entries.")).toBeInTheDocument();
+    expect(deleteSavedQuery).not.toHaveBeenCalled();
+    expect(confirm).toHaveBeenCalledWith(
+      expect.stringMatching(/Saved queries and editor drafts are kept/),
+    );
+    confirm.mockRestore();
   });
 
   it("deletes a selected saved query only after confirmation", async () => {

@@ -51,6 +51,8 @@ pub enum MetadataError {
     QueryFolderConflict(String),
     #[error("query folder was not found")]
     QueryFolderMissing,
+    #[error("invalid history retention: {0}")]
+    InvalidHistoryRetention(&'static str),
     #[error(transparent)]
     Sql(#[from] rusqlite::Error),
 }

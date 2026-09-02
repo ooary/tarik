@@ -6,8 +6,9 @@ use tauri::State;
 use super::{
     projects::{ProjectOwnership, ProjectsRepository, RecentProject},
     queries::{
-        ExecutionStatus, QueriesRepository, QueryFolder, QueryHistoryEntry, QueryHistoryFilter,
-        QueryHistoryPage, SavedQuery, SavedQueryDraft,
+        ExecutionStatus, HistoryPruneSummary, HistoryRetentionPolicy, QueriesRepository,
+        QueryFolder, QueryHistoryEntry, QueryHistoryFilter, QueryHistoryPage, SavedQuery,
+        SavedQueryDraft,
     },
     sessions::{QuerySessionSnapshot, SessionsRepository},
     settings::SettingsRepository,
@@ -265,6 +266,27 @@ pub fn prune_query_history(
 ) -> Result<usize, String> {
     QueriesRepository::new(database.inner().clone())
         .prune_history(&project_id, keep)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn apply_query_history_retention(
+    project_id: String,
+    policy: HistoryRetentionPolicy,
+    database: State<'_, MetadataDb>,
+) -> Result<HistoryPruneSummary, String> {
+    QueriesRepository::new(database.inner().clone())
+        .apply_history_retention(&project_id, &policy, chrono::Utc::now())
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn clear_query_history(
+    project_id: String,
+    database: State<'_, MetadataDb>,
+) -> Result<HistoryPruneSummary, String> {
+    QueriesRepository::new(database.inner().clone())
+        .clear_history(&project_id)
         .map_err(|error| error.to_string())
 }
 

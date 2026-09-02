@@ -1108,7 +1108,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
 
 ## EPIC E8 — Saved queries and historical executions
 
-**Status:** `IN PROGRESS` - preparation/design contract complete; E8-T1 ready.
+**Status:** `REVIEW` - E8-T1 through E8-T3 implemented; automated gates pass. Awaiting saved-query/history/retention manual sign-off.
 
 **Outcome:** Durable query library and useful local audit trail.
 
@@ -1144,13 +1144,17 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
     - Query Library History view uses 25-row pages with status/search/from/to filters, Previous/Next, terminal status text badges, SQL snapshot, executed timestamp, duration, returned rows, and structured error detail. Empty/loading/error states are bounded within the dialog.
     - Reopen creates a named dirty editor tab and closes the library; no execution call is reachable. Existing E6 tests continue proving succeeded/failed/cancelled terminal writes are exactly once. New tests cover backend filter/pagination boundaries, typed command shape, UI filtering/paging/error detail, and workspace reopen-without-execution.
 
-- [ ] **E8-T3 Add configurable retention and clearing controls**
+- [x] **E8-T3 Add configurable retention and clearing controls** — owner: lead-agent
   - Depends on: E8-T2
   - Owns: history settings/UI and pruning command
   - Deliverables: retention by age/count, manual clear with confirmation, transactional pruning.
   - Acceptance: clearing history never deletes saved queries or SQL drafts.
   - Tests: retention boundary and isolation tests.
   - Commit: `feat(history): manage local history retention`
+  - Notes:
+    - Added explicit `HistoryRetentionPolicy` (optional max count and max age days) plus `HistoryPruneSummary`. One SQLite `IMMEDIATE` transaction applies age cutoff first, then deterministic newest-N retention, counts remaining rows, and commits atomically. Empty policy is rejected; zero is a valid explicit boundary.
+    - Clear history is a separate project-scoped immediate transaction. Both repository tests and command boundaries prove they touch only `query_history`: saved queries survive, another project's history survives, and editor session drafts have no reachable deletion path.
+    - History UI exposes Retention and Clear history controls with count/age fields, explicit scope/irreversibility confirmation, inline validation/error, and deleted/remaining summaries. Transactions force a page refresh after completion. Tests cover cancel/accept, policy shape, clear isolation messaging, fixed-clock age/count boundaries, and typed commands.
 
 ---
 

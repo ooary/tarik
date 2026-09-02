@@ -231,6 +231,25 @@ test("history pages use typed project filters", async () => {
   );
 });
 
+test("history retention and clear use isolated typed commands", async () => {
+  const { applyQueryHistoryRetention, clearQueryHistory } = await loadCommandsModule();
+  const calls = [];
+  const invoke = async (command, args) => {
+    calls.push({ command, args });
+    return { deleted: 3, remaining: 2 };
+  };
+  const policy = { maxCount: 100, maxAgeDays: 30 };
+  await applyQueryHistoryRetention("p1", policy, invoke);
+  await clearQueryHistory("p1", invoke);
+  assert.equal(
+    JSON.stringify(calls),
+    JSON.stringify([
+      { command: "apply_query_history_retention", args: { projectId: "p1", policy } },
+      { command: "clear_query_history", args: { projectId: "p1" } },
+    ]),
+  );
+});
+
 test("session snapshots use typed metadata commands", async () => {
   const { saveQuerySession, loadQuerySession } = await loadCommandsModule();
   const snapshot = {

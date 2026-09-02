@@ -568,3 +568,31 @@ export function listQueryHistoryPage(
 ): Promise<QueryHistoryPage> {
   return invokeCommand<QueryHistoryPage>("list_query_history_page", { projectId, filter });
 }
+
+export interface HistoryRetentionPolicy {
+  maxCount: number | null;
+  maxAgeDays: number | null;
+}
+
+export interface HistoryPruneSummary {
+  deleted: number;
+  remaining: number;
+}
+
+export function applyQueryHistoryRetention(
+  projectId: string,
+  policy: HistoryRetentionPolicy,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<HistoryPruneSummary> {
+  return invokeCommand<HistoryPruneSummary>("apply_query_history_retention", {
+    projectId,
+    policy,
+  });
+}
+
+export function clearQueryHistory(
+  projectId: string,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<HistoryPruneSummary> {
+  return invokeCommand<HistoryPruneSummary>("clear_query_history", { projectId });
+}
