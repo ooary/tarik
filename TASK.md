@@ -1114,7 +1114,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
 
 **Preparation:** See `docs/design/E8-DESIGN-GRAPH.md` for explicit create/update semantics, folder behavior, bounded history pages, reopen-without-execution boundary, retention isolation, UI states, and test layers.
 
-- [ ] **E8-T1 Implement saved-query service and UI**
+- [x] **E8-T1 Implement saved-query service and UI** — owner: lead-agent
   - Depends on: E2-T4, E5-T2
   - Owns: `src/features/saved-queries/`, saved query commands
   - Deliverables:
@@ -1123,6 +1123,11 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: saved query survives restart and opens into a new/existing tab predictably.
   - Tests: CRUD, search, overwrite confirmation, folder behavior.
   - Commit: `feat(queries): add saved query library`
+  - Notes:
+    - Replaced user-facing generic upsert with explicit project-scoped create/update/delete commands. Create rejects case-insensitive duplicate names; update requires an existing ID and project; names/SQL/tags normalize at the repository boundary. Search covers name, SQL, and tags.
+    - Added project-scoped folder create/list/rename/delete. Folder deletion preserves contained saved queries through SQLite `ON DELETE SET NULL` (Unfiled); invalid/cross-project folder references are rejected.
+    - Query Library dialog sits in the editor toolbar with bounded two-pane Saved queries UI, search, save-current-as-new, explicit edit/update, tags, folder movement, SQL preview, and destructive confirmations. Replacing stored SQL requires confirmation. Opening a saved query creates a predictably named dirty editor tab and has no execution call path.
+    - Tests cover normalized CRUD, duplicate prevention, tag search, folder rename/delete-to-Unfiled, project isolation, typed command shapes, dialog interactions, overwrite confirmation, and workspace reopen-without-execution.
 
 - [ ] **E8-T2 Build query-history service and UI**
   - Depends on: E6-T1, E2-T4

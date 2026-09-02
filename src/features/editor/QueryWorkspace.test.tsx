@@ -7,6 +7,8 @@ import {
   getQueryStatus,
   getResultPage,
   explainQueryPlan,
+  listQueryFolders,
+  listSavedQueries,
   loadQuerySession,
   saveQuerySession,
 } from "../../lib/commands";
@@ -18,6 +20,14 @@ vi.mock("../../lib/commands", () => ({
   executeQuery: vi.fn(),
   getQueryStatus: vi.fn(),
   explainQueryPlan: vi.fn(),
+  listSavedQueries: vi.fn(),
+  listQueryFolders: vi.fn(),
+  createSavedQuery: vi.fn(),
+  updateSavedQuery: vi.fn(),
+  deleteSavedQuery: vi.fn(),
+  createQueryFolder: vi.fn(),
+  renameQueryFolder: vi.fn(),
+  deleteQueryFolder: vi.fn(),
   cancelQuery: vi.fn(),
   forgetTabExecution: vi.fn(),
   getResultPage: vi.fn(),
@@ -90,6 +100,8 @@ describe("QueryWorkspace", () => {
     vi.mocked(getQueryStatus).mockResolvedValue({ ...succeededView, tabId: "t1" });
     vi.mocked(cancelQuery).mockResolvedValue({ ...runningView, tabId: "t1" });
     vi.mocked(getResultPage).mockResolvedValue({ ...firstPage });
+    vi.mocked(listSavedQueries).mockResolvedValue([]);
+    vi.mocked(listQueryFolders).mockResolvedValue([]);
     vi.mocked(explainQueryPlan).mockResolvedValue({
       mode: "explain",
       nodes: [
@@ -137,6 +149,40 @@ describe("QueryWorkspace", () => {
 
     act(() => ref.current?.insertSql('"main"."orders"'));
     expect(container.querySelector(".cm-content")).toHaveTextContent('"main"."orders"');
+  });
+
+  it("opens saved SQL in a named new tab without executing it", async () => {
+    vi.mocked(listSavedQueries).mockResolvedValue([
+      {
+        id: "q1",
+        projectId: "p1",
+        folderId: null,
+        name: "Monthly revenue",
+        sqlText: "SELECT sum(revenue) FROM orders",
+        tags: ["finance"],
+        createdAt: "2026-01-01T00:00:00Z",
+        updatedAt: "2026-01-01T00:00:00Z",
+      },
+    ]);
+    const { container } = render(
+      <QueryWorkspace
+        activePanel="results"
+        bottomOpen
+        bottomPanelHeight={292}
+        catalog={catalog}
+        onSetBottomHeight={vi.fn()}
+        onToggleBottom={vi.fn()}
+        onUpdatePanel={vi.fn()}
+        projectId="p1"
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Query library/ }));
+    await screen.findAllByText("Monthly revenue");
+    fireEvent.click(screen.getByRole("button", { name: "Open in new tab" }));
+
+    expect(await screen.findByRole("tab", { name: /Monthly revenue/ })).toBeInTheDocument();
+    expect(container.querySelector(".cm-content")).toHaveTextContent("SELECT sum(revenue)");
+    expect(executeQuery).not.toHaveBeenCalled();
   });
 
   it("runs Explain from the active editor and switches to Flow", async () => {

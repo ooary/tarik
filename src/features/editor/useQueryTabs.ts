@@ -121,10 +121,11 @@ export function useQueryTabs(projectId: string) {
   );
 
   const addTab = useCallback(
-    (sql = "") => {
+    (sql = "", title = DEFAULT_TITLE) => {
+      const normalizedTitle = title.trim() || DEFAULT_TITLE;
       const tab: WorkbenchTab = {
         id: newTabId(),
-        title: DEFAULT_TITLE,
+        title: normalizedTitle,
         sql,
         dirty: sql.length > 0,
       };

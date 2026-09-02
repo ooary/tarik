@@ -17,6 +17,7 @@ import { QueryFlow } from "../query-flow/QueryFlow";
 import { mapPlanNodeToSql, type SqlRange } from "../query-flow/sqlMapping";
 import { useQueryPlan } from "../query-flow/useQueryPlan";
 import { ResultGrid } from "../results/ResultGrid";
+import { SavedQueryLibrary } from "../saved-queries/SavedQueryLibrary";
 import { useQueryExecution, type TabExecution } from "../results/useQueryExecution";
 import { SqlEditor } from "./SqlEditor";
 import type { SqlTable } from "./sqlCompletion";
@@ -310,6 +311,12 @@ export const QueryWorkspace = forwardRef<QueryWorkspaceHandle, QueryWorkspacePro
             >
               Explain
             </button>
+            <SavedQueryLibrary
+              activeSql={activeTab?.sql ?? ""}
+              activeTitle={activeTab?.title ?? "Untitled"}
+              onOpenSql={(sql, title) => addTab(sql, title)}
+              projectId={projectId}
+            />
           </div>
           <div className="toolbar-group toolbar-group-right">
             {saveError && (

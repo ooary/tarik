@@ -41,6 +41,16 @@ pub enum MetadataError {
     Invariant(&'static str),
     #[error("invalid query session: {0}")]
     InvalidSession(&'static str),
+    #[error("invalid saved query: {0}")]
+    InvalidSavedQuery(&'static str),
+    #[error("saved query name already exists: {0}")]
+    SavedQueryConflict(String),
+    #[error("saved query was not found")]
+    SavedQueryMissing,
+    #[error("query folder name already exists: {0}")]
+    QueryFolderConflict(String),
+    #[error("query folder was not found")]
+    QueryFolderMissing,
     #[error(transparent)]
     Sql(#[from] rusqlite::Error),
 }

@@ -5,7 +5,10 @@ use tauri::State;
 
 use super::{
     projects::{ProjectOwnership, ProjectsRepository, RecentProject},
-    queries::{ExecutionStatus, QueriesRepository, QueryHistoryEntry, SavedQuery},
+    queries::{
+        ExecutionStatus, QueriesRepository, QueryFolder, QueryHistoryEntry, SavedQuery,
+        SavedQueryDraft,
+    },
     sessions::{QuerySessionSnapshot, SessionsRepository},
     settings::SettingsRepository,
     sources::{ExportHistoryRecord, SourceRecord, SourceState, SourcesRepository},
@@ -135,12 +138,67 @@ pub fn get_export_history(
 }
 
 #[tauri::command]
-pub fn upsert_saved_query(
-    query: SavedQuery,
+pub fn create_saved_query(
+    draft: SavedQueryDraft,
     database: State<'_, MetadataDb>,
-) -> Result<(), String> {
+) -> Result<SavedQuery, String> {
     QueriesRepository::new(database.inner().clone())
-        .upsert_saved(&query)
+        .create_saved(&draft)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn update_saved_query(
+    id: String,
+    draft: SavedQueryDraft,
+    database: State<'_, MetadataDb>,
+) -> Result<SavedQuery, String> {
+    QueriesRepository::new(database.inner().clone())
+        .update_saved(&id, &draft)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn create_query_folder(
+    project_id: String,
+    name: String,
+    database: State<'_, MetadataDb>,
+) -> Result<QueryFolder, String> {
+    QueriesRepository::new(database.inner().clone())
+        .create_folder(&project_id, &name)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn rename_query_folder(
+    project_id: String,
+    id: String,
+    name: String,
+    database: State<'_, MetadataDb>,
+) -> Result<QueryFolder, String> {
+    QueriesRepository::new(database.inner().clone())
+        .rename_folder(&project_id, &id, &name)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn list_query_folders(
+    project_id: String,
+    database: State<'_, MetadataDb>,
+) -> Result<Vec<QueryFolder>, String> {
+    QueriesRepository::new(database.inner().clone())
+        .list_folders(&project_id)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn delete_query_folder(
+    project_id: String,
+    id: String,
+    database: State<'_, MetadataDb>,
+) -> Result<bool, String> {
+    QueriesRepository::new(database.inner().clone())
+        .delete_folder(&project_id, &id)
         .map_err(|error| error.to_string())
 }
 
@@ -156,9 +214,13 @@ pub fn list_saved_queries(
 }
 
 #[tauri::command]
-pub fn delete_saved_query(id: String, database: State<'_, MetadataDb>) -> Result<bool, String> {
+pub fn delete_saved_query(
+    project_id: String,
+    id: String,
+    database: State<'_, MetadataDb>,
+) -> Result<bool, String> {
     QueriesRepository::new(database.inner().clone())
-        .delete_saved(&id)
+        .delete_saved(&project_id, &id)
         .map_err(|error| error.to_string())
 }
 

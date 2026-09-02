@@ -442,3 +442,92 @@ export function loadQuerySession(
 ): Promise<QuerySessionSnapshot | null> {
   return invokeCommand<QuerySessionSnapshot | null>("load_query_session", { sessionId });
 }
+
+export interface SavedQuery {
+  id: string;
+  projectId: string;
+  folderId: string | null;
+  name: string;
+  sqlText: string;
+  tags: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SavedQueryDraft {
+  projectId: string;
+  folderId: string | null;
+  name: string;
+  sqlText: string;
+  tags: string[];
+}
+
+export interface QueryFolder {
+  id: string;
+  projectId: string;
+  name: string;
+  createdAt: string;
+}
+
+export function createSavedQuery(
+  draft: SavedQueryDraft,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<SavedQuery> {
+  return invokeCommand<SavedQuery>("create_saved_query", { draft });
+}
+
+export function updateSavedQuery(
+  id: string,
+  draft: SavedQueryDraft,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<SavedQuery> {
+  return invokeCommand<SavedQuery>("update_saved_query", { id, draft });
+}
+
+export function listSavedQueries(
+  projectId: string,
+  search: string | null = null,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<SavedQuery[]> {
+  return invokeCommand<SavedQuery[]>("list_saved_queries", { projectId, search });
+}
+
+export function deleteSavedQuery(
+  projectId: string,
+  id: string,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<boolean> {
+  return invokeCommand<boolean>("delete_saved_query", { projectId, id });
+}
+
+export function createQueryFolder(
+  projectId: string,
+  name: string,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<QueryFolder> {
+  return invokeCommand<QueryFolder>("create_query_folder", { projectId, name });
+}
+
+export function renameQueryFolder(
+  projectId: string,
+  id: string,
+  name: string,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<QueryFolder> {
+  return invokeCommand<QueryFolder>("rename_query_folder", { projectId, id, name });
+}
+
+export function listQueryFolders(
+  projectId: string,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<QueryFolder[]> {
+  return invokeCommand<QueryFolder[]>("list_query_folders", { projectId });
+}
+
+export function deleteQueryFolder(
+  projectId: string,
+  id: string,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<boolean> {
+  return invokeCommand<boolean>("delete_query_folder", { projectId, id });
+}

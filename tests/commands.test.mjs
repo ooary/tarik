@@ -161,6 +161,55 @@ test("query plans use the typed project/sql/mode command", async () => {
   assert.deepEqual({ ...calls[0].args }, { projectId: "p1", sql: "SELECT 1", mode: "explain" });
 });
 
+test("saved queries and folders use explicit typed commands", async () => {
+  const {
+    createSavedQuery,
+    updateSavedQuery,
+    listSavedQueries,
+    deleteSavedQuery,
+    createQueryFolder,
+    renameQueryFolder,
+    listQueryFolders,
+    deleteQueryFolder,
+  } = await loadCommandsModule();
+  const calls = [];
+  const draft = {
+    projectId: "p1",
+    folderId: null,
+    name: "Revenue",
+    sqlText: "SELECT 1",
+    tags: ["finance"],
+  };
+  const invoke = async (command, args) => {
+    calls.push({ command, args });
+    return command.startsWith("delete_") ? true : {};
+  };
+  await createSavedQuery(draft, invoke);
+  await updateSavedQuery("q1", draft, invoke);
+  await listSavedQueries("p1", "rev", invoke);
+  assert.equal(await deleteSavedQuery("p1", "q1", invoke), true);
+  await createQueryFolder("p1", "Reports", invoke);
+  await renameQueryFolder("p1", "f1", "Finance", invoke);
+  await listQueryFolders("p1", invoke);
+  assert.equal(await deleteQueryFolder("p1", "f1", invoke), true);
+
+  assert.deepEqual(
+    calls.map((call) => call.command),
+    [
+      "create_saved_query",
+      "update_saved_query",
+      "list_saved_queries",
+      "delete_saved_query",
+      "create_query_folder",
+      "rename_query_folder",
+      "list_query_folders",
+      "delete_query_folder",
+    ],
+  );
+  assert.deepEqual({ ...calls[1].args }, { id: "q1", draft });
+  assert.deepEqual({ ...calls[3].args }, { projectId: "p1", id: "q1" });
+});
+
 test("session snapshots use typed metadata commands", async () => {
   const { saveQuerySession, loadQuerySession } = await loadCommandsModule();
   const snapshot = {

@@ -1,6 +1,7 @@
 @import "./styles/tokens.css";
 @import "./styles/components.css";
 @import "./features/sources/import.css";
+@import "./features/saved-queries/saved-queries.css";
 
 * {
   box-sizing: border-box;
