@@ -178,6 +178,78 @@ describe("QueryWorkspace", () => {
     expect(screen.getByText("~100 rows")).toBeInTheDocument();
   });
 
+  it("opens Estimate fullscreen and exits with Escape", async () => {
+    const ref = createRef<QueryWorkspaceHandle>();
+    render(
+      <QueryWorkspace
+        activePanel="flow"
+        bottomOpen
+        bottomPanelHeight={292}
+        catalog={catalog}
+        onSetBottomHeight={vi.fn()}
+        onToggleBottom={vi.fn()}
+        onUpdatePanel={vi.fn()}
+        projectId="p1"
+        ref={ref}
+      />,
+    );
+    act(() => ref.current?.insertSql("SELECT * FROM orders"));
+    fireEvent.click(screen.getByRole("button", { name: "Explain" }));
+    await screen.findByText("Read data");
+
+    fireEvent.click(screen.getByRole("button", { name: "Open fullscreen flow" }));
+    expect(screen.getByRole("dialog", { name: "Fullscreen query flow" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Exit fullscreen flow" })).toHaveFocus();
+    expect(screen.getByText("Read data")).toBeInTheDocument();
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", { name: "Fullscreen query flow" }),
+      ).not.toBeInTheDocument(),
+    );
+    expect(screen.getByRole("button", { name: "Open fullscreen flow" })).toHaveFocus();
+  });
+
+  it("leaves fullscreen when switching to Results", async () => {
+    const onUpdatePanel = vi.fn();
+    render(
+      <QueryWorkspace
+        activePanel="flow"
+        bottomOpen
+        bottomPanelHeight={292}
+        catalog={catalog}
+        onSetBottomHeight={vi.fn()}
+        onToggleBottom={vi.fn()}
+        onUpdatePanel={onUpdatePanel}
+        projectId="p1"
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Open fullscreen flow" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Results" }));
+
+    expect(onUpdatePanel).toHaveBeenCalledWith("results");
+    expect(screen.queryByRole("dialog", { name: "Fullscreen query flow" })).not.toBeInTheDocument();
+  });
+
+  it("offers fullscreen on Actual Flow", () => {
+    render(
+      <QueryWorkspace
+        activePanel="profile"
+        bottomOpen
+        bottomPanelHeight={292}
+        catalog={catalog}
+        onSetBottomHeight={vi.fn()}
+        onToggleBottom={vi.fn()}
+        onUpdatePanel={vi.fn()}
+        projectId="p1"
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Open fullscreen flow" }));
+    expect(screen.getByRole("dialog", { name: "Fullscreen query flow" })).toBeInTheDocument();
+    expect(screen.getByText("No actual flow yet")).toBeInTheDocument();
+  });
+
   it("highlights the mapped SQL range for a selected node and clears unmappable nodes", async () => {
     vi.mocked(explainQueryPlan).mockResolvedValue({
       mode: "explain",

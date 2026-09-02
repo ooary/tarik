@@ -1,4 +1,6 @@
 import {
+  ArrowsInSimpleIcon,
+  ArrowsOutSimpleIcon,
   CaretDownIcon,
   CaretUpIcon,
   DotsThreeIcon,
@@ -68,9 +70,12 @@ export const QueryWorkspace = forwardRef<QueryWorkspaceHandle, QueryWorkspacePro
       editSql,
     } = useQueryTabs(projectId);
     const sectionRef = useRef<HTMLElement>(null);
+    const outputPanelRef = useRef<HTMLDivElement>(null);
+    const fullscreenButtonRef = useRef<HTMLButtonElement>(null);
     const { executions, run, cancel, forget } = useQueryExecution(projectId, onQuerySucceeded);
     const [runError, setRunError] = useState<string | null>(null);
     const [autoRunPending, setAutoRunPending] = useState(false);
+    const [flowFullscreen, setFlowFullscreen] = useState(false);
     const [planHighlight, setPlanHighlight] = useState<{ tabId: string; range: SqlRange } | null>(
       null,
     );
@@ -83,13 +88,46 @@ export const QueryWorkspace = forwardRef<QueryWorkspaceHandle, QueryWorkspacePro
     const executionActive =
       activeExecution?.state === "queued" || activeExecution?.state === "running";
 
+    useEffect(() => {
+      if (!flowFullscreen) return;
+      fullscreenButtonRef.current?.focus();
+      const containFullscreenFocus = (event: KeyboardEvent) => {
+        if (event.key === "Escape") {
+          setFlowFullscreen(false);
+          window.setTimeout(() => fullscreenButtonRef.current?.focus(), 0);
+          return;
+        }
+        if (event.key !== "Tab") return;
+        const controls = outputPanelRef.current?.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), [href], summary, [tabindex]:not([tabindex="-1"])',
+        );
+        if (!controls?.length) return;
+        const first = controls[0];
+        const last = controls[controls.length - 1];
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first.focus();
+        }
+      };
+      document.addEventListener("keydown", containFullscreenFocus);
+      return () => document.removeEventListener("keydown", containFullscreenFocus);
+    }, [flowFullscreen]);
+
+    const updateOutputPanel = (panel: Panel) => {
+      if (panel === "results") setFlowFullscreen(false);
+      onUpdatePanel(panel);
+    };
+
     const runActiveTab = () => {
       if (!projectId || !activeTab || executionActive || autoRunPending) return;
       const { id: tabId, sql } = activeTab;
       setRunError(null);
       setPlanHighlight(null);
       setAutoRunPending(true);
-      onUpdatePanel("flow");
+      updateOutputPanel("flow");
       if (!bottomOpen) onToggleBottom();
       // Explain is non-executing and deliberately completes before the real
       // submission. This gives Run an estimated path animation without ever
@@ -114,7 +152,7 @@ export const QueryWorkspace = forwardRef<QueryWorkspaceHandle, QueryWorkspacePro
         return;
       }
       setPlanHighlight(null);
-      onUpdatePanel(mode === "explain" ? "flow" : "profile");
+      updateOutputPanel(mode === "explain" ? "flow" : "profile");
       if (!bottomOpen) onToggleBottom();
       void runPlan(activeTab.sql, mode);
     };
@@ -311,16 +349,25 @@ export const QueryWorkspace = forwardRef<QueryWorkspaceHandle, QueryWorkspacePro
 
         <div
           aria-hidden="true"
-          className={`bottom-resize-handle ${bottomOpen ? "" : "bottom-resize-hidden"}`}
+          className={`bottom-resize-handle ${bottomOpen && !flowFullscreen ? "" : "bottom-resize-hidden"}`}
           onPointerDown={resizeBottom}
         />
-        <div className={`bottom-panel ${bottomOpen ? "bottom-panel-open" : "bottom-panel-closed"}`}>
+        <div
+          aria-label={flowFullscreen ? "Fullscreen query flow" : undefined}
+          aria-modal={flowFullscreen ? true : undefined}
+          className={`bottom-panel ${bottomOpen ? "bottom-panel-open" : "bottom-panel-closed"} ${flowFullscreen ? "bottom-panel-flow-fullscreen" : ""}`}
+          ref={outputPanelRef}
+          role={flowFullscreen ? "dialog" : undefined}
+        >
           <div className="results-heading">
-            <Tabs.Root onValueChange={(value) => onUpdatePanel(value as Panel)} value={activePanel}>
+            <Tabs.Root
+              onValueChange={(value) => updateOutputPanel(value as Panel)}
+              value={activePanel}
+            >
               <Tabs.List aria-label="Query output" className="result-tabs">
                 <Tabs.Trigger
                   className="result-tab"
-                  onClick={() => onUpdatePanel("results")}
+                  onClick={() => updateOutputPanel("results")}
                   value="results"
                 >
                   Results
@@ -332,14 +379,14 @@ export const QueryWorkspace = forwardRef<QueryWorkspaceHandle, QueryWorkspacePro
                 </Tabs.Trigger>
                 <Tabs.Trigger
                   className="result-tab"
-                  onClick={() => onUpdatePanel("flow")}
+                  onClick={() => updateOutputPanel("flow")}
                   value="flow"
                 >
                   Estimate
                 </Tabs.Trigger>
                 <Tabs.Trigger
                   className="result-tab"
-                  onClick={() => onUpdatePanel("profile")}
+                  onClick={() => updateOutputPanel("profile")}
                   value="profile"
                 >
                   Actual Flow
@@ -348,6 +395,22 @@ export const QueryWorkspace = forwardRef<QueryWorkspaceHandle, QueryWorkspacePro
             </Tabs.Root>
             <div className="results-actions">
               <span className="result-duration">{resultDuration(activeExecution)}</span>
+              {activePanel !== "results" && bottomOpen && (
+                <button
+                  aria-label={flowFullscreen ? "Exit fullscreen flow" : "Open fullscreen flow"}
+                  className="icon-button"
+                  onClick={() => setFlowFullscreen((current) => !current)}
+                  ref={fullscreenButtonRef}
+                  title={flowFullscreen ? "Exit fullscreen (Esc)" : "Open fullscreen"}
+                  type="button"
+                >
+                  {flowFullscreen ? (
+                    <ArrowsInSimpleIcon aria-hidden="true" size={16} />
+                  ) : (
+                    <ArrowsOutSimpleIcon aria-hidden="true" size={16} />
+                  )}
+                </button>
+              )}
               {executionActive && (
                 <button
                   className="toolbar-button"
@@ -357,18 +420,20 @@ export const QueryWorkspace = forwardRef<QueryWorkspaceHandle, QueryWorkspacePro
                   Cancel
                 </button>
               )}
-              <button
-                aria-label={bottomOpen ? "Collapse result panel" : "Expand result panel"}
-                className="icon-button"
-                onClick={onToggleBottom}
-                type="button"
-              >
-                {bottomOpen ? (
-                  <CaretDownIcon aria-hidden="true" size={16} />
-                ) : (
-                  <CaretUpIcon aria-hidden="true" size={16} />
-                )}
-              </button>
+              {!flowFullscreen && (
+                <button
+                  aria-label={bottomOpen ? "Collapse result panel" : "Expand result panel"}
+                  className="icon-button"
+                  onClick={onToggleBottom}
+                  type="button"
+                >
+                  {bottomOpen ? (
+                    <CaretDownIcon aria-hidden="true" size={16} />
+                  ) : (
+                    <CaretUpIcon aria-hidden="true" size={16} />
+                  )}
+                </button>
+              )}
             </div>
           </div>
 
@@ -377,6 +442,7 @@ export const QueryWorkspace = forwardRef<QueryWorkspaceHandle, QueryWorkspacePro
           )}
           {bottomOpen && activePanel === "flow" && (
             <PlanPanel
+              key={`explain-${flowFullscreen ? "fullscreen" : "panel"}`}
               mode="explain"
               onRun={() => runActivePlan("explain")}
               onSelectNode={(node) => {
@@ -397,6 +463,7 @@ export const QueryWorkspace = forwardRef<QueryWorkspaceHandle, QueryWorkspacePro
           )}
           {bottomOpen && activePanel === "profile" && (
             <PlanPanel
+              key={`profile-${flowFullscreen ? "fullscreen" : "panel"}`}
               mode="profile"
               onRun={() => runActivePlan("profile")}
               onSelectNode={(node) => {

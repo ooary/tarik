@@ -44,8 +44,14 @@ Open a project with at least two imported or linked relations. The checks below 
 4. Confirm a restrained pulse travels once from source to result and each reached node gets a brief border cue. The animation must not loop.
 5. Confirm later group/sort/limit/result steps continue toward the right.
 6. Pan, zoom, fit, and select nodes. Confirm controls remain compact and the graph remains readable.
-7. Resize the bottom panel and app window. Confirm no node/inspector content overlaps outside the panel.
-8. Enable reduced motion at OS/browser level and reopen Estimate. Confirm connectors remain visible but traversal motion is effectively disabled.
+7. Click **Open fullscreen** in Estimate. Confirm the graph, output tabs, controls, and inspector fill the application viewport while the editor remains unchanged behind the overlay.
+8. Confirm the graph refits to the larger canvas and a complex plan has substantially more room for nodes.
+9. Switch between Estimate and Actual Flow while fullscreen. Confirm fullscreen remains active and each graph retains its state.
+10. Press `Esc` and confirm the normal bottom panel returns with keyboard focus on the fullscreen button.
+11. Reopen fullscreen, then switch to Results. Confirm fullscreen exits automatically.
+12. Confirm Actual Flow offers the same fullscreen action, including empty/loading/error states.
+13. Resize the normal bottom panel and app window. Confirm no node/inspector content overlaps outside the panel.
+14. Enable reduced motion at OS/browser level and reopen Estimate. Confirm connectors remain visible but traversal motion is effectively disabled.
 
 ## 3. Automatic Estimate on Run
 

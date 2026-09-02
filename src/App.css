@@ -665,6 +665,36 @@ kbd {
   height: 43px;
 }
 
+body:has(.bottom-panel-flow-fullscreen) {
+  overflow: hidden;
+}
+
+.bottom-panel-flow-fullscreen {
+  position: fixed;
+  z-index: 20;
+  inset: 0;
+  display: grid;
+  min-width: 0;
+  grid-template-rows: 43px minmax(0, 1fr);
+  border: 0;
+  background: var(--surface-raised);
+  box-shadow: 0 0 0 1px var(--border-default);
+}
+
+.bottom-panel-flow-fullscreen .results-heading {
+  padding-right: max(8px, env(safe-area-inset-right));
+  padding-left: max(10px, env(safe-area-inset-left));
+  background: var(--surface-raised);
+}
+
+.bottom-panel-flow-fullscreen .query-flow-shell,
+.bottom-panel-flow-fullscreen .flow-loading,
+.bottom-panel-flow-fullscreen .flow-fallback,
+.bottom-panel-flow-fullscreen .panel-placeholder,
+.bottom-panel-flow-fullscreen .result-state {
+  height: 100%;
+}
+
 .query-workspace:has(.bottom-panel-closed) {
   grid-template-rows: 38px 42px minmax(140px, 1fr) 0 43px;
 }
