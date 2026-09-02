@@ -1020,7 +1020,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
 
 ## EPIC E7 — Beginner-friendly query flow
 
-**Status:** `REVIEW` - E7-T1 through E7-T5 implemented; automated gates pass. Awaiting manual Explain/Profile flow, inspector, and SQL-range sign-off.
+**Status:** `PROVISIONALLY APPROVED` (2026-09-02) - user authorized E8 progression and deferred final E7 review. E7 remains reopenable for graph/inspector/Estimate/Actual Flow fixes until final release acceptance.
 
 **Outcome:** Explain and Profile plans become understandable node graphs.
 
@@ -1107,6 +1107,8 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
 ---
 
 ## EPIC E8 — Saved queries and historical executions
+
+**Status:** `IN PROGRESS` - preparation/design audit underway after deferred E7 review.
 
 **Outcome:** Durable query library and useful local audit trail.
 
