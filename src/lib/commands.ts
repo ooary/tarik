@@ -531,3 +531,40 @@ export function deleteQueryFolder(
 ): Promise<boolean> {
   return invokeCommand<boolean>("delete_query_folder", { projectId, id });
 }
+
+export type HistoryStatus = "succeeded" | "failed" | "cancelled";
+
+export interface QueryHistoryEntry {
+  id: string;
+  projectId: string;
+  sqlText: string;
+  status: HistoryStatus;
+  durationMs: number | null;
+  returnedRows: number | null;
+  errorCode: string | null;
+  errorMessage: string | null;
+  executedAt: string;
+}
+
+export interface QueryHistoryFilter {
+  status: HistoryStatus | null;
+  search: string | null;
+  executedFrom: string | null;
+  executedTo: string | null;
+  offset: number;
+  limit: number;
+}
+
+export interface QueryHistoryPage {
+  entries: QueryHistoryEntry[];
+  offset: number;
+  nextOffset: number | null;
+}
+
+export function listQueryHistoryPage(
+  projectId: string,
+  filter: QueryHistoryFilter,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<QueryHistoryPage> {
+  return invokeCommand<QueryHistoryPage>("list_query_history_page", { projectId, filter });
+}

@@ -1,5 +1,6 @@
 import {
   BookmarksIcon,
+  ClockCounterClockwiseIcon,
   FolderPlusIcon,
   MagnifyingGlassIcon,
   PlusIcon,
@@ -14,10 +15,13 @@ import {
   deleteQueryFolder,
   deleteSavedQuery,
   listQueryFolders,
+  listQueryHistoryPage,
   listSavedQueries,
   renameQueryFolder,
   updateSavedQuery,
+  type HistoryStatus,
   type QueryFolder,
+  type QueryHistoryEntry,
   type SavedQuery,
   type SavedQueryDraft,
 } from "../../lib/commands";
@@ -28,6 +32,10 @@ interface SavedQueryLibraryProps {
   activeTitle: string;
   onOpenSql: (sql: string, title: string) => void;
 }
+
+type LibraryView = "saved" | "history";
+
+const HISTORY_PAGE_SIZE = 25;
 
 type FormState = {
   id: string | null;
@@ -54,6 +62,7 @@ export function SavedQueryLibrary({
   onOpenSql,
 }: SavedQueryLibraryProps) {
   const [open, setOpen] = useState(false);
+  const [view, setView] = useState<LibraryView>("saved");
   const [queries, setQueries] = useState<SavedQuery[]>([]);
   const [folders, setFolders] = useState<QueryFolder[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -62,7 +71,16 @@ export function SavedQueryLibrary({
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [history, setHistory] = useState<QueryHistoryEntry[]>([]);
+  const [historyStatus, setHistoryStatus] = useState<HistoryStatus | "">("");
+  const [historySearch, setHistorySearch] = useState("");
+  const [historyFrom, setHistoryFrom] = useState("");
+  const [historyTo, setHistoryTo] = useState("");
+  const [historyOffset, setHistoryOffset] = useState(0);
+  const [historyNextOffset, setHistoryNextOffset] = useState<number | null>(null);
+  const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null);
   const selected = queries.find((query) => query.id === selectedId) ?? null;
+  const selectedHistory = history.find((entry) => entry.id === selectedHistoryId) ?? null;
 
   const grouped = useMemo(() => {
     const groups = new Map<string, SavedQuery[]>();
@@ -97,12 +115,45 @@ export function SavedQueryLibrary({
   };
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || view !== "saved") return;
     const timeout = window.setTimeout(() => void refresh(search), search ? 180 : 0);
     return () => window.clearTimeout(timeout);
     // refresh intentionally follows current project/open/search only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, projectId, search]);
+  }, [open, view, projectId, search]);
+
+  useEffect(() => {
+    if (!open || view !== "history" || !projectId) return;
+    const timeout = window.setTimeout(
+      async () => {
+        setLoading(true);
+        setError(null);
+        try {
+          const page = await listQueryHistoryPage(projectId, {
+            status: historyStatus || null,
+            search: historySearch.trim() || null,
+            executedFrom: historyFrom ? new Date(`${historyFrom}T00:00:00`).toISOString() : null,
+            executedTo: historyTo ? new Date(`${historyTo}T23:59:59.999`).toISOString() : null,
+            offset: historyOffset,
+            limit: HISTORY_PAGE_SIZE,
+          });
+          setHistory(page.entries);
+          setHistoryNextOffset(page.nextOffset);
+          setSelectedHistoryId((current) =>
+            current && page.entries.some((entry) => entry.id === current)
+              ? current
+              : (page.entries[0]?.id ?? null),
+          );
+        } catch (cause) {
+          setError(String(cause));
+        } finally {
+          setLoading(false);
+        }
+      },
+      historySearch ? 180 : 0,
+    );
+    return () => window.clearTimeout(timeout);
+  }, [open, view, projectId, historyStatus, historySearch, historyFrom, historyTo, historyOffset]);
 
   const startCreate = () => {
     setError(null);
@@ -285,7 +336,25 @@ export function SavedQueryLibrary({
               <XIcon aria-hidden="true" size={16} weight="bold" />
             </Dialog.Close>
           </header>
-          <div className="query-library-toolbar">
+          <div aria-label="Query library view" className="query-library-tabs" role="tablist">
+            <button
+              aria-selected={view === "saved"}
+              onClick={() => setView("saved")}
+              role="tab"
+              type="button"
+            >
+              <BookmarksIcon aria-hidden="true" size={14} /> Saved queries
+            </button>
+            <button
+              aria-selected={view === "history"}
+              onClick={() => setView("history")}
+              role="tab"
+              type="button"
+            >
+              <ClockCounterClockwiseIcon aria-hidden="true" size={14} /> History
+            </button>
+          </div>
+          <div className="query-library-toolbar" hidden={view !== "saved"}>
             <label className="query-library-search">
               <MagnifyingGlassIcon aria-hidden="true" size={14} />
               <span className="sr-only">Search saved queries</span>
@@ -308,13 +377,68 @@ export function SavedQueryLibrary({
               <FolderPlusIcon aria-hidden="true" size={14} /> New folder
             </button>
           </div>
+          <div className="query-library-toolbar history-filter-toolbar" hidden={view !== "history"}>
+            <label className="query-library-search">
+              <MagnifyingGlassIcon aria-hidden="true" size={14} />
+              <span className="sr-only">Search history</span>
+              <input
+                aria-label="Search history"
+                onChange={(event) => {
+                  setHistorySearch(event.target.value);
+                  setHistoryOffset(0);
+                }}
+                placeholder="Search SQL or error"
+                value={historySearch}
+              />
+            </label>
+            <label className="history-filter-field">
+              <span>Status</span>
+              <select
+                aria-label="History status"
+                onChange={(event) => {
+                  setHistoryStatus(event.target.value as HistoryStatus | "");
+                  setHistoryOffset(0);
+                }}
+                value={historyStatus}
+              >
+                <option value="">All</option>
+                <option value="succeeded">Succeeded</option>
+                <option value="failed">Failed</option>
+                <option value="cancelled">Cancelled</option>
+              </select>
+            </label>
+            <label className="history-filter-field">
+              <span>From</span>
+              <input
+                aria-label="History from date"
+                onChange={(event) => {
+                  setHistoryFrom(event.target.value);
+                  setHistoryOffset(0);
+                }}
+                type="date"
+                value={historyFrom}
+              />
+            </label>
+            <label className="history-filter-field">
+              <span>To</span>
+              <input
+                aria-label="History to date"
+                onChange={(event) => {
+                  setHistoryTo(event.target.value);
+                  setHistoryOffset(0);
+                }}
+                type="date"
+                value={historyTo}
+              />
+            </label>
+          </div>
           {error && (
             <div className="ui-inline-error" role="alert">
               <strong>Query library error</strong>
               <span>{error}</span>
             </div>
           )}
-          <div className="query-library-body">
+          <div className="query-library-body" hidden={view !== "saved"}>
             <div className="saved-query-list" aria-label="Saved queries">
               {loading ? (
                 <div className="saved-query-loading" role="status">
@@ -436,10 +560,123 @@ export function SavedQueryLibrary({
               )}
             </div>
           </div>
+          <div className="query-library-body" hidden={view !== "history"}>
+            <div aria-label="Query history" className="saved-query-list history-list">
+              {loading ? (
+                <div className="saved-query-loading" role="status">
+                  Loading query history
+                </div>
+              ) : history.length === 0 ? (
+                <div className="saved-query-empty">
+                  <strong>No matching history</strong>
+                  <span>
+                    Terminal query runs appear here once they succeed, fail, or are cancelled.
+                  </span>
+                </div>
+              ) : (
+                history.map((entry) => (
+                  <button
+                    aria-pressed={selectedHistoryId === entry.id}
+                    className="saved-query-row history-row"
+                    key={entry.id}
+                    onClick={() => setSelectedHistoryId(entry.id)}
+                    type="button"
+                  >
+                    <span className={`history-status history-status-${entry.status}`}>
+                      {entry.status}
+                    </span>
+                    <strong>{firstSqlLine(entry.sqlText)}</strong>
+                    <span>{formatTimestamp(entry.executedAt)}</span>
+                  </button>
+                ))
+              )}
+              <div className="history-pagination">
+                <button
+                  className="toolbar-button"
+                  disabled={historyOffset === 0 || loading}
+                  onClick={() => setHistoryOffset(Math.max(0, historyOffset - HISTORY_PAGE_SIZE))}
+                  type="button"
+                >
+                  Previous
+                </button>
+                <span>
+                  Rows {historyOffset + (history.length > 0 ? 1 : 0)}-
+                  {historyOffset + history.length}
+                </span>
+                <button
+                  className="toolbar-button"
+                  disabled={historyNextOffset == null || loading}
+                  onClick={() => historyNextOffset != null && setHistoryOffset(historyNextOffset)}
+                  type="button"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+            <div className="saved-query-detail history-detail">
+              {selectedHistory ? (
+                <>
+                  <div className="saved-query-detail-heading">
+                    <div>
+                      <h3>{historyTitle(selectedHistory)}</h3>
+                      <span>{formatTimestamp(selectedHistory.executedAt)}</span>
+                    </div>
+                    <span>{formatHistoryMetrics(selectedHistory)}</span>
+                  </div>
+                  <pre>{selectedHistory.sqlText}</pre>
+                  {selectedHistory.errorMessage && (
+                    <div className="ui-inline-error">
+                      <strong>{selectedHistory.errorCode ?? "Query failed"}</strong>
+                      <span>{selectedHistory.errorMessage}</span>
+                    </div>
+                  )}
+                  <div className="saved-query-actions">
+                    <Dialog.Close asChild>
+                      <button
+                        className="run-button"
+                        onClick={() =>
+                          onOpenSql(selectedHistory.sqlText, historyTitle(selectedHistory))
+                        }
+                        type="button"
+                      >
+                        Open in new tab
+                      </button>
+                    </Dialog.Close>
+                  </div>
+                </>
+              ) : (
+                <div className="saved-query-empty">
+                  <strong>Select a historical execution</strong>
+                  <span>Review its SQL and terminal outcome before reopening it.</span>
+                </div>
+              )}
+            </div>
+          </div>
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>
   );
+}
+
+function firstSqlLine(sql: string): string {
+  return sql.split(/\r?\n/, 1)[0]?.trim() || "Empty SQL";
+}
+
+function historyTitle(entry: QueryHistoryEntry): string {
+  const label = entry.status[0].toUpperCase() + entry.status.slice(1);
+  return `${label} query`;
+}
+
+function formatHistoryMetrics(entry: QueryHistoryEntry): string {
+  const metrics = [];
+  if (entry.durationMs != null) metrics.push(formatDuration(entry.durationMs));
+  if (entry.returnedRows != null) metrics.push(`${entry.returnedRows.toLocaleString()} rows`);
+  return metrics.join(" · ") || entry.status;
+}
+
+function formatDuration(milliseconds: number): string {
+  if (milliseconds < 1000) return `${milliseconds} ms`;
+  return `${(milliseconds / 1000).toFixed(1)} s`;
 }
 
 function folderName(folders: QueryFolder[], folderId: string | null): string {

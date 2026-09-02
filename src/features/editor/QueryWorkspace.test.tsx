@@ -8,6 +8,7 @@ import {
   getResultPage,
   explainQueryPlan,
   listQueryFolders,
+  listQueryHistoryPage,
   listSavedQueries,
   loadQuerySession,
   saveQuerySession,
@@ -22,6 +23,7 @@ vi.mock("../../lib/commands", () => ({
   explainQueryPlan: vi.fn(),
   listSavedQueries: vi.fn(),
   listQueryFolders: vi.fn(),
+  listQueryHistoryPage: vi.fn(),
   createSavedQuery: vi.fn(),
   updateSavedQuery: vi.fn(),
   deleteSavedQuery: vi.fn(),
@@ -102,6 +104,11 @@ describe("QueryWorkspace", () => {
     vi.mocked(getResultPage).mockResolvedValue({ ...firstPage });
     vi.mocked(listSavedQueries).mockResolvedValue([]);
     vi.mocked(listQueryFolders).mockResolvedValue([]);
+    vi.mocked(listQueryHistoryPage).mockResolvedValue({
+      entries: [],
+      offset: 0,
+      nextOffset: null,
+    });
     vi.mocked(explainQueryPlan).mockResolvedValue({
       mode: "explain",
       nodes: [
@@ -182,6 +189,46 @@ describe("QueryWorkspace", () => {
 
     expect(await screen.findByRole("tab", { name: /Monthly revenue/ })).toBeInTheDocument();
     expect(container.querySelector(".cm-content")).toHaveTextContent("SELECT sum(revenue)");
+    expect(executeQuery).not.toHaveBeenCalled();
+  });
+
+  it("reopens historical SQL in a new tab without execution", async () => {
+    vi.mocked(listQueryHistoryPage).mockResolvedValue({
+      entries: [
+        {
+          id: "h1",
+          projectId: "p1",
+          sqlText: "SELECT * FROM historical_orders",
+          status: "succeeded",
+          durationMs: 42,
+          returnedRows: 3,
+          errorCode: null,
+          errorMessage: null,
+          executedAt: "2026-01-01T00:00:00Z",
+        },
+      ],
+      offset: 0,
+      nextOffset: null,
+    });
+    const { container } = render(
+      <QueryWorkspace
+        activePanel="results"
+        bottomOpen
+        bottomPanelHeight={292}
+        catalog={catalog}
+        onSetBottomHeight={vi.fn()}
+        onToggleBottom={vi.fn()}
+        onUpdatePanel={vi.fn()}
+        projectId="p1"
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Query library/ }));
+    fireEvent.click(screen.getByRole("tab", { name: "History" }));
+    await screen.findAllByText("SELECT * FROM historical_orders");
+    fireEvent.click(screen.getByRole("button", { name: "Open in new tab" }));
+
+    expect(await screen.findByRole("tab", { name: /Succeeded query/ })).toBeInTheDocument();
+    expect(container.querySelector(".cm-content")).toHaveTextContent("historical_orders");
     expect(executeQuery).not.toHaveBeenCalled();
   });
 

@@ -6,8 +6,8 @@ use tauri::State;
 use super::{
     projects::{ProjectOwnership, ProjectsRepository, RecentProject},
     queries::{
-        ExecutionStatus, QueriesRepository, QueryFolder, QueryHistoryEntry, SavedQuery,
-        SavedQueryDraft,
+        ExecutionStatus, QueriesRepository, QueryFolder, QueryHistoryEntry, QueryHistoryFilter,
+        QueryHistoryPage, SavedQuery, SavedQueryDraft,
     },
     sessions::{QuerySessionSnapshot, SessionsRepository},
     settings::SettingsRepository,
@@ -243,6 +243,17 @@ pub fn list_query_history(
 ) -> Result<Vec<QueryHistoryEntry>, String> {
     QueriesRepository::new(database.inner().clone())
         .list_history(&project_id, status, limit)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn list_query_history_page(
+    project_id: String,
+    filter: QueryHistoryFilter,
+    database: State<'_, MetadataDb>,
+) -> Result<QueryHistoryPage, String> {
+    QueriesRepository::new(database.inner().clone())
+        .list_history_page(&project_id, &filter)
         .map_err(|error| error.to_string())
 }
 

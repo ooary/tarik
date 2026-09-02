@@ -1,9 +1,35 @@
 .query-library-dialog {
-  display: grid;
+  display: flex;
   width: min(980px, calc(100vw - 32px));
   height: min(720px, calc(100dvh - 32px));
-  grid-template-rows: auto auto auto minmax(0, 1fr);
+  flex-direction: column;
   overflow: hidden;
+}
+
+.query-library-tabs {
+  display: flex;
+  min-height: 38px;
+  gap: 16px;
+  align-items: stretch;
+  border-bottom: 1px solid var(--border-subtle);
+  padding: 0 12px;
+}
+
+.query-library-tabs button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-bottom: 2px solid transparent;
+  color: var(--text-muted);
+  background: transparent;
+  font-size: 11px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.query-library-tabs button[aria-selected="true"] {
+  border-bottom-color: var(--accent-solid);
+  color: var(--text-primary);
 }
 
 .query-library-toolbar {
@@ -41,7 +67,35 @@
 .query-library-body {
   display: grid;
   min-height: 0;
+  flex: 1;
   grid-template-columns: minmax(230px, 0.38fr) minmax(360px, 0.62fr);
+}
+
+.query-library-body[hidden],
+.query-library-toolbar[hidden] {
+  display: none;
+}
+
+.history-filter-toolbar {
+  flex-wrap: wrap;
+}
+
+.history-filter-field {
+  display: grid;
+  gap: 2px;
+  color: var(--text-muted);
+  font-size: 9px;
+}
+
+.history-filter-field select,
+.history-filter-field input {
+  min-height: 29px;
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-control);
+  padding: 0 7px;
+  color: var(--text-primary);
+  background: var(--surface-control);
+  font-size: 10px;
 }
 
 .saved-query-list {
@@ -103,6 +157,50 @@
   font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.history-row {
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+}
+
+.history-row > span:last-child {
+  grid-column: 2;
+}
+
+.history-status {
+  grid-row: 1 / span 2;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  padding: 2px 5px;
+  font-family: var(--font-mono);
+  font-size: 8px !important;
+  line-height: 1;
+}
+
+.history-status-succeeded {
+  color: var(--status-ready) !important;
+}
+
+.history-status-failed {
+  color: var(--status-error) !important;
+}
+
+.history-status-cancelled {
+  color: var(--status-warning) !important;
+}
+
+.history-pagination {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  border-top: 1px solid var(--border-subtle);
+  margin-top: 10px;
+  padding-top: 8px;
+  color: var(--text-muted);
+  font-size: 9px;
+  text-align: center;
 }
 
 .saved-query-row span,

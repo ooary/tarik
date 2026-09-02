@@ -1129,7 +1129,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
     - Query Library dialog sits in the editor toolbar with bounded two-pane Saved queries UI, search, save-current-as-new, explicit edit/update, tags, folder movement, SQL preview, and destructive confirmations. Replacing stored SQL requires confirmation. Opening a saved query creates a predictably named dirty editor tab and has no execution call path.
     - Tests cover normalized CRUD, duplicate prevention, tag search, folder rename/delete-to-Unfiled, project isolation, typed command shapes, dialog interactions, overwrite confirmation, and workspace reopen-without-execution.
 
-- [ ] **E8-T2 Build query-history service and UI**
+- [x] **E8-T2 Build query-history service and UI** — owner: lead-agent
   - Depends on: E6-T1, E2-T4
   - Owns: `src/features/history/`, history commands
   - Deliverables:
@@ -1139,6 +1139,10 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: success, failure, and cancellation all appear once and in correct order.
   - Tests: filtering, pagination, reopen, and terminal-state deduplication.
   - Commit: `feat(history): add historical query browser`
+  - Notes:
+    - Added project-scoped `QueryHistoryFilter/Page` with status, SQL/error text, inclusive ISO timestamp range, offset, and clamped 1-100 limit. Repository fetches `limit + 1` for bounded `nextOffset`, orders by terminal timestamp then ID descending, and keeps the legacy bounded list adapter for E6 coordinator/tests.
+    - Query Library History view uses 25-row pages with status/search/from/to filters, Previous/Next, terminal status text badges, SQL snapshot, executed timestamp, duration, returned rows, and structured error detail. Empty/loading/error states are bounded within the dialog.
+    - Reopen creates a named dirty editor tab and closes the library; no execution call is reachable. Existing E6 tests continue proving succeeded/failed/cancelled terminal writes are exactly once. New tests cover backend filter/pagination boundaries, typed command shape, UI filtering/paging/error detail, and workspace reopen-without-execution.
 
 - [ ] **E8-T3 Add configurable retention and clearing controls**
   - Depends on: E8-T2

@@ -67,6 +67,25 @@ pub struct QueryHistoryEntry {
     pub executed_at: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QueryHistoryFilter {
+    pub status: Option<ExecutionStatus>,
+    pub search: Option<String>,
+    pub executed_from: Option<String>,
+    pub executed_to: Option<String>,
+    pub offset: u32,
+    pub limit: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QueryHistoryPage {
+    pub entries: Vec<QueryHistoryEntry>,
+    pub offset: u32,
+    pub next_offset: Option<u32>,
+}
+
 #[derive(Clone)]
 pub struct QueriesRepository {
     database: MetadataDb,
@@ -276,24 +295,68 @@ impl QueriesRepository {
         Ok(())
     }
 
+    pub fn list_history_page(
+        &self,
+        project_id: &str,
+        filter: &QueryHistoryFilter,
+    ) -> Result<QueryHistoryPage, MetadataError> {
+        let limit = filter.limit.clamp(1, 100);
+        let fetch_limit = limit + 1;
+        let status = filter.status.clone().map(|value| value.as_str().to_owned());
+        let pattern = format!("%{}%", filter.search.as_deref().unwrap_or_default().trim());
+        let connection = self.database.connection()?;
+        let mut statement = connection.prepare(
+            "SELECT id, project_id, sql_text, status, duration_ms, returned_rows,
+             error_code, error_message, executed_at FROM query_history
+             WHERE project_id = ?1
+               AND (?2 IS NULL OR status = ?2)
+               AND (?3 = '%%' OR sql_text LIKE ?3 OR error_code LIKE ?3 OR error_message LIKE ?3)
+               AND (?4 IS NULL OR executed_at >= ?4)
+               AND (?5 IS NULL OR executed_at <= ?5)
+             ORDER BY executed_at DESC, id DESC LIMIT ?6 OFFSET ?7",
+        )?;
+        let mut entries = statement
+            .query_map(
+                (
+                    project_id,
+                    status,
+                    pattern,
+                    &filter.executed_from,
+                    &filter.executed_to,
+                    fetch_limit,
+                    filter.offset,
+                ),
+                read_history,
+            )?
+            .collect::<Result<Vec<_>, _>>()?;
+        let has_more = entries.len() > limit as usize;
+        entries.truncate(limit as usize);
+        Ok(QueryHistoryPage {
+            entries,
+            offset: filter.offset,
+            next_offset: has_more.then_some(filter.offset.saturating_add(limit)),
+        })
+    }
+
     pub fn list_history(
         &self,
         project_id: &str,
         status: Option<ExecutionStatus>,
         limit: u32,
     ) -> Result<Vec<QueryHistoryEntry>, MetadataError> {
-        let status = status.map(|value| value.as_str().to_owned());
-        let connection = self.database.connection()?;
-        let mut statement = connection.prepare(
-            "SELECT id, project_id, sql_text, status, duration_ms, returned_rows,
-             error_code, error_message, executed_at FROM query_history
-             WHERE project_id = ?1 AND (?2 IS NULL OR status = ?2)
-             ORDER BY executed_at DESC LIMIT ?3",
-        )?;
-        let history = statement
-            .query_map((project_id, status, limit), read_history)?
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok(history)
+        Ok(self
+            .list_history_page(
+                project_id,
+                &QueryHistoryFilter {
+                    status,
+                    search: None,
+                    executed_from: None,
+                    executed_to: None,
+                    offset: 0,
+                    limit,
+                },
+            )?
+            .entries)
     }
 
     pub fn prune_history(&self, project_id: &str, keep: u32) -> Result<usize, MetadataError> {
@@ -622,6 +685,56 @@ mod tests {
             .unwrap();
         assert_eq!(original.status, ExecutionStatus::Succeeded);
         assert_eq!(original.sql_text, "select 1");
+
+        let failed_page = repository
+            .list_history_page(
+                &project_id,
+                &QueryHistoryFilter {
+                    status: Some(ExecutionStatus::Failed),
+                    search: Some("select".into()),
+                    executed_from: Some("2026-01-01T00:00:00Z".into()),
+                    executed_to: Some("2026-01-01T00:00:02Z".into()),
+                    offset: 0,
+                    limit: 1,
+                },
+            )
+            .unwrap();
+        assert_eq!(failed_page.entries.len(), 1);
+        assert_eq!(failed_page.entries[0].status, ExecutionStatus::Failed);
+        assert_eq!(failed_page.next_offset, None);
+
+        let first_page = repository
+            .list_history_page(
+                &project_id,
+                &QueryHistoryFilter {
+                    status: None,
+                    search: None,
+                    executed_from: None,
+                    executed_to: None,
+                    offset: 0,
+                    limit: 2,
+                },
+            )
+            .unwrap();
+        assert_eq!(first_page.entries.len(), 2);
+        assert_eq!(first_page.entries[0].id, "history-2");
+        assert_eq!(first_page.next_offset, Some(2));
+        let second_page = repository
+            .list_history_page(
+                &project_id,
+                &QueryHistoryFilter {
+                    offset: first_page.next_offset.unwrap(),
+                    limit: 2,
+                    status: None,
+                    search: None,
+                    executed_from: None,
+                    executed_to: None,
+                },
+            )
+            .unwrap();
+        assert_eq!(second_page.entries.len(), 1);
+        assert_eq!(second_page.entries[0].id, "history-0");
+        assert_eq!(second_page.next_offset, None);
 
         assert_eq!(repository.prune_history(&project_id, 2).unwrap(), 1);
         assert_eq!(

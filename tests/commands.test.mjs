@@ -210,6 +210,27 @@ test("saved queries and folders use explicit typed commands", async () => {
   assert.deepEqual({ ...calls[3].args }, { projectId: "p1", id: "q1" });
 });
 
+test("history pages use typed project filters", async () => {
+  const { listQueryHistoryPage } = await loadCommandsModule();
+  const calls = [];
+  const filter = {
+    status: "failed",
+    search: "orders",
+    executedFrom: "2026-01-01T00:00:00Z",
+    executedTo: null,
+    offset: 20,
+    limit: 20,
+  };
+  await listQueryHistoryPage("p1", filter, async (command, args) => {
+    calls.push({ command, args });
+    return { entries: [], offset: 20, nextOffset: null };
+  });
+  assert.equal(
+    JSON.stringify(calls),
+    JSON.stringify([{ command: "list_query_history_page", args: { projectId: "p1", filter } }]),
+  );
+});
+
 test("session snapshots use typed metadata commands", async () => {
   const { saveQuerySession, loadQuerySession } = await loadCommandsModule();
   const snapshot = {

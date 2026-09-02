@@ -6,6 +6,7 @@ import {
   deleteQueryFolder,
   deleteSavedQuery,
   listQueryFolders,
+  listQueryHistoryPage,
   listSavedQueries,
   renameQueryFolder,
   updateSavedQuery,
@@ -20,6 +21,7 @@ vi.mock("../../lib/commands", () => ({
   deleteQueryFolder: vi.fn(),
   deleteSavedQuery: vi.fn(),
   listQueryFolders: vi.fn(),
+  listQueryHistoryPage: vi.fn(),
   listSavedQueries: vi.fn(),
   renameQueryFolder: vi.fn(),
   updateSavedQuery: vi.fn(),
@@ -59,6 +61,23 @@ describe("SavedQueryLibrary", () => {
   beforeEach(() => {
     vi.mocked(listSavedQueries).mockResolvedValue([saved]);
     vi.mocked(listQueryFolders).mockResolvedValue([folder]);
+    vi.mocked(listQueryHistoryPage).mockResolvedValue({
+      entries: [
+        {
+          id: "h1",
+          projectId: "p1",
+          sqlText: "SELECT * FROM missing_orders",
+          status: "failed",
+          durationMs: 18,
+          returnedRows: null,
+          errorCode: "catalog.missing",
+          errorMessage: "Table missing_orders does not exist",
+          executedAt: "2026-01-03T12:00:00Z",
+        },
+      ],
+      offset: 0,
+      nextOffset: 25,
+    });
     vi.mocked(createSavedQuery).mockResolvedValue({ ...saved, id: "q2", name: "Orders" });
     vi.mocked(updateSavedQuery).mockResolvedValue(saved);
     vi.mocked(createQueryFolder).mockResolvedValue(folder);
@@ -138,6 +157,40 @@ describe("SavedQueryLibrary", () => {
     expect(confirm).toHaveBeenCalledWith(expect.stringMatching(/kept in Unfiled/));
     prompt.mockRestore();
     confirm.mockRestore();
+  });
+
+  it("filters and pages bounded history", async () => {
+    renderLibrary();
+    fireEvent.click(screen.getByRole("tab", { name: "History" }));
+    expect(await screen.findAllByText("SELECT * FROM missing_orders")).toHaveLength(2);
+    expect(screen.getByText("catalog.missing")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("History status"), { target: { value: "failed" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "Search history" }), {
+      target: { value: "missing" },
+    });
+    await waitFor(() =>
+      expect(listQueryHistoryPage).toHaveBeenLastCalledWith(
+        "p1",
+        expect.objectContaining({ status: "failed", search: "missing", offset: 0, limit: 25 }),
+      ),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    await waitFor(() =>
+      expect(listQueryHistoryPage).toHaveBeenLastCalledWith(
+        "p1",
+        expect.objectContaining({ offset: 25, limit: 25 }),
+      ),
+    );
+  });
+
+  it("reopens historical SQL without executing it", async () => {
+    const onOpenSql = renderLibrary();
+    fireEvent.click(screen.getByRole("tab", { name: "History" }));
+    await screen.findAllByText("SELECT * FROM missing_orders");
+    fireEvent.click(screen.getByRole("button", { name: "Open in new tab" }));
+    expect(onOpenSql).toHaveBeenCalledWith("SELECT * FROM missing_orders", "Failed query");
   });
 
   it("deletes a selected saved query only after confirmation", async () => {
