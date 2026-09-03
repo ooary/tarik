@@ -1160,9 +1160,11 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
 
 ## EPIC E9 — Streaming chunked exports
 
-**Status:** `READY` - E8 manual gate approved; implementation not started.
+**Status:** `IN PROGRESS` - E9 preparation/design complete; E9-T1 is active.
 
 **Outcome:** Exact row-count CSV/Parquet chunks with progress, cancellation, and safe partial failure.
+
+**Preparation:** See `docs/design/E9-DESIGN-GRAPH.md` for adapter-neutral option/status shapes, one-pass Arrow batch flow, exact part boundaries, staged-file publication, cancellation/partial-failure policy, ownership boundaries, and test layers.
 
 - [ ] **E9-T1 Define and validate export options**
   - Depends on: E6-T1, E5.5-T2
@@ -1171,6 +1173,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
     - Format, output directory, base name, rows per part, overwrite policy.
     - CSV delimiter/header options and Parquet compression option.
     - Safe naming and positive row-limit validation.
+    - Explicit CSV and Parquet export support.
   - Acceptance: invalid options fail before query execution or file creation.
   - Tests: validation and filename sequence tests.
   - Commit: `feat(export): define chunk export options`
