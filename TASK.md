@@ -1160,7 +1160,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
 
 ## EPIC E9 — Streaming chunked exports
 
-**Status:** `REVIEW` - E9-T1 through E9-T4 implemented; all automated gates pass. Awaiting CSV/Parquet exactness, collision/replace, progress/cancellation, partial-failure, persistence, and reveal manual sign-off.
+**Status:** `APPROVED` (2026-09-04) - user accepted exact CSV/Parquet exports, validated options, progress/cancellation, safe partial failure and replacement, persistent terminal history, and the editor export workflow. E9.5 is ready.
 
 **Outcome:** Exact row-count CSV/Parquet chunks with progress, cancellation, and safe partial failure.
 

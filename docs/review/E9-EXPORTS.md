@@ -1,6 +1,6 @@
 # E9 Streaming chunked exports review
 
-**Status:** REVIEW  
+**Status:** APPROVED (2026-09-04)  
 **Scope:** Exact-row CSV and Parquet parts, one-pass SQL execution, overwrite safety, bounded progress, cancellation, partial failure, terminal history, and output reveal.
 
 ## Build and launch
@@ -134,15 +134,15 @@ Choose a new empty output folder for the first pass.
 
 ## Sign-off
 
-- [ ] CSV exact row boundaries, naming, delimiter, and per-part headers approved
-- [ ] Parquet exact row boundaries, schema/readback, and compression approved
-- [ ] Collision and Replace behavior, including stale-tail cleanup, approved
-- [ ] Queued/running progress and close-without-cancel behavior approved
-- [ ] Active and queued cancellation cleanup approved
-- [ ] Partial failure keeps completed parts and removes incomplete stage
-- [ ] Mutation warning and immutable submitted SQL approved
-- [ ] Zero-row and bounded-summary behavior approved
-- [ ] Restart/persistence and project isolation approved
-- [ ] Reveal output location approved
+- [x] CSV exact row boundaries, naming, delimiter, and per-part headers approved
+- [x] Parquet exact row boundaries, schema/readback, and compression approved
+- [x] Collision and Replace behavior, including stale-tail cleanup, approved
+- [x] Queued/running progress and close-without-cancel behavior approved
+- [x] Active and queued cancellation cleanup approved
+- [x] Partial failure keeps completed parts and removes incomplete stage
+- [x] Mutation warning and immutable submitted SQL approved
+- [x] Zero-row and bounded-summary behavior approved
+- [x] Restart/persistence and project isolation approved
+- [x] Reveal output location approved
 
-When all items pass, reply **“E9 approved”**. E10 remains blocked until approval.
+User sign-off received on 2026-09-04. E9.5 is unblocked and E10 remains queued behind it.
