@@ -2,10 +2,269 @@
 //! adapters. This crate intentionally depends only on serde and uuid so the
 //! desktop build never pulls in database or Arrow crates.
 
+use std::{fmt, path::PathBuf};
+
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 pub const PROTOCOL_VERSION: u32 = 1;
+pub const MAX_EXPORT_BASE_NAME_BYTES: usize = 128;
+pub const MAX_EXPORT_ROWS_PER_PART: u64 = i64::MAX as u64;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ExportFormat {
+    Csv,
+    Parquet,
+}
+
+impl ExportFormat {
+    pub fn extension(self) -> &'static str {
+        match self {
+            Self::Csv => "csv",
+            Self::Parquet => "parquet",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ExportOverwritePolicy {
+    FailIfExists,
+    Replace,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ParquetCompression {
+    Uncompressed,
+    Snappy,
+    Gzip,
+    Zstd,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CsvExportOptions {
+    pub delimiter: String,
+    pub include_header: bool,
+}
+
+impl Default for CsvExportOptions {
+    fn default() -> Self {
+        Self {
+            delimiter: ",".into(),
+            include_header: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ParquetExportOptions {
+    pub compression: ParquetCompression,
+}
+
+impl Default for ParquetExportOptions {
+    fn default() -> Self {
+        Self {
+            compression: ParquetCompression::Snappy,
+        }
+    }
+}
+
+/// Untrusted export options crossing the desktop → engine boundary.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportOptions {
+    pub format: ExportFormat,
+    pub output_directory: String,
+    pub base_name: String,
+    pub rows_per_part: u64,
+    pub overwrite: ExportOverwritePolicy,
+    pub csv: Option<CsvExportOptions>,
+    pub parquet: Option<ParquetExportOptions>,
+}
+
+/// Canonical, internally trusted options. Construct only with
+/// [`ExportOptions::validate`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ValidatedExportOptions {
+    pub format: ExportFormat,
+    pub output_directory: PathBuf,
+    pub base_name: String,
+    pub rows_per_part: u64,
+    pub overwrite: ExportOverwritePolicy,
+    pub csv: Option<CsvExportOptions>,
+    pub parquet: Option<ParquetExportOptions>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ExportValidationError {
+    OutputDirectoryEmpty,
+    OutputDirectoryNotAbsolute,
+    OutputDirectoryMissing,
+    OutputPathNotDirectory,
+    OutputDirectoryUnreadable,
+    BaseNameEmpty,
+    BaseNameTooLong,
+    BaseNameUnsafe,
+    RowsPerPartZero,
+    RowsPerPartTooLarge,
+    CsvOptionsRequired,
+    CsvOptionsUnexpected,
+    CsvDelimiterInvalid,
+    ParquetOptionsRequired,
+    ParquetOptionsUnexpected,
+    PartNumberZero,
+}
+
+impl ExportValidationError {
+    pub fn field(&self) -> &'static str {
+        match self {
+            Self::OutputDirectoryEmpty
+            | Self::OutputDirectoryNotAbsolute
+            | Self::OutputDirectoryMissing
+            | Self::OutputPathNotDirectory
+            | Self::OutputDirectoryUnreadable => "outputDirectory",
+            Self::BaseNameEmpty | Self::BaseNameTooLong | Self::BaseNameUnsafe => "baseName",
+            Self::RowsPerPartZero | Self::RowsPerPartTooLarge => "rowsPerPart",
+            Self::CsvOptionsRequired | Self::CsvOptionsUnexpected => "csv",
+            Self::CsvDelimiterInvalid => "csv.delimiter",
+            Self::ParquetOptionsRequired | Self::ParquetOptionsUnexpected => "parquet",
+            Self::PartNumberZero => "partNumber",
+        }
+    }
+}
+
+impl fmt::Display for ExportValidationError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let message = match self {
+            Self::OutputDirectoryEmpty => "output directory cannot be empty",
+            Self::OutputDirectoryNotAbsolute => "output directory must be an absolute path",
+            Self::OutputDirectoryMissing => "output directory does not exist",
+            Self::OutputPathNotDirectory => "output path is not a directory",
+            Self::OutputDirectoryUnreadable => "output directory could not be resolved",
+            Self::BaseNameEmpty => "base name cannot be empty",
+            Self::BaseNameTooLong => "base name is too long",
+            Self::BaseNameUnsafe => {
+                "base name may contain only ASCII letters, digits, hyphens, and underscores"
+            }
+            Self::RowsPerPartZero => "rows per part must be greater than zero",
+            Self::RowsPerPartTooLarge => "rows per part exceeds the supported range",
+            Self::CsvOptionsRequired => "CSV options are required for CSV export",
+            Self::CsvOptionsUnexpected => "CSV options are not valid for Parquet export",
+            Self::CsvDelimiterInvalid => {
+                "CSV delimiter must be one ASCII byte other than NUL, quote, CR, or LF"
+            }
+            Self::ParquetOptionsRequired => "Parquet options are required for Parquet export",
+            Self::ParquetOptionsUnexpected => "Parquet options are not valid for CSV export",
+            Self::PartNumberZero => "part number must start at one",
+        };
+        formatter.write_str(message)
+    }
+}
+
+impl std::error::Error for ExportValidationError {}
+
+impl ExportOptions {
+    /// Validate and normalize without executing SQL or creating output files.
+    pub fn validate(self) -> Result<ValidatedExportOptions, ExportValidationError> {
+        let output = self.output_directory.trim();
+        if output.is_empty() {
+            return Err(ExportValidationError::OutputDirectoryEmpty);
+        }
+        let output = PathBuf::from(output);
+        if !output.is_absolute() {
+            return Err(ExportValidationError::OutputDirectoryNotAbsolute);
+        }
+        if !output.exists() {
+            return Err(ExportValidationError::OutputDirectoryMissing);
+        }
+        if !output.is_dir() {
+            return Err(ExportValidationError::OutputPathNotDirectory);
+        }
+        let output_directory = output
+            .canonicalize()
+            .map_err(|_| ExportValidationError::OutputDirectoryUnreadable)?;
+
+        let base_name = self.base_name.trim();
+        if base_name.is_empty() {
+            return Err(ExportValidationError::BaseNameEmpty);
+        }
+        if base_name.len() > MAX_EXPORT_BASE_NAME_BYTES {
+            return Err(ExportValidationError::BaseNameTooLong);
+        }
+        if !base_name
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+        {
+            return Err(ExportValidationError::BaseNameUnsafe);
+        }
+        if self.rows_per_part == 0 {
+            return Err(ExportValidationError::RowsPerPartZero);
+        }
+        if self.rows_per_part > MAX_EXPORT_ROWS_PER_PART {
+            return Err(ExportValidationError::RowsPerPartTooLarge);
+        }
+
+        match self.format {
+            ExportFormat::Csv => {
+                let csv = self
+                    .csv
+                    .as_ref()
+                    .ok_or(ExportValidationError::CsvOptionsRequired)?;
+                if self.parquet.is_some() {
+                    return Err(ExportValidationError::ParquetOptionsUnexpected);
+                }
+                let delimiter = csv.delimiter.as_bytes();
+                if delimiter.len() != 1
+                    || !delimiter[0].is_ascii()
+                    || matches!(delimiter[0], 0 | b'\"' | b'\r' | b'\n')
+                {
+                    return Err(ExportValidationError::CsvDelimiterInvalid);
+                }
+            }
+            ExportFormat::Parquet => {
+                if self.csv.is_some() {
+                    return Err(ExportValidationError::CsvOptionsUnexpected);
+                }
+                if self.parquet.is_none() {
+                    return Err(ExportValidationError::ParquetOptionsRequired);
+                }
+            }
+        }
+
+        Ok(ValidatedExportOptions {
+            format: self.format,
+            output_directory,
+            base_name: base_name.to_string(),
+            rows_per_part: self.rows_per_part,
+            overwrite: self.overwrite,
+            csv: self.csv,
+            parquet: self.parquet,
+        })
+    }
+}
+
+impl ValidatedExportOptions {
+    pub fn part_file_name(&self, part_number: u64) -> Result<String, ExportValidationError> {
+        if part_number == 0 {
+            return Err(ExportValidationError::PartNumberZero);
+        }
+        Ok(format!(
+            "{}-part-{part_number:05}.{}",
+            self.base_name,
+            self.format.extension()
+        ))
+    }
+
+    pub fn part_path(&self, part_number: u64) -> Result<PathBuf, ExportValidationError> {
+        Ok(self
+            .output_directory
+            .join(self.part_file_name(part_number)?))
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -421,5 +680,164 @@ mod tests {
         assert!(!response.ok);
         assert_eq!(response.error.as_ref().unwrap().code, "sql.parse");
         assert_eq!(response.id, "req-9");
+    }
+
+    fn export_directory() -> PathBuf {
+        let path = std::env::temp_dir().join(format!("tarik-export-options-{}", Uuid::new_v4()));
+        std::fs::create_dir(&path).unwrap();
+        path
+    }
+
+    fn csv_options(directory: &std::path::Path) -> ExportOptions {
+        ExportOptions {
+            format: ExportFormat::Csv,
+            output_directory: directory.to_string_lossy().into_owned(),
+            base_name: "orders_2026".into(),
+            rows_per_part: 10_000,
+            overwrite: ExportOverwritePolicy::FailIfExists,
+            csv: Some(CsvExportOptions::default()),
+            parquet: None,
+        }
+    }
+
+    #[test]
+    fn export_options_round_trip_with_closed_wire_variants() {
+        let directory = export_directory();
+        let options = ExportOptions {
+            format: ExportFormat::Parquet,
+            output_directory: directory.to_string_lossy().into_owned(),
+            base_name: "monthly-orders".into(),
+            rows_per_part: 50_000,
+            overwrite: ExportOverwritePolicy::Replace,
+            csv: None,
+            parquet: Some(ParquetExportOptions {
+                compression: ParquetCompression::Zstd,
+            }),
+        };
+
+        let wire = serde_json::to_value(&options).unwrap();
+        assert_eq!(wire["format"], "parquet");
+        assert_eq!(wire["overwrite"], "replace");
+        assert_eq!(wire["parquet"]["compression"], "zstd");
+        assert_eq!(
+            serde_json::from_value::<ExportOptions>(wire).unwrap(),
+            options
+        );
+        std::fs::remove_dir(directory).unwrap();
+    }
+
+    #[test]
+    fn export_validation_normalizes_and_generates_stable_part_names() {
+        let directory = export_directory();
+        let mut options = csv_options(&directory);
+        options.base_name = "  orders_2026  ".into();
+        let validated = options.validate().unwrap();
+
+        assert_eq!(validated.base_name, "orders_2026");
+        assert_eq!(
+            validated.part_file_name(1).unwrap(),
+            "orders_2026-part-00001.csv"
+        );
+        assert_eq!(
+            validated.part_file_name(99_999).unwrap(),
+            "orders_2026-part-99999.csv"
+        );
+        assert_eq!(
+            validated.part_file_name(100_000).unwrap(),
+            "orders_2026-part-100000.csv"
+        );
+        assert_eq!(
+            validated.part_path(2).unwrap(),
+            directory
+                .canonicalize()
+                .unwrap()
+                .join("orders_2026-part-00002.csv")
+        );
+        assert_eq!(
+            validated.part_file_name(0).unwrap_err(),
+            ExportValidationError::PartNumberZero
+        );
+        std::fs::remove_dir(directory).unwrap();
+    }
+
+    #[test]
+    fn export_validation_rejects_unsafe_names_and_row_boundaries() {
+        let directory = export_directory();
+        for name in ["", "../orders", "order items", "orders.csv", "café"] {
+            let mut options = csv_options(&directory);
+            options.base_name = name.into();
+            let error = options.validate().unwrap_err();
+            assert_eq!(error.field(), "baseName", "unexpected error for {name:?}");
+        }
+
+        let mut options = csv_options(&directory);
+        options.rows_per_part = 0;
+        assert_eq!(
+            options.validate().unwrap_err(),
+            ExportValidationError::RowsPerPartZero
+        );
+        let mut options = csv_options(&directory);
+        options.rows_per_part = MAX_EXPORT_ROWS_PER_PART + 1;
+        assert_eq!(
+            options.validate().unwrap_err(),
+            ExportValidationError::RowsPerPartTooLarge
+        );
+        std::fs::remove_dir(directory).unwrap();
+    }
+
+    #[test]
+    fn export_validation_rejects_invalid_or_cross_format_options() {
+        let directory = export_directory();
+        for delimiter in ["", "||", "é", "\0", "\"", "\n"] {
+            let mut options = csv_options(&directory);
+            options.csv.as_mut().unwrap().delimiter = delimiter.into();
+            assert_eq!(
+                options.validate().unwrap_err(),
+                ExportValidationError::CsvDelimiterInvalid
+            );
+        }
+
+        let mut options = csv_options(&directory);
+        options.parquet = Some(ParquetExportOptions::default());
+        assert_eq!(
+            options.validate().unwrap_err(),
+            ExportValidationError::ParquetOptionsUnexpected
+        );
+        let options = ExportOptions {
+            format: ExportFormat::Parquet,
+            output_directory: directory.to_string_lossy().into_owned(),
+            base_name: "orders".into(),
+            rows_per_part: 1,
+            overwrite: ExportOverwritePolicy::FailIfExists,
+            csv: Some(CsvExportOptions::default()),
+            parquet: Some(ParquetExportOptions::default()),
+        };
+        assert_eq!(
+            options.validate().unwrap_err(),
+            ExportValidationError::CsvOptionsUnexpected
+        );
+        std::fs::remove_dir(directory).unwrap();
+    }
+
+    #[test]
+    fn export_validation_rejects_invalid_directories_without_creating_them() {
+        let root = export_directory();
+        let missing = root.join("missing");
+        let options = csv_options(&missing);
+        assert_eq!(
+            options.validate().unwrap_err(),
+            ExportValidationError::OutputDirectoryMissing
+        );
+        assert!(!missing.exists());
+
+        let file = root.join("file");
+        std::fs::write(&file, b"not a directory").unwrap();
+        let options = csv_options(&file);
+        assert_eq!(
+            options.validate().unwrap_err(),
+            ExportValidationError::OutputPathNotDirectory
+        );
+        assert_eq!(std::fs::read_dir(&root).unwrap().count(), 1);
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

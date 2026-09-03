@@ -1166,7 +1166,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
 
 **Preparation:** See `docs/design/E9-DESIGN-GRAPH.md` for adapter-neutral option/status shapes, one-pass Arrow batch flow, exact part boundaries, staged-file publication, cancellation/partial-failure policy, ownership boundaries, and test layers.
 
-- [ ] **E9-T1 Define and validate export options**
+- [x] **E9-T1 Define and validate export options**
   - Depends on: E6-T1, E5.5-T2
   - Owns: export domain types and validation
   - Deliverables:
@@ -1177,6 +1177,10 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: invalid options fail before query execution or file creation.
   - Tests: validation and filename sequence tests.
   - Commit: `feat(export): define chunk export options`
+  - Notes:
+    - Added one adapter-neutral serialized contract in `tarik-engine-protocol`: CSV/Parquet format, fail-if-exists/replace policy, CSV delimiter/header, and closed Parquet compression variants. `ValidatedExportOptions` is constructible only through the consuming validator.
+    - Validation trims and canonicalizes an existing absolute output directory without creating it; restricts portable base names to 128 bytes of ASCII letters/digits/hyphens/underscores; bounds rows per part to `1..=i64::MAX`; rejects cross-format options; and requires one safe ASCII CSV delimiter byte.
+    - Deterministic filenames use `<base>-part-00001.<csv|parquet>` with checked one-based numbering and stable expansion beyond five digits. Tests cover wire variants, normalization, invalid directories without creation, unsafe names, row bounds, delimiters, cross-format options, and filename sequences.
 
 - [ ] **E9-T2 Implement one-pass exact row chunk writer**
   - Depends on: E9-T1, E5.5-T2
