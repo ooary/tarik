@@ -1230,7 +1230,80 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
 
 ---
 
+## EPIC E9.5 — Beginner SQL intelligence
+
+**Status:** `READY` - scope agreed after E9 approval; design and implementation not started.
+
+**Outcome:** Make SQL construction and pre-run correction approachable for beginners while preserving DuckDB's physical truth.
+
+- [ ] **E9.5-T1 Design semantic SQL intelligence boundaries**
+  - Depends on: E5-T1, E7-T2, E7-T4
+  - Owns: `docs/design/E9-5-DESIGN-GRAPH.md`
+  - Deliverables:
+    - Separate native physical operators from beginner semantic steps without inventing execution order or duplicating actual metrics.
+    - Define aggregate expression shapes, conservative SQL-range mapping, completion contexts, diagnostic revisions, debounce/cancellation, and parser/binder trust boundaries.
+    - Fix the example-query contract for `SELECT DISTINCT commodity, count(market) FROM "main"."data_2021" GROUP BY commodity`.
+  - Acceptance: graph specifies exact success/failure/resource/test paths before implementation.
+  - Tests: graph-protocol completeness review and fixture inventory.
+  - Commit: `docs(design): define beginner SQL intelligence graph`
+
+- [ ] **E9.5-T2 Show specific grouping and aggregate calculations**
+  - Depends on: E9.5-T1, E7-T2, E7-T3, E7-T4
+  - Owns: `src-tauri/src/plan/`, `src/features/query-flow/`
+  - Deliverables:
+    - Replace generic `Group & summarize` with semantic steps derived only from verified DuckDB details and conservative SQL mapping.
+    - Distinguish `Group rows by …` from aggregate calculations. Label one verified calculation specifically: `Count rows`, `Count non-null <column>`, `Count matching rows`, `Count unique <column>`, `Sum <column>`, `Calculate average`, `Find minimum`, or `Find maximum`.
+    - When one physical aggregate computes multiple expressions, show one `Calculate summaries` semantic node with an ordered list of calculations; never imply sequential Count → Sum → Average execution.
+    - Represent aggregate-without-`GROUP BY` as one whole-input summary, and aggregate-with-`GROUP BY` as one result per group.
+    - Recognize aggregate-free grouping used for `DISTINCT` as `Remove duplicate result rows`; disclose redundant `DISTINCT` only when equivalence is mechanically provable.
+    - Collapse DuckDB internal compression/decompression projections and retain raw/native details.
+    - Keep actual operator time, rows scanned, cardinality, and estimate accuracy attached once to their native operation; conceptual child steps must not duplicate measured cost.
+  - Acceptance: the agreed example renders, in order, `Read data_2021 → Group rows by commodity → Count non-null market values per group → Remove duplicate result rows → Query result`, while raw plan remains inspectable.
+  - Tests: stable Explain/Profile fixtures for count variants, sum/average/min/max, multiple aggregates, grouped/ungrouped aggregate, DISTINCT, redundant DISTINCT, ambiguous expressions, and metric non-duplication.
+  - Commit: `feat(flow): explain aggregate calculations explicitly`
+
+- [ ] **E9.5-T3 Complete catalog-aware SQL autocomplete**
+  - Depends on: E9.5-T1, E4-T3, E5-T1
+  - Owns: `src/features/editor/sqlCompletion.ts`, `src/features/editor/SqlEditor.tsx`
+  - Deliverables:
+    - Prioritize project schemas, tables, and views after `FROM`/`JOIN`; filter schema-qualified object suggestions after `schema.`.
+    - Resolve common table aliases so `alias.` suggests only that source's columns; provide unqualified column suggestions when unambiguous.
+    - Insert safely quoted identifiers for spaces, reserved words, and embedded quotes.
+    - Distinguish schema/table/view/column/function/keyword suggestions with concise labels and preserve `Ctrl+Space` manual completion.
+    - Refresh completion state after import, link, create, drop, rename, and project switch without rebuilding the editor.
+  - Acceptance: typing `FROM data_` suggests `data_2021`; accepting a non-simple identifier inserts valid quoted SQL; `d.` after `FROM "main"."data_2021" d` suggests its columns.
+  - Tests: completion-source interaction tests for FROM/JOIN, schema qualification, aliases, ambiguous columns, safe quoting, manual trigger, catalog refresh, and empty catalog.
+  - Commit: `feat(editor): add catalog-aware SQL completion`
+
+- [ ] **E9.5-T4 Add non-executing pre-run SQL diagnostics**
+  - Depends on: E9.5-T1, E5.5-T2, E5-T1
+  - Owns: engine validation protocol, `src-tauri/src/query/`, CodeMirror diagnostics
+  - Deliverables:
+    - Add a sidecar validation method that parses and binds an immutable SQL snapshot against the active DuckDB catalog without executing user statements.
+    - Debounce editor validation after idle, identify every request by SQL revision, cancel or ignore stale work, and keep validation off the query/export execution queues.
+    - Show accessible CodeMirror lint markers, gutter indicators, hover text, and a compact current-problem summary for reliable source ranges.
+    - Distinguish blocking errors from a small allowlist of high-confidence warnings; never claim that a query is guaranteed to run.
+    - Clear stale diagnostics immediately when editing resumes and avoid flashing errors for transient incomplete typing.
+    - Use the official CodeMirror lint package and existing semantic error/warning tokens; no custom parser claims beyond tested local structural checks.
+  - Acceptance: syntax, missing-table, and missing-column errors appear before Run without changing data; fixing SQL clears them; runtime-only failures remain documented as undetectable pre-run.
+  - Tests: no-execution mutation sentinel, syntax/binder locations, no reliable range fallback, stale response race, debounce, project/catalog change, warning allowlist, keyboard/screen-reader semantics, and engine/session reuse.
+  - Commit: `feat(editor): show safe pre-run SQL diagnostics`
+
+- [ ] **E9.5-T5 Review beginner SQL intelligence together**
+  - Depends on: E9.5-T2, E9.5-T3, E9.5-T4
+  - Owns: `docs/review/E9-5-SQL-INTELLIGENCE.md`
+  - Deliverables:
+    - Manual checklist covering aggregate semantics, multi-aggregate physical truth, table/alias completion, identifier quoting, stale diagnostics, and no-execution validation.
+    - Re-run E7 Estimate/Actual Flow terminology and immutable-snapshot checks because aggregate normalization changes both modes.
+  - Acceptance: a beginner can write the example query with completion, correct mistakes before Run, and explain each displayed group/count/distinct step without being taught a false physical sequence.
+  - Tests: full Rust/TypeScript/lint/build gates and focused regression matrix.
+  - Commit: `docs(review): add E9.5 SQL intelligence checklist`
+
+---
+
 ## EPIC E10 — Diagnostics, recovery, and cleanup
+
+**Status:** `BLOCKED` - E9.5 beginner SQL intelligence review is required first.
 
 **Outcome:** Diagnosable failures and bounded on-disk application state.
 
