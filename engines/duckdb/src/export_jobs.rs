@@ -31,6 +31,7 @@ struct ExportRecord {
     interrupt: Option<Arc<duckdb::InterruptHandle>>,
     cancel_requested: bool,
     rows_written: u64,
+    completed_rows: u64,
     files_written: u64,
     bytes_written: u64,
     current_part: Option<u64>,
@@ -120,6 +121,7 @@ impl ExportRegistry {
                 interrupt: None,
                 cancel_requested: false,
                 rows_written: 0,
+                completed_rows: 0,
                 files_written: 0,
                 bytes_written: 0,
                 current_part: None,
@@ -259,6 +261,11 @@ impl ExportRegistry {
             }
             let session_id = record.session_id.clone();
             record.state = state;
+            if matches!(state, ExportState::Failed | ExportState::Cancelled) {
+                // The current hidden stage is removed by the writer. Terminal
+                // counters describe only published, usable output rows.
+                record.rows_written = record.completed_rows;
+            }
             record.error = error;
             record.current_part = None;
             record.interrupt = None;
@@ -315,6 +322,7 @@ impl ExportObserver for RegistryObserver<'_> {
     fn part_completed(&self, part: &ExportPartSummary) {
         if let Ok(mut inner) = self.registry.inner.lock() {
             if let Some(record) = inner.exports.get_mut(self.export_id) {
+                record.completed_rows = record.completed_rows.saturating_add(part.rows);
                 record.files_written = record.files_written.saturating_add(1);
                 record.bytes_written = record.bytes_written.saturating_add(part.bytes);
                 record.completed_parts.push_back(part.clone());
