@@ -1,50 +1,57 @@
 import { ArrowClockwiseIcon, XIcon } from "@phosphor-icons/react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { useMemo, useState } from "react";
-import type { PlanNode } from "../../lib/commands";
+import type { PlanMode, PlanNode } from "../../lib/commands";
 import { NodeInspector } from "./NodeInspector";
 import { QueryFlow } from "./QueryFlow";
 import { mapPlanNodeToSql, type SqlRange } from "./sqlMapping";
 import type { PlanViewState } from "./useQueryPlan";
 
-export function ActualFlowWorkspace({
+export function QueryAnalysisWorkspace({
   currentSql,
+  mode,
   onClose,
   onRun,
   open,
   state,
 }: {
   currentSql: string;
+  mode: PlanMode;
   onClose: () => void;
   onRun: () => void;
   open: boolean;
   state: PlanViewState;
 }) {
   const [selected, setSelected] = useState<PlanNode | null>(null);
-  const profiledSql = state.sql ?? currentSql;
+  const snapshotSql = state.sql ?? currentSql;
+  const isActual = mode === "profile";
+  const title = isActual ? "Actual Flow" : "Estimate";
+  const runLabel = isActual ? "Run current SQL" : "Build current SQL";
   const runCurrent = () => {
     setSelected(null);
     onRun();
   };
   const isStale = Boolean(state.sql && state.sql !== currentSql);
   const range = useMemo(
-    () => (selected && profiledSql ? mapPlanNodeToSql(selected, profiledSql) : null),
-    [profiledSql, selected],
+    () => (selected && snapshotSql ? mapPlanNodeToSql(selected, snapshotSql) : null),
+    [snapshotSql, selected],
   );
 
   return (
     <Dialog.Root onOpenChange={(next) => !next && onClose()} open={open}>
       <Dialog.Portal>
-        <Dialog.Overlay className="actual-flow-overlay" />
-        <Dialog.Content className="actual-flow-workspace">
-          <header className="actual-flow-header">
+        <Dialog.Overlay className="analysis-workspace-overlay" />
+        <Dialog.Content className="query-analysis-workspace">
+          <header className="analysis-workspace-header">
             <div>
-              <Dialog.Title>Actual Flow</Dialog.Title>
+              <Dialog.Title>{title}</Dialog.Title>
               <Dialog.Description>
-                DuckDB Profile executes this SQL and measures rows, rows scanned, and operator time.
+                {isActual
+                  ? "DuckDB Profile executes this SQL and measures rows, rows scanned, and operator time."
+                  : "DuckDB Explain builds a plan and row-count estimates without executing this SQL."}
               </Dialog.Description>
             </div>
-            <div className="actual-flow-header-actions">
+            <div className="analysis-workspace-header-actions">
               {isStale && <span className="analysis-stale-label">Editor SQL changed</span>}
               <button
                 className="toolbar-button"
@@ -52,27 +59,30 @@ export function ActualFlowWorkspace({
                 onClick={runCurrent}
                 type="button"
               >
-                <ArrowClockwiseIcon aria-hidden="true" size={14} /> Run current SQL
+                <ArrowClockwiseIcon aria-hidden="true" size={14} /> {runLabel}
               </button>
-              <Dialog.Close aria-label="Close Actual Flow" className="icon-button">
+              <Dialog.Close aria-label={`Close ${title}`} className="icon-button">
                 <XIcon aria-hidden="true" size={17} weight="bold" />
               </Dialog.Close>
             </div>
           </header>
-          <div className="actual-flow-body">
-            <ProfiledSqlPanel range={range} selected={selected} sql={profiledSql} />
-            <main className="actual-flow-graph" aria-label="Actual execution graph">
+          <div className="analysis-workspace-body">
+            <SqlSnapshotPanel mode={mode} range={range} selected={selected} sql={snapshotSql} />
+            <main
+              className="analysis-workspace-graph"
+              aria-label={isActual ? "Actual execution graph" : "Estimated query graph"}
+            >
               {state.status === "loading" ? (
                 <div className="flow-loading" role="status">
                   <span />
                   <span />
                   <span />
-                  <strong>Measuring actual flow</strong>
+                  <strong>{isActual ? "Measuring actual flow" : "Building estimate"}</strong>
                 </div>
               ) : state.status === "error" ? (
                 <div className="result-state">
                   <div className="ui-inline-error" role="alert">
-                    <strong>Actual Flow failed</strong>
+                    <strong>{title} failed</strong>
                     <span>{state.error}</span>
                   </div>
                   <button className="toolbar-button" onClick={runCurrent} type="button">
@@ -89,12 +99,12 @@ export function ActualFlowWorkspace({
                 />
               ) : (
                 <div className="panel-placeholder">
-                  <strong>No actual flow yet</strong>
-                  <span>Use Run current SQL above to collect measured operator metrics.</span>
+                  <strong>{isActual ? "No actual flow yet" : "No estimate yet"}</strong>
+                  <span>Use {runLabel} above to analyze the current editor SQL.</span>
                 </div>
               )}
             </main>
-            <NodeInspector mode="profile" node={selected} />
+            <NodeInspector mode={mode} node={selected} />
           </div>
         </Dialog.Content>
       </Dialog.Portal>
@@ -102,20 +112,23 @@ export function ActualFlowWorkspace({
   );
 }
 
-function ProfiledSqlPanel({
+function SqlSnapshotPanel({
+  mode,
   range,
   selected,
   sql,
 }: {
+  mode: PlanMode;
   range: SqlRange | null;
   selected: PlanNode | null;
   sql: string;
 }) {
+  const isActual = mode === "profile";
   return (
-    <aside className="profiled-sql-panel" aria-label="Profiled SQL">
+    <aside className="analysis-sql-panel" aria-label={isActual ? "Profiled SQL" : "Planned SQL"}>
       <header>
-        <strong>Profiled SQL</strong>
-        <span>Immutable execution snapshot</span>
+        <strong>{isActual ? "Profiled SQL" : "Planned SQL"}</strong>
+        <span>Immutable {isActual ? "execution" : "plan"} snapshot</span>
       </header>
       <pre>
         <code>

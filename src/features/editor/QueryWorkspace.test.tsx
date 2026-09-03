@@ -135,13 +135,11 @@ describe("QueryWorkspace", () => {
     const ref = createRef<QueryWorkspaceHandle>();
     const { container } = render(
       <QueryWorkspace
-        activePanel="results"
         bottomOpen
         bottomPanelHeight={292}
         catalog={catalog}
         onSetBottomHeight={vi.fn()}
         onToggleBottom={vi.fn()}
-        onUpdatePanel={vi.fn()}
         projectId="p1"
         ref={ref}
       />,
@@ -173,13 +171,11 @@ describe("QueryWorkspace", () => {
     ]);
     const { container } = render(
       <QueryWorkspace
-        activePanel="results"
         bottomOpen
         bottomPanelHeight={292}
         catalog={catalog}
         onSetBottomHeight={vi.fn()}
         onToggleBottom={vi.fn()}
-        onUpdatePanel={vi.fn()}
         projectId="p1"
       />,
     );
@@ -212,13 +208,11 @@ describe("QueryWorkspace", () => {
     });
     const { container } = render(
       <QueryWorkspace
-        activePanel="results"
         bottomOpen
         bottomPanelHeight={292}
         catalog={catalog}
         onSetBottomHeight={vi.fn()}
         onToggleBottom={vi.fn()}
-        onUpdatePanel={vi.fn()}
         projectId="p1"
       />,
     );
@@ -232,18 +226,15 @@ describe("QueryWorkspace", () => {
     expect(executeQuery).not.toHaveBeenCalled();
   });
 
-  it("builds Estimate from the active editor and switches to Estimate", async () => {
-    const onUpdatePanel = vi.fn();
+  it("opens Estimate in the same three-pane structure as Actual Flow", async () => {
     const ref = createRef<QueryWorkspaceHandle>();
-    const { container } = render(
+    render(
       <QueryWorkspace
-        activePanel="flow"
         bottomOpen
         bottomPanelHeight={292}
         catalog={catalog}
         onSetBottomHeight={vi.fn()}
         onToggleBottom={vi.fn()}
-        onUpdatePanel={onUpdatePanel}
         projectId="p1"
         ref={ref}
       />,
@@ -254,13 +245,18 @@ describe("QueryWorkspace", () => {
     await waitFor(() =>
       expect(explainQueryPlan).toHaveBeenCalledWith("p1", "SELECT * FROM orders", "explain"),
     );
-    expect(onUpdatePanel).toHaveBeenCalledWith("flow");
+    expect(await screen.findByRole("dialog", { name: "Estimate" })).toBeInTheDocument();
+    expect(screen.getByRole("complementary", { name: "Planned SQL" })).toHaveTextContent(
+      "SELECT * FROM orders",
+    );
+    expect(screen.getByRole("main", { name: "Estimated query graph" })).toBeInTheDocument();
+    expect(screen.getByRole("complementary", { name: "Plan node inspector" })).toBeInTheDocument();
     const node = await screen.findByText("Read data");
     expect(node).toBeInTheDocument();
-    expect(container.querySelector(".flow-mode-label")).toHaveTextContent(
+    expect(document.querySelector(".flow-mode-label")).toHaveTextContent(
       "Estimate · DuckDB Explain",
     );
-    expect(container.querySelector(".flow-mode-label")).toHaveTextContent(
+    expect(document.querySelector(".flow-mode-label")).toHaveTextContent(
       "Planned operations and row-count guesses—not query results.",
     );
     expect(screen.getByText("Select an operation")).toBeInTheDocument();
@@ -276,13 +272,11 @@ describe("QueryWorkspace", () => {
     const ref = createRef<QueryWorkspaceHandle>();
     render(
       <QueryWorkspace
-        activePanel="flow"
         bottomOpen
         bottomPanelHeight={292}
         catalog={catalog}
         onSetBottomHeight={vi.fn()}
         onToggleBottom={vi.fn()}
-        onUpdatePanel={vi.fn()}
         projectId="p1"
         ref={ref}
       />,
@@ -292,8 +286,11 @@ describe("QueryWorkspace", () => {
     await screen.findByText("Read data");
 
     act(() => ref.current?.insertSql("WHERE id = 2"));
-    expect(screen.getByText(/The editor SQL changed after this estimate/)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Rebuild current SQL" }));
+    expect(screen.getByText("Editor SQL changed")).toBeInTheDocument();
+    expect(screen.getByRole("complementary", { name: "Planned SQL" })).not.toHaveTextContent(
+      "WHERE id = 2",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Build current SQL" }));
     await waitFor(() =>
       expect(explainQueryPlan).toHaveBeenLastCalledWith(
         "p1",
@@ -303,58 +300,27 @@ describe("QueryWorkspace", () => {
     );
   });
 
-  it("opens Estimate fullscreen and exits with Escape", async () => {
+  it("closes the Estimate workspace with Escape and leaves Results intact", async () => {
     const ref = createRef<QueryWorkspaceHandle>();
     render(
       <QueryWorkspace
-        activePanel="flow"
         bottomOpen
         bottomPanelHeight={292}
         catalog={catalog}
         onSetBottomHeight={vi.fn()}
         onToggleBottom={vi.fn()}
-        onUpdatePanel={vi.fn()}
         projectId="p1"
         ref={ref}
       />,
     );
     act(() => ref.current?.insertSql("SELECT * FROM orders"));
     fireEvent.click(screen.getByRole("button", { name: "Estimate" }));
-    await screen.findByText("Read data");
-
-    fireEvent.click(screen.getByRole("button", { name: "Open fullscreen flow" }));
-    expect(screen.getByRole("dialog", { name: "Fullscreen query flow" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Exit fullscreen flow" })).toHaveFocus();
-    expect(screen.getByText("Read data")).toBeInTheDocument();
-
+    expect(await screen.findByRole("dialog", { name: "Estimate" })).toBeInTheDocument();
     fireEvent.keyDown(document, { key: "Escape" });
     await waitFor(() =>
-      expect(
-        screen.queryByRole("dialog", { name: "Fullscreen query flow" }),
-      ).not.toBeInTheDocument(),
+      expect(screen.queryByRole("dialog", { name: "Estimate" })).not.toBeInTheDocument(),
     );
-    expect(screen.getByRole("button", { name: "Open fullscreen flow" })).toHaveFocus();
-  });
-
-  it("leaves fullscreen when switching to Results", async () => {
-    const onUpdatePanel = vi.fn();
-    render(
-      <QueryWorkspace
-        activePanel="flow"
-        bottomOpen
-        bottomPanelHeight={292}
-        catalog={catalog}
-        onSetBottomHeight={vi.fn()}
-        onToggleBottom={vi.fn()}
-        onUpdatePanel={onUpdatePanel}
-        projectId="p1"
-      />,
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Open fullscreen flow" }));
-    fireEvent.click(screen.getByRole("tab", { name: "Results" }));
-
-    expect(onUpdatePanel).toHaveBeenCalledWith("results");
-    expect(screen.queryByRole("dialog", { name: "Fullscreen query flow" })).not.toBeInTheDocument();
+    expect(screen.getByText("Results")).toBeInTheDocument();
   });
 
   it("opens Actual Flow as a dedicated three-pane workspace", async () => {
@@ -381,13 +347,11 @@ describe("QueryWorkspace", () => {
     const ref = createRef<QueryWorkspaceHandle>();
     render(
       <QueryWorkspace
-        activePanel="results"
         bottomOpen
         bottomPanelHeight={292}
         catalog={catalog}
         onSetBottomHeight={vi.fn()}
         onToggleBottom={vi.fn()}
-        onUpdatePanel={vi.fn()}
         projectId="p1"
         ref={ref}
       />,
@@ -442,15 +406,13 @@ describe("QueryWorkspace", () => {
       fallbackReason: null,
     });
     const ref = createRef<QueryWorkspaceHandle>();
-    const { container } = render(
+    render(
       <QueryWorkspace
-        activePanel="flow"
         bottomOpen
         bottomPanelHeight={292}
         catalog={catalog}
         onSetBottomHeight={vi.fn()}
         onToggleBottom={vi.fn()}
-        onUpdatePanel={vi.fn()}
         projectId="p1"
         ref={ref}
       />,
@@ -460,35 +422,34 @@ describe("QueryWorkspace", () => {
 
     const scanNode = await screen.findByText("Read data");
     fireEvent.click(scanNode);
-    const highlight = await waitFor(() => {
-      const found = container.querySelector(".cm-plan-highlight");
-      expect(found).not.toBeNull();
-      return found!;
-    });
-    expect(highlight.textContent).toBe("orders");
+    expect(
+      screen.getByRole("complementary", { name: "Planned SQL" }).querySelector("mark"),
+    ).toHaveTextContent("orders");
 
     fireEvent.click(screen.getByText("Return columns"));
     expect(
       await screen.findByText(/Return columns normally keeps the same row count as its input/),
     ).toBeInTheDocument();
-    await waitFor(() => expect(container.querySelector(".cm-plan-highlight")).toBeNull());
+    expect(
+      screen.getByRole("complementary", { name: "Planned SQL" }).querySelector("mark"),
+    ).toBeNull();
 
-    act(() => ref.current?.insertSql(" -- changed after Explain"));
-    fireEvent.click(screen.getByText("Read data"));
-    await waitFor(() => expect(container.querySelector(".cm-plan-highlight")).toBeNull());
+    act(() => ref.current?.insertSql("changed after Estimate"));
+    expect(screen.getByText("Editor SQL changed")).toBeInTheDocument();
+    expect(screen.getByRole("complementary", { name: "Planned SQL" })).not.toHaveTextContent(
+      "changed after Estimate",
+    );
   });
 
   it("runs Actual Flow without a warning for a clearly read-only query", async () => {
     const ref = createRef<QueryWorkspaceHandle>();
     render(
       <QueryWorkspace
-        activePanel="results"
         bottomOpen
         bottomPanelHeight={292}
         catalog={catalog}
         onSetBottomHeight={vi.fn()}
         onToggleBottom={vi.fn()}
-        onUpdatePanel={vi.fn()}
         projectId="p1"
         ref={ref}
       />,
@@ -528,13 +489,11 @@ describe("QueryWorkspace", () => {
     const ref = createRef<QueryWorkspaceHandle>();
     render(
       <QueryWorkspace
-        activePanel="results"
         bottomOpen
         bottomPanelHeight={292}
         catalog={catalog}
         onSetBottomHeight={vi.fn()}
         onToggleBottom={vi.fn()}
-        onUpdatePanel={vi.fn()}
         projectId="p1"
         ref={ref}
       />,
@@ -566,13 +525,11 @@ describe("QueryWorkspace", () => {
     const ref = createRef<QueryWorkspaceHandle>();
     render(
       <QueryWorkspace
-        activePanel="results"
         bottomOpen
         bottomPanelHeight={292}
         catalog={catalog}
         onSetBottomHeight={vi.fn()}
         onToggleBottom={vi.fn()}
-        onUpdatePanel={vi.fn()}
         projectId="p1"
         ref={ref}
       />,
@@ -609,13 +566,11 @@ describe("QueryWorkspace", () => {
     const ref = createRef<QueryWorkspaceHandle>();
     render(
       <QueryWorkspace
-        activePanel="flow"
         bottomOpen
         bottomPanelHeight={292}
         catalog={catalog}
         onSetBottomHeight={vi.fn()}
         onToggleBottom={vi.fn()}
-        onUpdatePanel={vi.fn()}
         projectId="p1"
         ref={ref}
       />,
@@ -628,23 +583,20 @@ describe("QueryWorkspace", () => {
 
   it("runs the active tab and shows the running state", async () => {
     vi.mocked(getQueryStatus).mockResolvedValue({ ...runningView, tabId: "t1" });
-    const onUpdatePanel = vi.fn();
-    const { container } = render(
+    render(
       <QueryWorkspace
-        activePanel="results"
         bottomOpen
         bottomPanelHeight={292}
         catalog={catalog}
         onSetBottomHeight={vi.fn()}
         onToggleBottom={vi.fn()}
-        onUpdatePanel={onUpdatePanel}
         projectId="p1"
       />,
     );
 
     const planCallsBeforeRun = vi.mocked(explainQueryPlan).mock.calls.length;
     fireEvent.click(screen.getByRole("button", { name: /Run query/ }));
-    expect(onUpdatePanel).toHaveBeenCalledWith("results");
+    expect(screen.getByText("Results")).toBeInTheDocument();
     expect(explainQueryPlan).toHaveBeenCalledTimes(planCallsBeforeRun);
     await waitFor(() =>
       expect(executeQuery).toHaveBeenCalledWith("p1", expect.any(String), expect.any(String)),
@@ -655,21 +607,18 @@ describe("QueryWorkspace", () => {
     ).toBeInTheDocument();
     expect(await screen.findByText(/1,000 rows produced so far/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Cancel" })).toBeInTheDocument();
-    expect(container.querySelector(".tab-count")).toHaveTextContent("1,000");
   });
 
   it("refreshes project data once after a successful query", async () => {
     const onQuerySucceeded = vi.fn();
     render(
       <QueryWorkspace
-        activePanel="results"
         bottomOpen
         bottomPanelHeight={292}
         catalog={catalog}
         onQuerySucceeded={onQuerySucceeded}
         onSetBottomHeight={vi.fn()}
         onToggleBottom={vi.fn()}
-        onUpdatePanel={vi.fn()}
         projectId="p1"
       />,
     );
@@ -683,14 +632,12 @@ describe("QueryWorkspace", () => {
     vi.mocked(getQueryStatus).mockResolvedValue({ ...failedView, tabId: "t1" });
     render(
       <QueryWorkspace
-        activePanel="results"
         bottomOpen
         bottomPanelHeight={292}
         catalog={catalog}
         onQuerySucceeded={onQuerySucceeded}
         onSetBottomHeight={vi.fn()}
         onToggleBottom={vi.fn()}
-        onUpdatePanel={vi.fn()}
         projectId="p1"
       />,
     );
@@ -703,13 +650,11 @@ describe("QueryWorkspace", () => {
   it("renders the virtualized grid after a successful run", async () => {
     const { container } = render(
       <QueryWorkspace
-        activePanel="results"
         bottomOpen
         bottomPanelHeight={292}
         catalog={catalog}
         onSetBottomHeight={vi.fn()}
         onToggleBottom={vi.fn()}
-        onUpdatePanel={vi.fn()}
         projectId="p1"
       />,
     );
@@ -729,13 +674,11 @@ describe("QueryWorkspace", () => {
   it("resizes result columns by pointer and keyboard", async () => {
     render(
       <QueryWorkspace
-        activePanel="results"
         bottomOpen
         bottomPanelHeight={292}
         catalog={catalog}
         onSetBottomHeight={vi.fn()}
         onToggleBottom={vi.fn()}
-        onUpdatePanel={vi.fn()}
         projectId="p1"
       />,
     );
@@ -764,13 +707,11 @@ describe("QueryWorkspace", () => {
     vi.mocked(getResultPage).mockResolvedValue(pageWithRows);
     const { container } = render(
       <QueryWorkspace
-        activePanel="results"
         bottomOpen
         bottomPanelHeight={292}
         catalog={catalog}
         onSetBottomHeight={vi.fn()}
         onToggleBottom={vi.fn()}
-        onUpdatePanel={vi.fn()}
         projectId="p1"
       />,
     );
@@ -787,13 +728,11 @@ describe("QueryWorkspace", () => {
     vi.mocked(getQueryStatus).mockResolvedValue({ ...failedView, tabId: "t1" });
     render(
       <QueryWorkspace
-        activePanel="results"
         bottomOpen
         bottomPanelHeight={292}
         catalog={catalog}
         onSetBottomHeight={vi.fn()}
         onToggleBottom={vi.fn()}
-        onUpdatePanel={vi.fn()}
         projectId="p1"
       />,
     );
@@ -814,13 +753,11 @@ describe("QueryWorkspace", () => {
     });
     render(
       <QueryWorkspace
-        activePanel="results"
         bottomOpen
         bottomPanelHeight={292}
         catalog={catalog}
         onSetBottomHeight={vi.fn()}
         onToggleBottom={vi.fn()}
-        onUpdatePanel={vi.fn()}
         projectId="p1"
       />,
     );
@@ -834,13 +771,11 @@ describe("QueryWorkspace", () => {
     vi.mocked(getQueryStatus).mockResolvedValue({ ...runningView, tabId: "t1" });
     render(
       <QueryWorkspace
-        activePanel="results"
         bottomOpen
         bottomPanelHeight={292}
         catalog={catalog}
         onSetBottomHeight={vi.fn()}
         onToggleBottom={vi.fn()}
-        onUpdatePanel={vi.fn()}
         projectId="p1"
       />,
     );
@@ -854,13 +789,11 @@ describe("QueryWorkspace", () => {
   it("shows the empty state before any execution", () => {
     render(
       <QueryWorkspace
-        activePanel="results"
         bottomOpen
         bottomPanelHeight={292}
         catalog={catalog}
         onSetBottomHeight={vi.fn()}
         onToggleBottom={vi.fn()}
-        onUpdatePanel={vi.fn()}
         projectId="p1"
       />,
     );
@@ -873,13 +806,11 @@ describe("QueryWorkspace", () => {
     vi.spyOn(window, "prompt").mockReturnValue("Revenue query");
     render(
       <QueryWorkspace
-        activePanel="results"
         bottomOpen
         bottomPanelHeight={292}
         catalog={catalog}
         onSetBottomHeight={vi.fn()}
         onToggleBottom={vi.fn()}
-        onUpdatePanel={vi.fn()}
         projectId="p1"
       />,
     );
@@ -891,7 +822,7 @@ describe("QueryWorkspace", () => {
 
     fireEvent.contextMenu(screen.getByRole("tab", { name: /Revenue query/ }));
     fireEvent.click(await screen.findByRole("menuitem", { name: "Duplicate" }));
-    expect(screen.getAllByRole("tab")).toHaveLength(4); // 2 query tabs + 3 output tabs
+    expect(screen.getAllByRole("tab")).toHaveLength(2);
 
     fireEvent.contextMenu(screen.getByRole("tab", { name: /Revenue query copy/ }));
     fireEvent.click(await screen.findByRole("menuitem", { name: "Close" }));

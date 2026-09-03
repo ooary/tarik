@@ -666,35 +666,8 @@ kbd {
   height: 43px;
 }
 
-body:has(.bottom-panel-flow-fullscreen),
-body:has(.actual-flow-workspace) {
+body:has(.query-analysis-workspace) {
   overflow: hidden;
-}
-
-.bottom-panel-flow-fullscreen {
-  position: fixed;
-  z-index: 20;
-  inset: 0;
-  display: grid;
-  min-width: 0;
-  grid-template-rows: 43px minmax(0, 1fr);
-  border: 0;
-  background: var(--surface-raised);
-  box-shadow: 0 0 0 1px var(--border-default);
-}
-
-.bottom-panel-flow-fullscreen .results-heading {
-  padding-right: max(8px, env(safe-area-inset-right));
-  padding-left: max(10px, env(safe-area-inset-left));
-  background: var(--surface-raised);
-}
-
-.bottom-panel-flow-fullscreen .query-flow-shell,
-.bottom-panel-flow-fullscreen .flow-loading,
-.bottom-panel-flow-fullscreen .flow-fallback,
-.bottom-panel-flow-fullscreen .panel-placeholder,
-.bottom-panel-flow-fullscreen .result-state {
-  height: 100%;
 }
 
 .query-workspace:has(.bottom-panel-closed) {
@@ -706,43 +679,9 @@ body:has(.actual-flow-workspace) {
   padding: 0 8px 0 10px;
 }
 
-.result-tabs {
-  display: flex;
-  height: 42px;
-  align-items: stretch;
-  gap: 16px;
-}
-
-.result-tab {
-  position: relative;
-  border-radius: 0;
-  padding: 0 2px;
-  color: var(--text-muted);
-  background: transparent;
-  font-weight: 610;
-  cursor: pointer;
-}
-
-.result-tab[data-state="active"] {
-  color: var(--text-primary);
-}
-
-.result-tab[data-state="active"]::after {
-  position: absolute;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  height: 2px;
-  background: var(--accent-solid);
-  content: "";
-}
-
-.tab-count {
-  margin-left: 5px;
-  color: var(--text-muted);
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 500;
+.results-title {
+  font-size: 11px;
+  font-weight: 650;
 }
 
 .results-actions {
@@ -911,11 +850,6 @@ tbody tr:hover {
   font-size: 9px;
 }
 
-.sql-codemirror .cm-plan-highlight {
-  background: color-mix(in srgb, var(--accent-solid) 30%, transparent);
-  outline: 1px solid color-mix(in srgb, var(--accent-solid) 55%, transparent);
-}
-
 .result-column-resizer {
   position: absolute;
   z-index: 3;
@@ -1073,14 +1007,14 @@ tbody tr:hover {
   }
 }
 
-.actual-flow-overlay {
+.analysis-workspace-overlay {
   position: fixed;
   z-index: 26;
   inset: 0;
   background: rgb(10 15 12 / 52%);
 }
 
-.actual-flow-workspace {
+.query-analysis-workspace {
   position: fixed;
   z-index: 27;
   inset: 12px;
@@ -1096,7 +1030,7 @@ tbody tr:hover {
   overflow: hidden;
 }
 
-.actual-flow-header {
+.analysis-workspace-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1105,22 +1039,22 @@ tbody tr:hover {
   padding: 8px 10px 8px 14px;
 }
 
-.actual-flow-header h2,
-.actual-flow-header p {
+.analysis-workspace-header h2,
+.analysis-workspace-header p {
   margin: 0;
 }
 
-.actual-flow-header h2 {
+.analysis-workspace-header h2 {
   font-size: 15px;
 }
 
-.actual-flow-header p {
+.analysis-workspace-header p {
   margin-top: 3px;
   color: var(--text-muted);
   font-size: 10px;
 }
 
-.actual-flow-header-actions {
+.analysis-workspace-header-actions {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1132,14 +1066,14 @@ tbody tr:hover {
   font-weight: 650;
 }
 
-.actual-flow-body {
+.analysis-workspace-body {
   display: grid;
   min-width: 0;
   min-height: 0;
   grid-template-columns: minmax(210px, 0.27fr) minmax(340px, 1fr) minmax(230px, 0.31fr);
 }
 
-.profiled-sql-panel {
+.analysis-sql-panel {
   display: grid;
   min-width: 0;
   min-height: 0;
@@ -1148,33 +1082,33 @@ tbody tr:hover {
   background: var(--surface-sidebar);
 }
 
-.profiled-sql-panel > header,
-.profiled-sql-panel > footer {
+.analysis-sql-panel > header,
+.analysis-sql-panel > footer {
   display: grid;
   gap: 2px;
   padding: 10px 12px;
 }
 
-.profiled-sql-panel > header {
+.analysis-sql-panel > header {
   border-bottom: 1px solid var(--border-subtle);
 }
 
-.profiled-sql-panel > header strong {
+.analysis-sql-panel > header strong {
   font-size: 11px;
 }
 
-.profiled-sql-panel > header span,
-.profiled-sql-panel > footer {
+.analysis-sql-panel > header span,
+.analysis-sql-panel > footer {
   color: var(--text-muted);
   font-size: 9px;
 }
 
-.profiled-sql-panel > footer {
+.analysis-sql-panel > footer {
   border-top: 1px solid var(--border-subtle);
   line-height: 1.4;
 }
 
-.profiled-sql-panel pre {
+.analysis-sql-panel pre {
   min-height: 0;
   overflow: auto;
   margin: 0;
@@ -1187,55 +1121,31 @@ tbody tr:hover {
   white-space: pre-wrap;
 }
 
-.profiled-sql-panel mark {
+.analysis-sql-panel mark {
   border-radius: 2px;
   color: inherit;
   background: color-mix(in srgb, var(--accent-solid) 30%, transparent);
   outline: 1px solid color-mix(in srgb, var(--accent-solid) 55%, transparent);
 }
 
-.actual-flow-graph {
+.analysis-workspace-graph {
   min-width: 0;
   min-height: 0;
   background: var(--surface-editor);
 }
 
-.actual-flow-graph .query-flow-shell,
-.actual-flow-graph .query-flow,
-.actual-flow-graph .flow-loading,
-.actual-flow-graph .result-state,
-.actual-flow-graph .panel-placeholder,
-.actual-flow-graph .flow-fallback {
+.analysis-workspace-graph .query-flow-shell,
+.analysis-workspace-graph .query-flow,
+.analysis-workspace-graph .flow-loading,
+.analysis-workspace-graph .result-state,
+.analysis-workspace-graph .panel-placeholder,
+.analysis-workspace-graph .flow-fallback {
   height: 100%;
 }
 
-.actual-flow-body > .flow-inspector {
+.analysis-workspace-body > .flow-inspector {
   border-right: 0;
   border-left: 1px solid var(--border-default);
-}
-
-.estimate-surface {
-  display: grid;
-  height: calc(100% - 42px);
-  min-height: 0;
-  grid-template-rows: auto minmax(0, 1fr);
-}
-
-.estimate-surface .query-flow-shell {
-  height: 100%;
-}
-
-.analysis-stale-banner {
-  display: flex;
-  min-height: 36px;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  border-bottom: 1px solid var(--border-subtle);
-  padding: 4px 10px;
-  color: var(--status-warning);
-  background: var(--status-warning-surface);
-  font-size: 10px;
 }
 
 .query-flow-shell {
@@ -1670,11 +1580,11 @@ tbody tr:hover {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .actual-flow-workspace {
+  .query-analysis-workspace {
     inset: 6px;
   }
 
-  .actual-flow-body {
+  .analysis-workspace-body {
     grid-template-columns: minmax(180px, 0.26fr) minmax(280px, 1fr) minmax(200px, 0.3fr);
   }
 }

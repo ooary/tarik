@@ -1,5 +1,4 @@
 export type ThemePreference = "system" | "light" | "dark";
-export type OutputPanel = "results" | "flow";
 
 export interface WorkbenchPreferences {
   theme: ThemePreference;
@@ -7,7 +6,6 @@ export interface WorkbenchPreferences {
   bottomPanelHeight: number;
   sidebarOpen: boolean;
   bottomPanelOpen: boolean;
-  activeOutputPanel: OutputPanel;
 }
 
 export const defaultWorkbenchPreferences: WorkbenchPreferences = {
@@ -16,7 +14,6 @@ export const defaultWorkbenchPreferences: WorkbenchPreferences = {
   bottomPanelHeight: 292,
   sidebarOpen: true,
   bottomPanelOpen: true,
-  activeOutputPanel: "results",
 };
 
 export interface WorkbenchPreferencesRepository {
@@ -45,7 +42,6 @@ export function normalizeWorkbenchPreferences(
   value: Partial<WorkbenchPreferences> | null | undefined,
 ): WorkbenchPreferences {
   const theme = value?.theme;
-  const activeOutputPanel = value?.activeOutputPanel;
 
   return {
     theme: theme === "light" || theme === "dark" || theme === "system" ? theme : "system",
@@ -53,10 +49,6 @@ export function normalizeWorkbenchPreferences(
     bottomPanelHeight: clampNumber(value?.bottomPanelHeight, 180, 560, 292),
     sidebarOpen: typeof value?.sidebarOpen === "boolean" ? value.sidebarOpen : true,
     bottomPanelOpen: typeof value?.bottomPanelOpen === "boolean" ? value.bottomPanelOpen : true,
-    activeOutputPanel:
-      activeOutputPanel === "flow" || activeOutputPanel === "results"
-        ? activeOutputPanel
-        : "results",
   };
 }
 

@@ -40,7 +40,6 @@ test("workbench preferences use typed metadata commands", async () => {
     bottomPanelHeight: 300,
     sidebarOpen: true,
     bottomPanelOpen: true,
-    activeOutputPanel: "flow",
   };
   const calls = [];
   const invoke = async (command, args) => {

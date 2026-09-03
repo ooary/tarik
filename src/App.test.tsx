@@ -546,14 +546,16 @@ describe("Tarik workbench shell", () => {
     expect(screen.getByRole("button", { name: "Expand source explorer" })).toBeInTheDocument();
   });
 
-  it("switches result surfaces with accessible tabs", () => {
+  it("keeps Results as the only bottom output and orders analysis actions", () => {
     render(<App />);
 
-    fireEvent.click(screen.getByRole("tab", { name: "Estimate" }));
-    expect(screen.getByText("No estimate yet")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Build Estimate" })).toBeInTheDocument();
+    expect(screen.getByText("Results")).toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Estimate" })).not.toBeInTheDocument();
     expect(screen.queryByRole("tab", { name: "Actual Flow" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Actual Flow" })).toBeInTheDocument();
+    const toolbar = screen.getByRole("button", { name: /Query library/ }).parentElement!;
+    expect(
+      [...toolbar.querySelectorAll("button")].map((button) => button.textContent?.trim()),
+    ).toEqual([expect.stringMatching(/^Run query/), "Query library", "Estimate", "Actual Flow"]);
   });
 
   it("collapses and expands the bottom panel", () => {

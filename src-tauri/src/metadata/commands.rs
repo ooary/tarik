@@ -26,7 +26,8 @@ pub struct WorkbenchPreferences {
     pub bottom_panel_height: f64,
     pub sidebar_open: bool,
     pub bottom_panel_open: bool,
-    pub active_output_panel: String,
+    #[serde(default, skip_serializing)]
+    pub active_output_panel: Option<String>,
 }
 
 #[tauri::command]

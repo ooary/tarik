@@ -44,22 +44,16 @@ Open a project with at least two imported or linked relations. The checks below 
 4. Confirm a restrained pulse travels once from source to result and each reached node gets a brief border cue. The animation must not loop.
 5. Confirm later group/sort/limit/result steps continue toward the right.
 6. Pan, zoom, fit, and select nodes. Confirm controls remain compact and the graph remains readable.
-7. Click **Open fullscreen** in Estimate. Confirm its graph, controls, and inspector fill the application viewport while the editor remains unchanged behind the overlay.
-8. Confirm the graph refits to the larger canvas and a complex plan has substantially more room for nodes.
-9. Click **Present**. Confirm the graph smoothly focuses the upper-left source operation, selects its node, and opens its inspector. For a join with multiple sources, confirm the upper-left source is chosen consistently.
-10. Repeat Present in normal/fullscreen Estimate and in the Actual Flow graph. Confirm it works in every graph surface.
-11. Close Estimate fullscreen, then open Actual Flow from the editor toolbar. Confirm Actual Flow uses its dedicated three-pane viewport workspace.
-12. Press `Esc` and confirm the normal bottom panel returns with keyboard focus on the fullscreen button.
-13. Reopen fullscreen, then switch to Results. Confirm fullscreen exits automatically.
-14. Confirm Actual Flow itself is viewport-sized and its empty/loading/error states preserve the three-pane workspace.
-15. Resize the normal bottom panel and app window. Confirm no node/inspector content overlaps outside the panel.
-16. Enable reduced motion at OS/browser level and reopen Estimate. Confirm connectors remain visible, traversal motion is suppressed, and Present focuses the start node without animated travel.
+7. Click the toolbar **Estimate** action. Confirm a viewport-sized three-pane page opens with Planned SQL, graph, and inspector.
+8. Click **Present**. Confirm the graph smoothly focuses the upper-left source operation, selects its node, highlights reliable Planned SQL, and opens its inspector.
+9. Close Estimate with `Esc`. Click **Actual Flow** and confirm it uses the same three-pane structure with Profiled SQL and actual metrics.
+10. Confirm both pages preserve empty/loading/error states, bounded side panes, pan/zoom/fit controls, and reduced-motion behavior.
 
 ## 3. Explicit query destinations
 
 1. Click **Run query** on current SQL. Confirm Tarik stays on or opens **Results**, executes SQL exactly once, and does not call Estimate or Actual Flow.
-2. Click the bottom **Estimate** tab. Confirm it navigates only; use the toolbar **Estimate** action or **Build Estimate** to capture current SQL without execution.
-3. Change the source table in the editor. Confirm an existing Estimate says **Out of date** and remains tied to its older SQL until **Rebuild current SQL**.
+2. Confirm Results is the only bottom output surface. Click the toolbar **Estimate** action to capture current SQL without execution.
+3. Change the source table in the editor. Confirm an open Estimate says **Editor SQL changed** and remains tied to its older Planned SQL until **Build current SQL**.
 4. Click **Actual Flow** beside Query Library. Confirm it profiles the current editor SQL and opens a dedicated analysis workspace.
 5. Confirm the workspace has three visible panes: immutable **Profiled SQL** on the left, execution graph in the center, and operation details on the right.
 6. Change editor SQL after profiling. Confirm the workspace says **Editor SQL changed**, keeps the old profiled SQL snapshot, and does not silently replace its graph.
@@ -114,7 +108,7 @@ Open a project with at least two imported or linked relations. The checks below 
 
 ## 7. Fallback and error resilience
 
-1. Confirm empty Estimate shows Build Estimate, and the Actual Flow workspace shows one Run current SQL action.
+1. Confirm the empty Estimate workspace shows one Build current SQL action, and Actual Flow shows one Run current SQL action.
 2. Confirm loading state appears while an Estimate/Actual Flow is being captured.
 3. If a future or malformed native plan is encountered, confirm Tarik shows **Structured graph unavailable** with the raw plan rather than crashing or inventing nodes.
 4. Confirm closing/reopening the project still permits normal query execution after Estimate/Actual Flow use.

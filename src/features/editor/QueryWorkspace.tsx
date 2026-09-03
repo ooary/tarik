@@ -1,6 +1,4 @@
 import {
-  ArrowsInSimpleIcon,
-  ArrowsOutSimpleIcon,
   CaretDownIcon,
   CaretUpIcon,
   DotsThreeIcon,
@@ -9,13 +7,10 @@ import {
   PlusIcon,
   XIcon,
 } from "@phosphor-icons/react";
-import * as Tabs from "@radix-ui/react-tabs";
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { ContextMenu } from "../../components/ui";
 import type { ProjectCatalog } from "../../lib/commands";
-import { ActualFlowWorkspace } from "../query-flow/ActualFlowWorkspace";
-import { QueryFlow } from "../query-flow/QueryFlow";
-import { mapPlanNodeToSql, type SqlRange } from "../query-flow/sqlMapping";
+import { QueryAnalysisWorkspace } from "../query-flow/QueryAnalysisWorkspace";
 import { useQueryPlan } from "../query-flow/useQueryPlan";
 import { ResultGrid } from "../results/ResultGrid";
 import { SavedQueryLibrary } from "../saved-queries/SavedQueryLibrary";
@@ -25,7 +20,7 @@ import type { SqlTable } from "./sqlCompletion";
 import { countSqlStatements, isClearlyReadOnlySql } from "./sqlText";
 import { useQueryTabs } from "./useQueryTabs";
 
-type Panel = "results" | "flow";
+type AnalysisMode = "explain" | "profile";
 
 export interface QueryWorkspaceHandle {
   insertSql(text: string): void;
@@ -35,13 +30,11 @@ export interface QueryWorkspaceHandle {
 interface QueryWorkspaceProps {
   projectId: string;
   catalog: ProjectCatalog;
-  activePanel: Panel;
   bottomOpen: boolean;
   bottomPanelHeight: number;
   onQuerySucceeded?: () => void | Promise<void>;
   onSetBottomHeight: (height: number) => void;
   onToggleBottom: () => void;
-  onUpdatePanel: (panel: Panel) => void;
 }
 
 export const QueryWorkspace = forwardRef<QueryWorkspaceHandle, QueryWorkspaceProps>(
@@ -49,13 +42,11 @@ export const QueryWorkspace = forwardRef<QueryWorkspaceHandle, QueryWorkspacePro
     {
       projectId,
       catalog,
-      activePanel,
       bottomOpen,
       bottomPanelHeight,
       onQuerySucceeded,
       onSetBottomHeight,
       onToggleBottom,
-      onUpdatePanel,
     },
     ref,
   ) {
@@ -72,15 +63,9 @@ export const QueryWorkspace = forwardRef<QueryWorkspaceHandle, QueryWorkspacePro
       editSql,
     } = useQueryTabs(projectId);
     const sectionRef = useRef<HTMLElement>(null);
-    const outputPanelRef = useRef<HTMLDivElement>(null);
-    const fullscreenButtonRef = useRef<HTMLButtonElement>(null);
     const { executions, run, cancel, forget } = useQueryExecution(projectId, onQuerySucceeded);
     const [runError, setRunError] = useState<string | null>(null);
-    const [actualFlowOpen, setActualFlowOpen] = useState(false);
-    const [flowFullscreen, setFlowFullscreen] = useState(false);
-    const [planHighlight, setPlanHighlight] = useState<{ tabId: string; range: SqlRange } | null>(
-      null,
-    );
+    const [analysisMode, setAnalysisMode] = useState<AnalysisMode | null>(null);
     const { states: planStates, runPlan, clearPlan } = useQueryPlan(projectId);
 
     const activeTab = tabs.find((tab) => tab.id === activeTabId);
@@ -90,45 +75,10 @@ export const QueryWorkspace = forwardRef<QueryWorkspaceHandle, QueryWorkspacePro
     const executionActive =
       activeExecution?.state === "queued" || activeExecution?.state === "running";
 
-    useEffect(() => {
-      if (!flowFullscreen) return;
-      fullscreenButtonRef.current?.focus();
-      const containFullscreenFocus = (event: KeyboardEvent) => {
-        if (event.key === "Escape") {
-          setFlowFullscreen(false);
-          window.setTimeout(() => fullscreenButtonRef.current?.focus(), 0);
-          return;
-        }
-        if (event.key !== "Tab") return;
-        const controls = outputPanelRef.current?.querySelectorAll<HTMLElement>(
-          'button:not([disabled]), [href], summary, [tabindex]:not([tabindex="-1"])',
-        );
-        if (!controls?.length) return;
-        const first = controls[0];
-        const last = controls[controls.length - 1];
-        if (event.shiftKey && document.activeElement === first) {
-          event.preventDefault();
-          last.focus();
-        } else if (!event.shiftKey && document.activeElement === last) {
-          event.preventDefault();
-          first.focus();
-        }
-      };
-      document.addEventListener("keydown", containFullscreenFocus);
-      return () => document.removeEventListener("keydown", containFullscreenFocus);
-    }, [flowFullscreen]);
-
-    const updateOutputPanel = (panel: Panel) => {
-      if (panel === "results") setFlowFullscreen(false);
-      onUpdatePanel(panel);
-    };
-
     const runActiveTab = () => {
       if (!projectId || !activeTab || executionActive) return;
       const { id: tabId, sql } = activeTab;
       setRunError(null);
-      setPlanHighlight(null);
-      updateOutputPanel("results");
       if (!bottomOpen) onToggleBottom();
       run(tabId, sql).catch((error: unknown) => {
         setRunError(error instanceof Error ? error.message : String(error));
@@ -137,9 +87,7 @@ export const QueryWorkspace = forwardRef<QueryWorkspaceHandle, QueryWorkspacePro
 
     const runEstimate = () => {
       if (!projectId || !activeTab || !activeTab.sql.trim()) return;
-      setPlanHighlight(null);
-      updateOutputPanel("flow");
-      if (!bottomOpen) onToggleBottom();
+      setAnalysisMode("explain");
       void runPlan(activeTab.sql, "explain");
     };
 
@@ -153,7 +101,7 @@ export const QueryWorkspace = forwardRef<QueryWorkspaceHandle, QueryWorkspacePro
       ) {
         return;
       }
-      setActualFlowOpen(true);
+      setAnalysisMode("profile");
       void runPlan(activeTab.sql, "profile");
     };
 
@@ -302,6 +250,12 @@ export const QueryWorkspace = forwardRef<QueryWorkspaceHandle, QueryWorkspacePro
               Run query <kbd>Ctrl</kbd>
               <kbd>Enter</kbd>
             </button>
+            <SavedQueryLibrary
+              activeSql={activeTab?.sql ?? ""}
+              activeTitle={activeTab?.title ?? "Untitled"}
+              onOpenSql={(sql, title) => addTab(sql, title)}
+              projectId={projectId}
+            />
             <button
               className="toolbar-button"
               disabled={!activeTab?.sql.trim() || planStates.explain.status === "loading"}
@@ -310,12 +264,6 @@ export const QueryWorkspace = forwardRef<QueryWorkspaceHandle, QueryWorkspacePro
             >
               Estimate
             </button>
-            <SavedQueryLibrary
-              activeSql={activeTab?.sql ?? ""}
-              activeTitle={activeTab?.title ?? "Untitled"}
-              onOpenSql={(sql, title) => addTab(sql, title)}
-              projectId={projectId}
-            />
             <button
               className="toolbar-button"
               disabled={!activeTab?.sql.trim() || planStates.profile.status === "loading"}
@@ -348,12 +296,8 @@ export const QueryWorkspace = forwardRef<QueryWorkspaceHandle, QueryWorkspacePro
         {tabs.map((tab) =>
           activeTabId === tab.id ? (
             <SqlEditor
-              highlightRange={planHighlight?.tabId === tab.id ? planHighlight.range : null}
               key={tab.id}
-              onChange={(sql) => {
-                setPlanHighlight(null);
-                editSql(tab.id, sql);
-              }}
+              onChange={(sql) => editSql(tab.id, sql)}
               onRun={runActiveTab}
               tables={tables}
               value={tab.sql}
@@ -363,61 +307,14 @@ export const QueryWorkspace = forwardRef<QueryWorkspaceHandle, QueryWorkspacePro
 
         <div
           aria-hidden="true"
-          className={`bottom-resize-handle ${bottomOpen && !flowFullscreen ? "" : "bottom-resize-hidden"}`}
+          className={`bottom-resize-handle ${bottomOpen ? "" : "bottom-resize-hidden"}`}
           onPointerDown={resizeBottom}
         />
-        <div
-          aria-label={flowFullscreen ? "Fullscreen query flow" : undefined}
-          aria-modal={flowFullscreen ? true : undefined}
-          className={`bottom-panel ${bottomOpen ? "bottom-panel-open" : "bottom-panel-closed"} ${flowFullscreen ? "bottom-panel-flow-fullscreen" : ""}`}
-          ref={outputPanelRef}
-          role={flowFullscreen ? "dialog" : undefined}
-        >
+        <div className={`bottom-panel ${bottomOpen ? "bottom-panel-open" : "bottom-panel-closed"}`}>
           <div className="results-heading">
-            <Tabs.Root
-              onValueChange={(value) => updateOutputPanel(value as Panel)}
-              value={activePanel}
-            >
-              <Tabs.List aria-label="Query output" className="result-tabs">
-                <Tabs.Trigger
-                  className="result-tab"
-                  onClick={() => updateOutputPanel("results")}
-                  value="results"
-                >
-                  Results
-                  {activeExecution?.rowsProduced != null && (
-                    <span className="tab-count">
-                      {activeExecution.rowsProduced.toLocaleString("en-US")}
-                    </span>
-                  )}
-                </Tabs.Trigger>
-                <Tabs.Trigger
-                  className="result-tab"
-                  onClick={() => updateOutputPanel("flow")}
-                  value="flow"
-                >
-                  Estimate
-                </Tabs.Trigger>
-              </Tabs.List>
-            </Tabs.Root>
+            <strong className="results-title">Results</strong>
             <div className="results-actions">
               <span className="result-duration">{resultDuration(activeExecution)}</span>
-              {activePanel !== "results" && bottomOpen && (
-                <button
-                  aria-label={flowFullscreen ? "Exit fullscreen flow" : "Open fullscreen flow"}
-                  className="icon-button"
-                  onClick={() => setFlowFullscreen((current) => !current)}
-                  ref={fullscreenButtonRef}
-                  title={flowFullscreen ? "Exit fullscreen (Esc)" : "Open fullscreen"}
-                  type="button"
-                >
-                  {flowFullscreen ? (
-                    <ArrowsInSimpleIcon aria-hidden="true" size={16} />
-                  ) : (
-                    <ArrowsOutSimpleIcon aria-hidden="true" size={16} />
-                  )}
-                </button>
-              )}
               {executionActive && (
                 <button
                   className="toolbar-button"
@@ -427,56 +324,32 @@ export const QueryWorkspace = forwardRef<QueryWorkspaceHandle, QueryWorkspacePro
                   Cancel
                 </button>
               )}
-              {!flowFullscreen && (
-                <button
-                  aria-label={bottomOpen ? "Collapse result panel" : "Expand result panel"}
-                  className="icon-button"
-                  onClick={onToggleBottom}
-                  type="button"
-                >
-                  {bottomOpen ? (
-                    <CaretDownIcon aria-hidden="true" size={16} />
-                  ) : (
-                    <CaretUpIcon aria-hidden="true" size={16} />
-                  )}
-                </button>
-              )}
+              <button
+                aria-label={bottomOpen ? "Collapse result panel" : "Expand result panel"}
+                className="icon-button"
+                onClick={onToggleBottom}
+                type="button"
+              >
+                {bottomOpen ? (
+                  <CaretDownIcon aria-hidden="true" size={16} />
+                ) : (
+                  <CaretUpIcon aria-hidden="true" size={16} />
+                )}
+              </button>
             </div>
           </div>
-
-          {bottomOpen && activePanel === "results" && (
-            <ResultPanel execution={activeExecution} runError={runError} />
-          )}
-          {bottomOpen && activePanel === "flow" && (
-            <PlanPanel
-              key={`explain-${flowFullscreen ? "fullscreen" : "panel"}`}
-              mode="explain"
-              currentSql={activeTab?.sql ?? ""}
-              onRun={runEstimate}
-              onSelectNode={(node) => {
-                if (
-                  !node ||
-                  !planStates.explain.sql ||
-                  !activeTab ||
-                  activeTab.sql !== planStates.explain.sql
-                ) {
-                  setPlanHighlight(null);
-                  return;
-                }
-                const range = mapPlanNodeToSql(node, planStates.explain.sql);
-                setPlanHighlight(range ? { tabId: activeTab.id, range } : null);
-              }}
-              state={planStates.explain}
-            />
-          )}
+          {bottomOpen && <ResultPanel execution={activeExecution} runError={runError} />}
         </div>
-        <ActualFlowWorkspace
-          currentSql={activeTab?.sql ?? ""}
-          onClose={() => setActualFlowOpen(false)}
-          onRun={runActualFlow}
-          open={actualFlowOpen}
-          state={planStates.profile}
-        />
+        {analysisMode && (
+          <QueryAnalysisWorkspace
+            currentSql={activeTab?.sql ?? ""}
+            mode={analysisMode}
+            onClose={() => setAnalysisMode(null)}
+            onRun={analysisMode === "explain" ? runEstimate : runActualFlow}
+            open
+            state={planStates[analysisMode]}
+          />
+        )}
       </section>
     );
   },
@@ -585,72 +458,4 @@ function ResultPanel({
         </div>
       );
   }
-}
-
-function PlanPanel({
-  currentSql,
-  mode,
-  onRun,
-  onSelectNode,
-  state,
-}: {
-  currentSql: string;
-  mode: "explain" | "profile";
-  onRun: () => void;
-  onSelectNode: (node: import("../../lib/commands").PlanNode | null) => void;
-  state: ReturnType<typeof useQueryPlan>["states"]["explain"];
-}) {
-  if (state.status === "loading") {
-    return (
-      <div className="flow-loading" role="status">
-        <span />
-        <span />
-        <span />
-        <strong>{mode === "profile" ? "Measuring actual flow" : "Building estimate"}</strong>
-      </div>
-    );
-  }
-  if (state.status === "error") {
-    return (
-      <div className="result-state">
-        <div className="ui-inline-error" role="alert">
-          <strong>Plan failed</strong>
-          <span>{state.error}</span>
-        </div>
-        <button className="toolbar-button" onClick={onRun} type="button">
-          Try again
-        </button>
-      </div>
-    );
-  }
-  if (state.status === "ready" && state.plan.mode === mode) {
-    return (
-      <div className="estimate-surface">
-        {state.sql !== currentSql && (
-          <div className="analysis-stale-banner" role="status">
-            <span>
-              <strong>Out of date.</strong> The editor SQL changed after this estimate.
-            </span>
-            <button className="toolbar-button" onClick={onRun} type="button">
-              Rebuild current SQL
-            </button>
-          </div>
-        )}
-        <QueryFlow onSelectNode={onSelectNode} plan={state.plan} />
-      </div>
-    );
-  }
-  return (
-    <div className="panel-placeholder">
-      <strong>{mode === "profile" ? "No actual flow yet" : "No estimate yet"}</strong>
-      <span>
-        {mode === "profile"
-          ? "Actual Flow runs the SQL using DuckDB Profile and shows measured rows, rows scanned, and operator time."
-          : "Estimate shows DuckDB's plan and row-count guesses without running the SQL."}
-      </span>
-      <button className="toolbar-button" onClick={onRun} type="button">
-        {mode === "profile" ? "Run Actual Flow" : "Build Estimate"}
-      </button>
-    </div>
-  );
 }

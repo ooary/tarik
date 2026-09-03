@@ -82,7 +82,7 @@ function App() {
   const [projectError, setProjectError] = useState<string | null>(null);
   const [preferencesReady, setPreferencesReady] = useState(false);
   const [preferences, setPreferences] = useState<WorkbenchPreferences>(defaultWorkbenchPreferences);
-  const { activeOutputPanel: activePanel, bottomPanelOpen: bottomOpen, sidebarOpen } = preferences;
+  const { bottomPanelOpen: bottomOpen, sidebarOpen } = preferences;
 
   function updatePreferences(patch: Partial<WorkbenchPreferences>) {
     setPreferences((current) => ({ ...current, ...patch }));
@@ -616,7 +616,6 @@ function App() {
 
         <div aria-hidden="true" className="sidebar-resize-handle" onPointerDown={resizeSidebar} />
         <QueryWorkspace
-          activePanel={activePanel}
           bottomOpen={bottomOpen}
           bottomPanelHeight={preferences.bottomPanelHeight}
           catalog={catalog}
@@ -624,7 +623,6 @@ function App() {
           onQuerySucceeded={() => (project ? refreshProjectData(project) : undefined)}
           onSetBottomHeight={(height) => updatePreferences({ bottomPanelHeight: height })}
           onToggleBottom={() => updatePreferences({ bottomPanelOpen: !bottomOpen })}
-          onUpdatePanel={(panel) => updatePreferences({ activeOutputPanel: panel })}
           projectId={project?.id ?? ""}
           ref={queryWorkspaceActionsRef}
         />

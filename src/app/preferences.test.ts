@@ -16,13 +16,11 @@ describe("workbench preference boundary", () => {
         theme: "contrast" as never,
         sidebarWidth: 20,
         bottomPanelHeight: 900,
-        activeOutputPanel: "messages" as never,
       }),
     ).toMatchObject({
       theme: "system",
       sidebarWidth: 220,
       bottomPanelHeight: 560,
-      activeOutputPanel: "results",
     });
   });
 
@@ -48,7 +46,6 @@ describe("workbench preference boundary", () => {
         bottomPanelHeight: 340,
         sidebarOpen: false,
         bottomPanelOpen: true,
-        activeOutputPanel: "flow",
       }),
     ).toEqual({
       theme: "dark",
@@ -56,7 +53,6 @@ describe("workbench preference boundary", () => {
       bottomPanelHeight: 340,
       sidebarOpen: false,
       bottomPanelOpen: true,
-      activeOutputPanel: "flow",
     });
   });
 });
