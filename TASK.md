@@ -1232,11 +1232,11 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
 
 ## EPIC E9.5 — Beginner SQL intelligence
 
-**Status:** `READY` - scope agreed after E9 approval; design and implementation not started.
+**Status:** `IN PROGRESS` - E9.5-T1 design complete; E9.5-T2 aggregate semantics is active.
 
 **Outcome:** Make SQL construction and pre-run correction approachable for beginners while preserving DuckDB's physical truth.
 
-- [ ] **E9.5-T1 Design semantic SQL intelligence boundaries**
+- [x] **E9.5-T1 Design semantic SQL intelligence boundaries**
   - Depends on: E5-T1, E7-T2, E7-T4
   - Owns: `docs/design/E9-5-DESIGN-GRAPH.md`
   - Deliverables:
@@ -1246,6 +1246,10 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: graph specifies exact success/failure/resource/test paths before implementation.
   - Tests: graph-protocol completeness review and fixture inventory.
   - Commit: `docs(design): define beginner SQL intelligence graph`
+  - Notes:
+    - Fixed three separate graphs for semantic plan expansion, catalog-aware completion, and no-execution diagnostics. Immutable SQL is now a required plan-normalization input because DuckDB positional details such as `#0`/`#1` cannot safely identify source expressions alone.
+    - Semantic concept nodes must have exactly one physical metric owner; Group and Count can be separate teaching steps backed by one native aggregate, while multiple calculations remain one non-sequential `Calculate summaries` node. Ambiguous semantics preserve the generic native operator and raw plan.
+    - Completion is catalog-revision scoped and conservative for aliases/unqualified columns. Diagnostics use per-statement `EXPLAIN (FORMAT JSON)` without ANALYZE, carry SQL revisions, accept only reliably mapped ranges, clear on edit, and require mutation-sentinel tests proving no user statement executes.
 
 - [ ] **E9.5-T2 Show specific grouping and aggregate calculations**
   - Depends on: E9.5-T1, E7-T2, E7-T3, E7-T4
