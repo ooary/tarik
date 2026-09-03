@@ -1258,7 +1258,41 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
     - Recognize aggregate-free grouping used for `DISTINCT` as `Remove duplicate result rows`; disclose redundant `DISTINCT` only when equivalence is mechanically provable.
     - Collapse DuckDB internal compression/decompression projections and retain raw/native details.
     - Keep actual operator time, rows scanned, cardinality, and estimate accuracy attached once to their native operation; conceptual child steps must not duplicate measured cost.
-  - Acceptance: the agreed example renders, in order, `Read data_2021 → Group rows by commodity → Count non-null market values per group → Remove duplicate result rows → Query result`, while raw plan remains inspectable.
+  - Agreed example:
+    ```sql
+    SELECT DISTINCT commodity, count(market)
+    FROM "main"."data_2021"
+    GROUP BY commodity;
+    ```
+  - Beginner flow must look like:
+    ```text
+    ┌──────────────────────────────────────────────┐
+    │ Read data_2021                               │
+    │ Use columns: commodity, market               │
+    └──────────────────────┬───────────────────────┘
+                           ↓
+    ┌──────────────────────────────────────────────┐
+    │ Group rows by commodity                      │
+    │ Make one group for each commodity            │
+    └──────────────────────┬───────────────────────┘
+                           ↓
+    ┌──────────────────────────────────────────────┐
+    │ Count non-null market values per group       │
+    │ COUNT(market) does not count NULL values     │
+    └──────────────────────┬───────────────────────┘
+                           ↓
+    ┌──────────────────────────────────────────────┐
+    │ Remove duplicate result rows                 │
+    │ DISTINCT; redundant after GROUP BY here      │
+    └──────────────────────┬───────────────────────┘
+                           ↓
+    ┌──────────────────────────────────────────────┐
+    │ Query result                                 │
+    │ Return: commodity, count(market)              │
+    └──────────────────────────────────────────────┘
+    ```
+  - Truthfulness note: `Group rows by commodity` and `Count non-null market values per group` are separate beginner concepts backed by the same DuckDB aggregate operator. They must not duplicate native timing, row counts, or imply two physical passes. `Remove duplicate result rows` appears because DuckDB plans `DISTINCT`; the redundant note appears only when equivalence is mechanically proven.
+  - Acceptance: the agreed example renders exactly in the order above while the raw plan and native aggregate details remain inspectable.
   - Tests: stable Explain/Profile fixtures for count variants, sum/average/min/max, multiple aggregates, grouped/ungrouped aggregate, DISTINCT, redundant DISTINCT, ambiguous expressions, and metric non-duplication.
   - Commit: `feat(flow): explain aggregate calculations explicitly`
 
