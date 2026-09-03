@@ -232,7 +232,7 @@ describe("QueryWorkspace", () => {
     expect(executeQuery).not.toHaveBeenCalled();
   });
 
-  it("runs Explain from the active editor and switches to Flow", async () => {
+  it("builds Estimate from the active editor and switches to Estimate", async () => {
     const onUpdatePanel = vi.fn();
     const ref = createRef<QueryWorkspaceHandle>();
     const { container } = render(
@@ -250,7 +250,7 @@ describe("QueryWorkspace", () => {
     );
     act(() => ref.current?.insertSql("SELECT * FROM orders"));
 
-    fireEvent.click(screen.getByRole("button", { name: "Explain" }));
+    fireEvent.click(screen.getByRole("button", { name: "Estimate" }));
     await waitFor(() =>
       expect(explainQueryPlan).toHaveBeenCalledWith("p1", "SELECT * FROM orders", "explain"),
     );
@@ -272,6 +272,37 @@ describe("QueryWorkspace", () => {
     expect(screen.getByText("~100 rows")).toBeInTheDocument();
   });
 
+  it("marks an old Estimate out of date and rebuilds current SQL explicitly", async () => {
+    const ref = createRef<QueryWorkspaceHandle>();
+    render(
+      <QueryWorkspace
+        activePanel="flow"
+        bottomOpen
+        bottomPanelHeight={292}
+        catalog={catalog}
+        onSetBottomHeight={vi.fn()}
+        onToggleBottom={vi.fn()}
+        onUpdatePanel={vi.fn()}
+        projectId="p1"
+        ref={ref}
+      />,
+    );
+    act(() => ref.current?.insertSql("SELECT * FROM orders"));
+    fireEvent.click(screen.getByRole("button", { name: "Estimate" }));
+    await screen.findByText("Read data");
+
+    act(() => ref.current?.insertSql("WHERE id = 2"));
+    expect(screen.getByText(/The editor SQL changed after this estimate/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Rebuild current SQL" }));
+    await waitFor(() =>
+      expect(explainQueryPlan).toHaveBeenLastCalledWith(
+        "p1",
+        "SELECT * FROM orders WHERE id = 2",
+        "explain",
+      ),
+    );
+  });
+
   it("opens Estimate fullscreen and exits with Escape", async () => {
     const ref = createRef<QueryWorkspaceHandle>();
     render(
@@ -288,7 +319,7 @@ describe("QueryWorkspace", () => {
       />,
     );
     act(() => ref.current?.insertSql("SELECT * FROM orders"));
-    fireEvent.click(screen.getByRole("button", { name: "Explain" }));
+    fireEvent.click(screen.getByRole("button", { name: "Estimate" }));
     await screen.findByText("Read data");
 
     fireEvent.click(screen.getByRole("button", { name: "Open fullscreen flow" }));
@@ -326,10 +357,31 @@ describe("QueryWorkspace", () => {
     expect(screen.queryByRole("dialog", { name: "Fullscreen query flow" })).not.toBeInTheDocument();
   });
 
-  it("offers fullscreen on Actual Flow", () => {
+  it("opens Actual Flow as a dedicated three-pane workspace", async () => {
+    vi.mocked(explainQueryPlan).mockResolvedValue({
+      mode: "profile",
+      nodes: [
+        {
+          id: "n0",
+          operator: "scan",
+          nativeName: "SEQ_SCAN",
+          source: "fixture.main.orders",
+          estimatedRows: 100,
+          actualRows: 2,
+          timingMs: 0.12,
+          rowsScanned: 100,
+          details: {},
+        },
+      ],
+      edges: [],
+      rootIds: ["n0"],
+      rawPlan: "[]",
+      fallbackReason: null,
+    });
+    const ref = createRef<QueryWorkspaceHandle>();
     render(
       <QueryWorkspace
-        activePanel="profile"
+        activePanel="results"
         bottomOpen
         bottomPanelHeight={292}
         catalog={catalog}
@@ -337,11 +389,24 @@ describe("QueryWorkspace", () => {
         onToggleBottom={vi.fn()}
         onUpdatePanel={vi.fn()}
         projectId="p1"
+        ref={ref}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Open fullscreen flow" }));
-    expect(screen.getByRole("dialog", { name: "Fullscreen query flow" })).toBeInTheDocument();
-    expect(screen.getByText("No actual flow yet")).toBeInTheDocument();
+    act(() => ref.current?.insertSql("SELECT * FROM orders"));
+    fireEvent.click(screen.getByRole("button", { name: "Actual Flow" }));
+
+    expect(await screen.findByRole("dialog", { name: "Actual Flow" })).toBeInTheDocument();
+    expect(screen.getByRole("complementary", { name: "Profiled SQL" })).toHaveTextContent(
+      "SELECT * FROM orders",
+    );
+    expect(screen.getByRole("main", { name: "Actual execution graph" })).toBeInTheDocument();
+    expect(screen.getByRole("complementary", { name: "Plan node inspector" })).toBeInTheDocument();
+    const node = await screen.findByText("Read data");
+    fireEvent.click(node);
+    expect(
+      screen.getByRole("complementary", { name: "Profiled SQL" }).querySelector("mark"),
+    ).toHaveTextContent("orders");
+    expect(screen.getByText("Operator time")).toBeInTheDocument();
   });
 
   it("highlights the mapped SQL range for a selected node and clears unmappable nodes", async () => {
@@ -391,7 +456,7 @@ describe("QueryWorkspace", () => {
       />,
     );
     act(() => ref.current?.insertSql("SELECT * FROM orders"));
-    fireEvent.click(screen.getByRole("button", { name: "Explain" }));
+    fireEvent.click(screen.getByRole("button", { name: "Estimate" }));
 
     const scanNode = await screen.findByText("Read data");
     fireEvent.click(scanNode);
@@ -417,7 +482,7 @@ describe("QueryWorkspace", () => {
     const ref = createRef<QueryWorkspaceHandle>();
     render(
       <QueryWorkspace
-        activePanel="profile"
+        activePanel="results"
         bottomOpen
         bottomPanelHeight={292}
         catalog={catalog}
@@ -431,7 +496,7 @@ describe("QueryWorkspace", () => {
     act(() => ref.current?.insertSql("SELECT * FROM orders"));
     const confirm = vi.spyOn(window, "confirm");
 
-    fireEvent.click(screen.getByRole("button", { name: "Run Actual Flow" }));
+    fireEvent.click(screen.getByRole("button", { name: "Actual Flow" }));
     await waitFor(() =>
       expect(explainQueryPlan).toHaveBeenCalledWith("p1", "SELECT * FROM orders", "profile"),
     );
@@ -439,11 +504,69 @@ describe("QueryWorkspace", () => {
     confirm.mockRestore();
   });
 
+  it("keeps the profiled SQL snapshot until Actual Flow explicitly reruns current SQL", async () => {
+    vi.mocked(explainQueryPlan).mockResolvedValue({
+      mode: "profile",
+      nodes: [
+        {
+          id: "n0",
+          operator: "scan",
+          nativeName: "SEQ_SCAN",
+          source: "fixture.main.orders",
+          estimatedRows: 10,
+          actualRows: 2,
+          timingMs: 0.1,
+          rowsScanned: 10,
+          details: {},
+        },
+      ],
+      edges: [],
+      rootIds: ["n0"],
+      rawPlan: "[]",
+      fallbackReason: null,
+    });
+    const ref = createRef<QueryWorkspaceHandle>();
+    render(
+      <QueryWorkspace
+        activePanel="results"
+        bottomOpen
+        bottomPanelHeight={292}
+        catalog={catalog}
+        onSetBottomHeight={vi.fn()}
+        onToggleBottom={vi.fn()}
+        onUpdatePanel={vi.fn()}
+        projectId="p1"
+        ref={ref}
+      />,
+    );
+    act(() => ref.current?.insertSql("SELECT * FROM orders"));
+    fireEvent.click(screen.getByRole("button", { name: "Actual Flow" }));
+    await screen.findByText("Read data");
+
+    act(() => ref.current?.insertSql("WHERE id = 2"));
+    expect(screen.getByText("Editor SQL changed")).toBeInTheDocument();
+    expect(screen.getByRole("complementary", { name: "Profiled SQL" })).toHaveTextContent(
+      "SELECT * FROM orders",
+    );
+    expect(screen.getByRole("complementary", { name: "Profiled SQL" })).not.toHaveTextContent(
+      "WHERE id = 2",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Run current SQL" }));
+    await waitFor(() =>
+      expect(explainQueryPlan).toHaveBeenLastCalledWith(
+        "p1",
+        "SELECT * FROM orders WHERE id = 2",
+        "profile",
+      ),
+    );
+  });
+
   it("requires confirmation before Actual Flow executes potentially mutating SQL", async () => {
     const ref = createRef<QueryWorkspaceHandle>();
     render(
       <QueryWorkspace
-        activePanel="profile"
+        activePanel="results"
         bottomOpen
         bottomPanelHeight={292}
         catalog={catalog}
@@ -458,12 +581,12 @@ describe("QueryWorkspace", () => {
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
     const callsBeforeCancel = vi.mocked(explainQueryPlan).mock.calls.length;
 
-    fireEvent.click(screen.getByRole("button", { name: "Run Actual Flow" }));
+    fireEvent.click(screen.getByRole("button", { name: "Actual Flow" }));
     expect(confirm).toHaveBeenCalledWith(expect.stringMatching(/executes this SQL.*may modify/s));
     expect(explainQueryPlan).toHaveBeenCalledTimes(callsBeforeCancel);
 
     confirm.mockReturnValue(true);
-    fireEvent.click(screen.getByRole("button", { name: "Run Actual Flow" }));
+    fireEvent.click(screen.getByRole("button", { name: "Actual Flow" }));
     await waitFor(() =>
       expect(explainQueryPlan).toHaveBeenCalledWith(
         "p1",
@@ -498,7 +621,7 @@ describe("QueryWorkspace", () => {
       />,
     );
     act(() => ref.current?.insertSql("SELECT 1"));
-    fireEvent.click(screen.getByRole("button", { name: "Explain" }));
+    fireEvent.click(screen.getByRole("button", { name: "Estimate" }));
     expect(await screen.findByText("Structured graph unavailable")).toBeInTheDocument();
     expect(screen.getByText("unknown structured shape")).toBeInTheDocument();
   });
@@ -519,11 +642,10 @@ describe("QueryWorkspace", () => {
       />,
     );
 
+    const planCallsBeforeRun = vi.mocked(explainQueryPlan).mock.calls.length;
     fireEvent.click(screen.getByRole("button", { name: /Run query/ }));
-    expect(onUpdatePanel).toHaveBeenCalledWith("flow");
-    await waitFor(() =>
-      expect(explainQueryPlan).toHaveBeenCalledWith("p1", expect.any(String), "explain"),
-    );
+    expect(onUpdatePanel).toHaveBeenCalledWith("results");
+    expect(explainQueryPlan).toHaveBeenCalledTimes(planCallsBeforeRun);
     await waitFor(() =>
       expect(executeQuery).toHaveBeenCalledWith("p1", expect.any(String), expect.any(String)),
     );
@@ -769,7 +891,7 @@ describe("QueryWorkspace", () => {
 
     fireEvent.contextMenu(screen.getByRole("tab", { name: /Revenue query/ }));
     fireEvent.click(await screen.findByRole("menuitem", { name: "Duplicate" }));
-    expect(screen.getAllByRole("tab")).toHaveLength(5); // 2 query tabs + 3 output tabs
+    expect(screen.getAllByRole("tab")).toHaveLength(4); // 2 query tabs + 3 output tabs
 
     fireEvent.contextMenu(screen.getByRole("tab", { name: /Revenue query copy/ }));
     fireEvent.click(await screen.findByRole("menuitem", { name: "Close" }));

@@ -13,6 +13,7 @@ import * as Tabs from "@radix-ui/react-tabs";
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { ContextMenu } from "../../components/ui";
 import type { ProjectCatalog } from "../../lib/commands";
+import { ActualFlowWorkspace } from "../query-flow/ActualFlowWorkspace";
 import { QueryFlow } from "../query-flow/QueryFlow";
 import { mapPlanNodeToSql, type SqlRange } from "../query-flow/sqlMapping";
 import { useQueryPlan } from "../query-flow/useQueryPlan";
@@ -24,7 +25,7 @@ import type { SqlTable } from "./sqlCompletion";
 import { countSqlStatements, isClearlyReadOnlySql } from "./sqlText";
 import { useQueryTabs } from "./useQueryTabs";
 
-type Panel = "results" | "flow" | "profile";
+type Panel = "results" | "flow";
 
 export interface QueryWorkspaceHandle {
   insertSql(text: string): void;
@@ -75,7 +76,7 @@ export const QueryWorkspace = forwardRef<QueryWorkspaceHandle, QueryWorkspacePro
     const fullscreenButtonRef = useRef<HTMLButtonElement>(null);
     const { executions, run, cancel, forget } = useQueryExecution(projectId, onQuerySucceeded);
     const [runError, setRunError] = useState<string | null>(null);
-    const [autoRunPending, setAutoRunPending] = useState(false);
+    const [actualFlowOpen, setActualFlowOpen] = useState(false);
     const [flowFullscreen, setFlowFullscreen] = useState(false);
     const [planHighlight, setPlanHighlight] = useState<{ tabId: string; range: SqlRange } | null>(
       null,
@@ -123,28 +124,28 @@ export const QueryWorkspace = forwardRef<QueryWorkspaceHandle, QueryWorkspacePro
     };
 
     const runActiveTab = () => {
-      if (!projectId || !activeTab || executionActive || autoRunPending) return;
+      if (!projectId || !activeTab || executionActive) return;
       const { id: tabId, sql } = activeTab;
       setRunError(null);
       setPlanHighlight(null);
-      setAutoRunPending(true);
-      updateOutputPanel("flow");
+      updateOutputPanel("results");
       if (!bottomOpen) onToggleBottom();
-      // Explain is non-executing and deliberately completes before the real
-      // submission. This gives Run an estimated path animation without ever
-      // profiling or executing DDL/DML twice.
-      void runPlan(sql, "explain")
-        .then(() => run(tabId, sql))
-        .catch((error: unknown) => {
-          setRunError(error instanceof Error ? error.message : String(error));
-        })
-        .finally(() => setAutoRunPending(false));
+      run(tabId, sql).catch((error: unknown) => {
+        setRunError(error instanceof Error ? error.message : String(error));
+      });
     };
 
-    const runActivePlan = (mode: "explain" | "profile") => {
+    const runEstimate = () => {
+      if (!projectId || !activeTab || !activeTab.sql.trim()) return;
+      setPlanHighlight(null);
+      updateOutputPanel("flow");
+      if (!bottomOpen) onToggleBottom();
+      void runPlan(activeTab.sql, "explain");
+    };
+
+    const runActualFlow = () => {
       if (!projectId || !activeTab || !activeTab.sql.trim()) return;
       if (
-        mode === "profile" &&
         !isClearlyReadOnlySql(activeTab.sql) &&
         !window.confirm(
           "Run Actual Flow?\n\nActual Flow executes this SQL to collect operator metrics. INSERT, UPDATE, DELETE, CREATE, ALTER, and DROP may modify your project.",
@@ -152,10 +153,8 @@ export const QueryWorkspace = forwardRef<QueryWorkspaceHandle, QueryWorkspacePro
       ) {
         return;
       }
-      setPlanHighlight(null);
-      updateOutputPanel(mode === "explain" ? "flow" : "profile");
-      if (!bottomOpen) onToggleBottom();
-      void runPlan(activeTab.sql, mode);
+      setActualFlowOpen(true);
+      void runPlan(activeTab.sql, "profile");
     };
 
     const closeTabAndForget = (tabId: string) => {
@@ -293,23 +292,23 @@ export const QueryWorkspace = forwardRef<QueryWorkspaceHandle, QueryWorkspacePro
         <div className="editor-toolbar">
           <div className="toolbar-group">
             <button
-              aria-label={autoRunPending ? "Preparing query flow" : "Run query"}
+              aria-label="Run query"
               className="run-button"
-              disabled={executionActive || autoRunPending || !activeTab || !projectId}
+              disabled={executionActive || !activeTab || !projectId}
               onClick={runActiveTab}
               type="button"
             >
               <PlayIcon aria-hidden="true" size={14} weight="fill" />
-              {autoRunPending ? "Preparing flow" : "Run query"} <kbd>Ctrl</kbd>
+              Run query <kbd>Ctrl</kbd>
               <kbd>Enter</kbd>
             </button>
             <button
               className="toolbar-button"
               disabled={!activeTab?.sql.trim() || planStates.explain.status === "loading"}
-              onClick={() => runActivePlan("explain")}
+              onClick={runEstimate}
               type="button"
             >
-              Explain
+              Estimate
             </button>
             <SavedQueryLibrary
               activeSql={activeTab?.sql ?? ""}
@@ -317,6 +316,14 @@ export const QueryWorkspace = forwardRef<QueryWorkspaceHandle, QueryWorkspacePro
               onOpenSql={(sql, title) => addTab(sql, title)}
               projectId={projectId}
             />
+            <button
+              className="toolbar-button"
+              disabled={!activeTab?.sql.trim() || planStates.profile.status === "loading"}
+              onClick={runActualFlow}
+              type="button"
+            >
+              Actual Flow
+            </button>
           </div>
           <div className="toolbar-group toolbar-group-right">
             {saveError && (
@@ -391,13 +398,6 @@ export const QueryWorkspace = forwardRef<QueryWorkspaceHandle, QueryWorkspacePro
                 >
                   Estimate
                 </Tabs.Trigger>
-                <Tabs.Trigger
-                  className="result-tab"
-                  onClick={() => updateOutputPanel("profile")}
-                  value="profile"
-                >
-                  Actual Flow
-                </Tabs.Trigger>
               </Tabs.List>
             </Tabs.Root>
             <div className="results-actions">
@@ -451,7 +451,8 @@ export const QueryWorkspace = forwardRef<QueryWorkspaceHandle, QueryWorkspacePro
             <PlanPanel
               key={`explain-${flowFullscreen ? "fullscreen" : "panel"}`}
               mode="explain"
-              onRun={() => runActivePlan("explain")}
+              currentSql={activeTab?.sql ?? ""}
+              onRun={runEstimate}
               onSelectNode={(node) => {
                 if (
                   !node ||
@@ -468,28 +469,14 @@ export const QueryWorkspace = forwardRef<QueryWorkspaceHandle, QueryWorkspacePro
               state={planStates.explain}
             />
           )}
-          {bottomOpen && activePanel === "profile" && (
-            <PlanPanel
-              key={`profile-${flowFullscreen ? "fullscreen" : "panel"}`}
-              mode="profile"
-              onRun={() => runActivePlan("profile")}
-              onSelectNode={(node) => {
-                if (
-                  !node ||
-                  !planStates.profile.sql ||
-                  !activeTab ||
-                  activeTab.sql !== planStates.profile.sql
-                ) {
-                  setPlanHighlight(null);
-                  return;
-                }
-                const range = mapPlanNodeToSql(node, planStates.profile.sql);
-                setPlanHighlight(range ? { tabId: activeTab.id, range } : null);
-              }}
-              state={planStates.profile}
-            />
-          )}
         </div>
+        <ActualFlowWorkspace
+          currentSql={activeTab?.sql ?? ""}
+          onClose={() => setActualFlowOpen(false)}
+          onRun={runActualFlow}
+          open={actualFlowOpen}
+          state={planStates.profile}
+        />
       </section>
     );
   },
@@ -601,11 +588,13 @@ function ResultPanel({
 }
 
 function PlanPanel({
+  currentSql,
   mode,
   onRun,
   onSelectNode,
   state,
 }: {
+  currentSql: string;
   mode: "explain" | "profile";
   onRun: () => void;
   onSelectNode: (node: import("../../lib/commands").PlanNode | null) => void;
@@ -635,7 +624,21 @@ function PlanPanel({
     );
   }
   if (state.status === "ready" && state.plan.mode === mode) {
-    return <QueryFlow onSelectNode={onSelectNode} plan={state.plan} />;
+    return (
+      <div className="estimate-surface">
+        {state.sql !== currentSql && (
+          <div className="analysis-stale-banner" role="status">
+            <span>
+              <strong>Out of date.</strong> The editor SQL changed after this estimate.
+            </span>
+            <button className="toolbar-button" onClick={onRun} type="button">
+              Rebuild current SQL
+            </button>
+          </div>
+        )}
+        <QueryFlow onSelectNode={onSelectNode} plan={state.plan} />
+      </div>
+    );
   }
   return (
     <div className="panel-placeholder">

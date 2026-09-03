@@ -1,5 +1,5 @@
 export type ThemePreference = "system" | "light" | "dark";
-export type OutputPanel = "results" | "flow" | "profile";
+export type OutputPanel = "results" | "flow";
 
 export interface WorkbenchPreferences {
   theme: ThemePreference;
@@ -54,9 +54,7 @@ export function normalizeWorkbenchPreferences(
     sidebarOpen: typeof value?.sidebarOpen === "boolean" ? value.sidebarOpen : true,
     bottomPanelOpen: typeof value?.bottomPanelOpen === "boolean" ? value.bottomPanelOpen : true,
     activeOutputPanel:
-      activeOutputPanel === "flow" ||
-      activeOutputPanel === "profile" ||
-      activeOutputPanel === "results"
+      activeOutputPanel === "flow" || activeOutputPanel === "results"
         ? activeOutputPanel
         : "results",
   };

@@ -666,7 +666,8 @@ kbd {
   height: 43px;
 }
 
-body:has(.bottom-panel-flow-fullscreen) {
+body:has(.bottom-panel-flow-fullscreen),
+body:has(.actual-flow-workspace) {
   overflow: hidden;
 }
 
@@ -1072,11 +1073,181 @@ tbody tr:hover {
   }
 }
 
+.actual-flow-overlay {
+  position: fixed;
+  z-index: 26;
+  inset: 0;
+  background: rgb(10 15 12 / 52%);
+}
+
+.actual-flow-workspace {
+  position: fixed;
+  z-index: 27;
+  inset: 12px;
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  grid-template-rows: 54px minmax(0, 1fr);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-control);
+  color: var(--text-primary);
+  background: var(--surface-raised);
+  box-shadow: 0 18px 60px rgb(8 13 10 / 30%);
+  overflow: hidden;
+}
+
+.actual-flow-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid var(--border-default);
+  padding: 8px 10px 8px 14px;
+}
+
+.actual-flow-header h2,
+.actual-flow-header p {
+  margin: 0;
+}
+
+.actual-flow-header h2 {
+  font-size: 15px;
+}
+
+.actual-flow-header p {
+  margin-top: 3px;
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.actual-flow-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.analysis-stale-label {
+  color: var(--status-warning);
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.actual-flow-body {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  grid-template-columns: minmax(210px, 0.27fr) minmax(340px, 1fr) minmax(230px, 0.31fr);
+}
+
+.profiled-sql-panel {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  border-right: 1px solid var(--border-default);
+  background: var(--surface-sidebar);
+}
+
+.profiled-sql-panel > header,
+.profiled-sql-panel > footer {
+  display: grid;
+  gap: 2px;
+  padding: 10px 12px;
+}
+
+.profiled-sql-panel > header {
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.profiled-sql-panel > header strong {
+  font-size: 11px;
+}
+
+.profiled-sql-panel > header span,
+.profiled-sql-panel > footer {
+  color: var(--text-muted);
+  font-size: 9px;
+}
+
+.profiled-sql-panel > footer {
+  border-top: 1px solid var(--border-subtle);
+  line-height: 1.4;
+}
+
+.profiled-sql-panel pre {
+  min-height: 0;
+  overflow: auto;
+  margin: 0;
+  padding: 14px 12px;
+  color: var(--code-text);
+  background: var(--surface-editor);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+}
+
+.profiled-sql-panel mark {
+  border-radius: 2px;
+  color: inherit;
+  background: color-mix(in srgb, var(--accent-solid) 30%, transparent);
+  outline: 1px solid color-mix(in srgb, var(--accent-solid) 55%, transparent);
+}
+
+.actual-flow-graph {
+  min-width: 0;
+  min-height: 0;
+  background: var(--surface-editor);
+}
+
+.actual-flow-graph .query-flow-shell,
+.actual-flow-graph .query-flow,
+.actual-flow-graph .flow-loading,
+.actual-flow-graph .result-state,
+.actual-flow-graph .panel-placeholder,
+.actual-flow-graph .flow-fallback {
+  height: 100%;
+}
+
+.actual-flow-body > .flow-inspector {
+  border-right: 0;
+  border-left: 1px solid var(--border-default);
+}
+
+.estimate-surface {
+  display: grid;
+  height: calc(100% - 42px);
+  min-height: 0;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.estimate-surface .query-flow-shell {
+  height: 100%;
+}
+
+.analysis-stale-banner {
+  display: flex;
+  min-height: 36px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--border-subtle);
+  padding: 4px 10px;
+  color: var(--status-warning);
+  background: var(--status-warning-surface);
+  font-size: 10px;
+}
+
 .query-flow-shell {
   display: grid;
   height: calc(100% - 42px);
   min-height: 0;
   grid-template-columns: minmax(0, 1fr) 280px;
+}
+
+.query-flow-shell-graph-only {
+  height: 100%;
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .query-flow {
@@ -1493,5 +1664,17 @@ tbody tr:hover {
 @media (max-width: 900px) {
   .query-flow-shell {
     grid-template-columns: minmax(0, 1fr) 220px;
+  }
+
+  .query-flow-shell-graph-only {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .actual-flow-workspace {
+    inset: 6px;
+  }
+
+  .actual-flow-body {
+    grid-template-columns: minmax(180px, 0.26fr) minmax(280px, 1fr) minmax(200px, 0.3fr);
   }
 }

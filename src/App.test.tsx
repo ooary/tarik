@@ -552,10 +552,8 @@ describe("Tarik workbench shell", () => {
     fireEvent.click(screen.getByRole("tab", { name: "Estimate" }));
     expect(screen.getByText("No estimate yet")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Build Estimate" })).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("tab", { name: "Actual Flow" }));
-    expect(screen.getByText("No actual flow yet")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Run Actual Flow" })).toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Actual Flow" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Actual Flow" })).toBeInTheDocument();
   });
 
   it("collapses and expands the bottom panel", () => {

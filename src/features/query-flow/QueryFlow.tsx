@@ -24,25 +24,30 @@ function QueryFlowCanvas({
   layout,
   onSelectNode,
   plan,
+  selectedNodeId,
+  showInspector,
 }: {
   layout: ReturnType<typeof layoutPlan>;
   onSelectNode?: (node: PlanNode | null) => void;
   plan: QueryPlan;
+  selectedNodeId?: string | null;
+  showInspector: boolean;
 }) {
   const flow = useReactFlow();
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [internalSelectedId, setInternalSelectedId] = useState<string | null>(null);
+  const selectedId = selectedNodeId === undefined ? internalSelectedId : selectedNodeId;
   const selected = plan.nodes.find((node) => node.id === selectedId) ?? null;
   const visibleNodes = useMemo(
     () => layout.nodes.map((node) => ({ ...node, selected: node.id === selectedId })),
     [layout.nodes, selectedId],
   );
   const selectNode = (node: PlanNode | null) => {
-    setSelectedId(node?.id ?? null);
+    if (selectedNodeId === undefined) setInternalSelectedId(node?.id ?? null);
     onSelectNode?.(node);
   };
 
   return (
-    <div className="query-flow-shell">
+    <div className={`query-flow-shell ${showInspector ? "" : "query-flow-shell-graph-only"}`}>
       <div className="query-flow" data-mode={plan.mode}>
         <ReactFlow
           aria-label={`${plan.mode === "profile" ? "Actual" : "Estimated"} query flow`}
@@ -89,7 +94,7 @@ function QueryFlowCanvas({
           </span>
         </div>
       </div>
-      <NodeInspector mode={plan.mode} node={selected} />
+      {showInspector && <NodeInspector mode={plan.mode} node={selected} />}
     </div>
   );
 }
@@ -97,9 +102,13 @@ function QueryFlowCanvas({
 export function QueryFlow({
   onSelectNode,
   plan,
+  selectedNodeId,
+  showInspector = true,
 }: {
   onSelectNode?: (node: PlanNode | null) => void;
   plan: QueryPlan;
+  selectedNodeId?: string | null;
+  showInspector?: boolean;
 }) {
   const layout = useMemo(() => layoutPlan(plan.nodes, plan.edges), [plan]);
   if (plan.fallbackReason || plan.nodes.length === 0) {
@@ -117,7 +126,13 @@ export function QueryFlow({
 
   return (
     <ReactFlowProvider>
-      <QueryFlowCanvas layout={layout} onSelectNode={onSelectNode} plan={plan} />
+      <QueryFlowCanvas
+        layout={layout}
+        onSelectNode={onSelectNode}
+        plan={plan}
+        selectedNodeId={selectedNodeId}
+        showInspector={showInspector}
+      />
     </ReactFlowProvider>
   );
 }

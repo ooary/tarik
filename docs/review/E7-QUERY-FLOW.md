@@ -44,25 +44,27 @@ Open a project with at least two imported or linked relations. The checks below 
 4. Confirm a restrained pulse travels once from source to result and each reached node gets a brief border cue. The animation must not loop.
 5. Confirm later group/sort/limit/result steps continue toward the right.
 6. Pan, zoom, fit, and select nodes. Confirm controls remain compact and the graph remains readable.
-7. Click **Open fullscreen** in Estimate. Confirm the graph, output tabs, controls, and inspector fill the application viewport while the editor remains unchanged behind the overlay.
+7. Click **Open fullscreen** in Estimate. Confirm its graph, controls, and inspector fill the application viewport while the editor remains unchanged behind the overlay.
 8. Confirm the graph refits to the larger canvas and a complex plan has substantially more room for nodes.
 9. Click **Present**. Confirm the graph smoothly focuses the upper-left source operation, selects its node, and opens its inspector. For a join with multiple sources, confirm the upper-left source is chosen consistently.
-10. Repeat Present in normal and fullscreen views. Confirm it works in both Estimate and Actual Flow.
-11. Switch between Estimate and Actual Flow while fullscreen. Confirm fullscreen remains active and each graph retains its state.
+10. Repeat Present in normal/fullscreen Estimate and in the Actual Flow graph. Confirm it works in every graph surface.
+11. Close Estimate fullscreen, then open Actual Flow from the editor toolbar. Confirm Actual Flow uses its dedicated three-pane viewport workspace.
 12. Press `Esc` and confirm the normal bottom panel returns with keyboard focus on the fullscreen button.
 13. Reopen fullscreen, then switch to Results. Confirm fullscreen exits automatically.
-14. Confirm Actual Flow offers the same fullscreen action, including empty/loading/error states.
+14. Confirm Actual Flow itself is viewport-sized and its empty/loading/error states preserve the three-pane workspace.
 15. Resize the normal bottom panel and app window. Confirm no node/inspector content overlaps outside the panel.
 16. Enable reduced motion at OS/browser level and reopen Estimate. Confirm connectors remain visible, traversal motion is suppressed, and Present focuses the start node without animated travel.
 
-## 3. Automatic Estimate on Run
+## 3. Explicit query destinations
 
-1. Return to Results, then click **Run query** on a harmless read query.
-2. Confirm Tarik immediately opens Estimate and briefly shows **Preparing flow** while capturing a non-executing plan.
-3. Confirm the graph appears and animates, then the real query starts exactly once.
-4. Confirm the Result tab still contains the normal running/succeeded result and can be selected at any time.
-5. Run a harmless DDL statement and confirm it takes effect exactly once, not twice. Automatic Estimate must use Explain, never Actual Flow/Profile.
-6. Use invalid SQL. Confirm the Estimate error is visible and the actual execution still reports its normal structured SQL error.
+1. Click **Run query** on current SQL. Confirm Tarik stays on or opens **Results**, executes SQL exactly once, and does not call Estimate or Actual Flow.
+2. Click the bottom **Estimate** tab. Confirm it navigates only; use the toolbar **Estimate** action or **Build Estimate** to capture current SQL without execution.
+3. Change the source table in the editor. Confirm an existing Estimate says **Out of date** and remains tied to its older SQL until **Rebuild current SQL**.
+4. Click **Actual Flow** beside Query Library. Confirm it profiles the current editor SQL and opens a dedicated analysis workspace.
+5. Confirm the workspace has three visible panes: immutable **Profiled SQL** on the left, execution graph in the center, and operation details on the right.
+6. Change editor SQL after profiling. Confirm the workspace says **Editor SQL changed**, keeps the old profiled SQL snapshot, and does not silently replace its graph.
+7. Click **Run current SQL**. Confirm Actual Flow profiles the new current SQL only after this explicit action.
+8. Run a harmless DDL statement with normal Run and confirm it executes once. Run Actual Flow only after accepting its mutation warning.
 
 ## 4. Beginner inspector and interpreted operators
 
@@ -83,8 +85,8 @@ Open a project with at least two imported or linked relations. The checks below 
 
 ## 5. Actual Flow executes and reports measured metrics
 
-1. Use a read-only query first and open **Actual Flow**.
-2. Click **Run Actual Flow**.
+1. Use a read-only query first and click the toolbar **Actual Flow** action.
+2. Confirm the dedicated workspace opens and profiles that current SQL. Use **Run current SQL** for later reruns.
 3. Confirm the panel says **Actual Flow · DuckDB Profile**, shows measured output, rows scanned, and explicit **Operator time** where DuckDB reports it.
 4. On operators where DuckDB reports both values, confirm nodes show `Est. ~N · Actual N` plus a textual estimate-accuracy badge:
    - difference below `10×` → green;
@@ -112,7 +114,7 @@ Open a project with at least two imported or linked relations. The checks below 
 
 ## 7. Fallback and error resilience
 
-1. Confirm empty Estimate/Actual Flow tabs show explicit Build Estimate/Run Actual Flow actions.
+1. Confirm empty Estimate shows Build Estimate, and the Actual Flow workspace shows one Run current SQL action.
 2. Confirm loading state appears while an Estimate/Actual Flow is being captured.
 3. If a future or malformed native plan is encountered, confirm Tarik shows **Structured graph unavailable** with the raw plan rather than crashing or inventing nodes.
 4. Confirm closing/reopening the project still permits normal query execution after Estimate/Actual Flow use.
@@ -132,7 +134,7 @@ Open a project with at least two imported or linked relations. The checks below 
 
 - [ ] Estimate semantics and labeling approved
 - [ ] Join graph/connectors/traversal and controls approved
-- [ ] Automatic Estimate on Run approved
+- [ ] Explicit Run query / Estimate / Actual Flow destinations approved
 - [ ] Beginner inspector/details approved
 - [ ] Actual Flow execution and actual labeling approved
 - [ ] Best-effort SQL highlighting approved
