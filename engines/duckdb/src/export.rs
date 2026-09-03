@@ -189,6 +189,9 @@ impl<'a> ChunkedExportWriter<'a> {
         if self.current_rows > 0 {
             self.complete_current()?;
         }
+        if self.options.overwrite == ExportOverwritePolicy::Replace {
+            remove_stale_replaced_parts(self.options, self.next_part)?;
+        }
         Ok(ExportOutcome {
             rows_written: self.rows_written,
             files_written: self.files_written,
@@ -196,6 +199,47 @@ impl<'a> ChunkedExportWriter<'a> {
             completed_parts: self.completed_parts.into_iter().collect(),
         })
     }
+}
+
+fn remove_stale_replaced_parts(
+    options: &ValidatedExportOptions,
+    first_stale_part: u64,
+) -> Result<(), EngineError> {
+    let prefix = format!("{}-part-", options.base_name);
+    let suffix = format!(".{}", options.format.extension());
+    let entries =
+        fs::read_dir(&options.output_directory).map_err(|source| EngineError::ExportIo {
+            path: options.output_directory.clone(),
+            source,
+        })?;
+    for entry in entries {
+        let entry = entry.map_err(|source| EngineError::ExportIo {
+            path: options.output_directory.clone(),
+            source,
+        })?;
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else {
+            continue;
+        };
+        let Some(sequence) = name
+            .strip_prefix(&prefix)
+            .and_then(|rest| rest.strip_suffix(&suffix))
+            .filter(|value| !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit()))
+            .and_then(|value| value.parse::<u64>().ok())
+        else {
+            continue;
+        };
+        let canonical_name = options
+            .part_file_name(sequence)
+            .map_err(|error| EngineError::ExportInvalid(error.to_string()))?;
+        if name == canonical_name && sequence >= first_stale_part && entry.path().is_file() {
+            fs::remove_file(entry.path()).map_err(|source| EngineError::ExportIo {
+                path: entry.path(),
+                source,
+            })?;
+        }
+    }
+    Ok(())
 }
 
 struct PartWriter {
@@ -598,6 +642,36 @@ mod tests {
             .unwrap();
         assert_eq!(text, "i\n42\n");
         assert_eq!(fs::read_dir(&directory).unwrap().count(), 1);
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn replace_removes_stale_trailing_parts_only_after_success() {
+        let directory = output_dir("replace-tail");
+        execute_export(
+            &connection(),
+            "SELECT i FROM range(0, 5) t(i)",
+            csv_options(&directory, 2),
+        )
+        .unwrap();
+        assert!(directory.join("orders-part-00003.csv").is_file());
+        fs::write(directory.join("orders-part-not-a-sequence.csv"), "keep\n").unwrap();
+        fs::write(directory.join("another-part-00003.csv"), "keep\n").unwrap();
+
+        let mut replace = csv_options(&directory, 2);
+        replace.overwrite = ExportOverwritePolicy::Replace;
+        execute_export(&connection(), "SELECT i FROM range(0, 3) t(i)", replace).unwrap();
+        assert!(directory.join("orders-part-00001.csv").is_file());
+        assert!(directory.join("orders-part-00002.csv").is_file());
+        assert!(!directory.join("orders-part-00003.csv").exists());
+        assert!(directory.join("orders-part-not-a-sequence.csv").is_file());
+        assert!(directory.join("another-part-00003.csv").is_file());
+
+        let mut replace_empty = csv_options(&directory, 2);
+        replace_empty.overwrite = ExportOverwritePolicy::Replace;
+        execute_export(&connection(), "SELECT i FROM range(0) t(i)", replace_empty).unwrap();
+        assert!(!directory.join("orders-part-00001.csv").exists());
+        assert!(!directory.join("orders-part-00002.csv").exists());
         fs::remove_dir_all(directory).unwrap();
     }
 
