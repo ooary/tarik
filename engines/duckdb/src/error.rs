@@ -25,6 +25,12 @@ pub enum EngineError {
     ExecutionExists(String),
     #[error("execution does not exist: {0}")]
     ExecutionMissing(String),
+    #[error("export already exists: {0}")]
+    ExportExists(String),
+    #[error("export does not exist: {0}")]
+    ExportMissing(String),
+    #[error("export was cancelled")]
+    ExportCancelled,
     #[error("result does not exist: {0}")]
     ResultMissing(String),
     #[error("invalid query request: {0}")]
@@ -92,6 +98,9 @@ impl EngineError {
             Self::SessionMissing(_) => "session.missing",
             Self::ExecutionExists(_) => "execution.exists",
             Self::ExecutionMissing(_) => "execution.missing",
+            Self::ExportExists(_) => "export.exists",
+            Self::ExportMissing(_) => "export.missing",
+            Self::ExportCancelled => "export.cancelled",
             Self::ResultMissing(_) => "result.missing",
             Self::InvalidQuery(_) => "query.invalid",
             Self::WorkerSpawn(_) => "engine.worker_spawn",

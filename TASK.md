@@ -1198,7 +1198,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
     - `ChunkedExportWriter` slices batches at remaining part capacity. Every non-final part has exactly `rowsPerPart`, exact boundaries create no empty trailing file, and zero rows create zero files. CSV writes the configured header in every part; Parquet uses bounded 4 MiB row groups and configurable uncompressed/Snappy/Gzip/Zstd encoding.
     - Each part writes to an engine-generated hidden create-new stage, closes before publication, and returns a bounded path/rows/bytes summary. Fail-if-exists preserves collisions; replace publishes only a completed stage. RAII removes incomplete stages. CSV/Parquet readback tests cover zero, exact, boundary+1, one large batch, many batches, custom delimiter/header, collision/replace, row order, and one-shot multi-statement behavior.
 
-- [ ] **E9-T3 Add export progress, cancellation, and partial-failure policy**
+- [x] **E9-T3 Add export progress, cancellation, and partial-failure policy**
   - Depends on: E9-T2, E2-T5
   - Owns: export worker events, history integration
   - Deliverables:
@@ -1208,6 +1208,11 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: worker and project remain usable after cancel/disk failure.
   - Tests: cancellation, permission failure, simulated disk full, cleanup.
   - Commit: `feat(export): add resilient export lifecycle`
+  - Notes:
+    - Added asynchronous sidecar `export.execute/status/cancel` methods with one FIFO worker per engine session, keeping the protocol loop responsive and bounding concurrent Arrow writers. Status exposes exact rows/files/bytes, elapsed time, current part, structured error, and at most 100 recent completed-part summaries; terminal jobs are bounded to 32.
+    - Running cancellation installs DuckDB's interrupt handle and also checks between streamed batch slices. Queued cancellation removes work before it starts; repeats are idempotent; session close requests all export cancellation. Panic, DuckDB, validation, collision, writer, and filesystem failures become structured terminal states without poisoning the session.
+    - Hidden current stages are removed by RAII on cancel/failure, while published parts remain valid. Deterministic observer tests simulate disk-full and cancellation after one completed part; protocol tests cover preflight with no SQL/files, active/queued cancellation, no stage leaks, terminal idempotence, and session reuse.
+    - Added desktop `ExportCoordinator` with active-project ownership checks, canonical preflight, bounded polling, and exactly-once immutable terminal SQLite history. Migration 7 stores SQL/options, duration, exact counters, structured error code/message, and completed parts. The prior frontend-writable export-history mutation command was removed.
 
 - [ ] **E9-T4 Build export dialog and completion summary**
   - Depends on: E9-T1, E9-T3, E1-T1

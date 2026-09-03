@@ -249,6 +249,40 @@ test("history retention and clear use isolated typed commands", async () => {
   );
 });
 
+test("exports use typed lifecycle commands", async () => {
+  const { executeExport, getExportStatus, cancelExport } = await loadCommandsModule();
+  const calls = [];
+  const options = {
+    format: "parquet",
+    outputDirectory: "/exports",
+    baseName: "orders",
+    rowsPerPart: 1000,
+    overwrite: "fail_if_exists",
+    csv: null,
+    parquet: { compression: "snappy" },
+  };
+  const view = { exportId: "x1", state: "queued" };
+  const invoke = async (command, args) => {
+    calls.push({ command, args });
+    return view;
+  };
+
+  await executeExport("p1", "SELECT * FROM orders", options, invoke);
+  await getExportStatus("x1", invoke);
+  await cancelExport("x1", invoke);
+  assert.equal(
+    JSON.stringify(calls),
+    JSON.stringify([
+      {
+        command: "execute_export",
+        args: { projectId: "p1", sql: "SELECT * FROM orders", options },
+      },
+      { command: "get_export_status", args: { exportId: "x1" } },
+      { command: "cancel_export", args: { exportId: "x1" } },
+    ]),
+  );
+});
+
 test("session snapshots use typed metadata commands", async () => {
   const { saveQuerySession, loadQuerySession } = await loadCommandsModule();
   const snapshot = {

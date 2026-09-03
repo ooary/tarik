@@ -1,6 +1,7 @@
 mod catalog;
 mod error;
 pub mod export;
+mod export_jobs;
 mod jobs;
 mod pages;
 mod session;
@@ -50,6 +51,7 @@ fn dispatch(
     request: &RequestEnvelope,
     sessions: &mut session::SessionManager,
     jobs: &std::sync::Arc<jobs::JobRegistry>,
+    exports: &std::sync::Arc<export_jobs::ExportRegistry>,
 ) -> Result<Value, EngineError> {
     let params = &request.params;
     match request.method.as_str() {
@@ -175,6 +177,7 @@ fn dispatch(
             let session_id = required_string(params, "sessionId")?;
             // Cancel queued/running jobs first so closing cannot strand work.
             jobs.cancel_session(&session_id);
+            exports.cancel_session(&session_id);
             sessions.close(&session_id)?;
             Ok(Value::Null)
         }
@@ -195,6 +198,31 @@ fn dispatch(
                 "executionId": execution_id,
                 "state": "queued",
             }))
+        }
+        "export.execute" => {
+            let session_id = required_string(params, "sessionId")?;
+            let export_id = required_string(params, "exportId")?;
+            let sql = required_string(params, "sql")?;
+            let options: tarik_engine_protocol::ExportOptions = serde_json::from_value(
+                params
+                    .get("options")
+                    .cloned()
+                    .ok_or_else(|| EngineError::MissingField("options".into()))?,
+            )?;
+            let connection = sessions.get(&session_id)?.try_clone()?;
+            exports.execute(&session_id, &export_id, &sql, connection, options)?;
+            Ok(serde_json::json!({
+                "exportId": export_id,
+                "state": "queued",
+            }))
+        }
+        "export.status" => {
+            let export_id = required_string(params, "exportId")?;
+            Ok(serde_json::to_value(exports.status(&export_id)?)?)
+        }
+        "export.cancel" => {
+            let export_id = required_string(params, "exportId")?;
+            Ok(serde_json::to_value(exports.cancel(&export_id)?)?)
         }
         "query.status" => {
             let execution_id = required_string(params, "executionId")?;
@@ -242,6 +270,7 @@ fn dispatch(
 fn main() {
     let mut sessions = session::SessionManager::new();
     let jobs = std::sync::Arc::new(jobs::JobRegistry::new());
+    let exports = std::sync::Arc::new(export_jobs::ExportRegistry::new());
     let stdin = std::io::stdin();
     let stdout = std::io::stdout();
     let mut out = stdout.lock();
@@ -256,7 +285,7 @@ fn main() {
         }
 
         let response = match serde_json::from_str::<RequestEnvelope>(&line) {
-            Ok(request) => match dispatch(&request, &mut sessions, &jobs) {
+            Ok(request) => match dispatch(&request, &mut sessions, &jobs, &exports) {
                 Ok(result) => ResponseEnvelope::ok(request.id, result),
                 Err(error) => ResponseEnvelope::err(
                     request.id.clone(),
@@ -306,6 +335,7 @@ mod tests {
             &request,
             &mut session::SessionManager::new(),
             &std::sync::Arc::new(jobs::JobRegistry::new()),
+            &std::sync::Arc::new(export_jobs::ExportRegistry::new()),
         )
         .unwrap_err();
         assert_eq!(error.code(), "method.not_found");
@@ -328,6 +358,7 @@ mod tests {
             &request,
             &mut session::SessionManager::new(),
             &std::sync::Arc::new(jobs::JobRegistry::new()),
+            &std::sync::Arc::new(export_jobs::ExportRegistry::new()),
         )
         .unwrap_err();
         assert_eq!(error.code(), "source.invalid_options");

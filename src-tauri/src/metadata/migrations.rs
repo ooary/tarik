@@ -39,6 +39,11 @@ const MIGRATIONS: &[Migration] = &[
         name: "engine_locator",
         sql: include_str!("../../migrations/0006_engine_locator.sql"),
     },
+    Migration {
+        version: 7,
+        name: "export_lifecycle",
+        sql: include_str!("../../migrations/0007_export_lifecycle.sql"),
+    },
 ];
 
 pub(super) fn migrate(connection: &mut Connection) -> Result<(), MetadataError> {

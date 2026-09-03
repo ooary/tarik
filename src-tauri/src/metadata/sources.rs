@@ -78,6 +78,7 @@ impl ExportStatus {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExportPartSummary {
+    pub part_number: u64,
     pub path: String,
     pub rows: u64,
     pub bytes: u64,
@@ -93,7 +94,14 @@ pub struct ExportHistoryRecord {
     pub output_directory: String,
     pub base_name: String,
     pub rows_per_part: u64,
+    pub sql_text: String,
+    pub options: serde_json::Value,
+    pub duration_ms: Option<u64>,
+    pub rows_written: u64,
+    pub files_written: u64,
+    pub bytes_written: u64,
     pub completed_parts: Vec<ExportPartSummary>,
+    pub error_code: Option<String>,
     pub error_message: Option<String>,
     pub created_at: String,
     pub updated_at: String,
@@ -192,21 +200,26 @@ impl SourcesRepository {
         }
     }
 
-    pub fn upsert_export(&self, export: &ExportHistoryRecord) -> Result<(), MetadataError> {
+    pub fn add_terminal_export(&self, export: &ExportHistoryRecord) -> Result<bool, MetadataError> {
         let parts = serde_json::to_string(&export.completed_parts).map_err(|source| {
             MetadataError::InvalidJson {
                 key: format!("export:{}:parts", export.id),
                 source,
             }
         })?;
+        let options = serde_json::to_string(&export.options).map_err(|source| {
+            MetadataError::InvalidJson {
+                key: format!("export:{}:options", export.id),
+                source,
+            }
+        })?;
         self.database.connection()?.execute(
             "INSERT INTO export_history(id, project_id, status, format, output_directory, base_name,
-             rows_per_part, completed_parts_json, error_message, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
-             ON CONFLICT(id) DO UPDATE SET status = excluded.status,
-             completed_parts_json = excluded.completed_parts_json, error_message = excluded.error_message,
-             updated_at = excluded.updated_at",
-            (
+             rows_per_part, completed_parts_json, error_message, created_at, updated_at, sql_text,
+             options_json, duration_ms, rows_written, files_written, bytes_written, error_code)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)
+             ON CONFLICT(id) DO NOTHING",
+            rusqlite::params![
                 &export.id,
                 &export.project_id,
                 export.status.as_str(),
@@ -218,16 +231,27 @@ impl SourcesRepository {
                 &export.error_message,
                 &export.created_at,
                 &export.updated_at,
-            ),
-        )?;
-        Ok(())
+                &export.sql_text,
+                options,
+                export.duration_ms,
+                export.rows_written,
+                export.files_written,
+                export.bytes_written,
+                &export.error_code,
+            ],
+        )
+        .map(|inserted| inserted > 0)
+        .map_err(Into::into)
     }
 
+    #[cfg(test)]
     pub fn get_export(&self, id: &str) -> Result<Option<ExportHistoryRecord>, MetadataError> {
         let connection = self.database.connection()?;
         let result = connection.query_row(
             "SELECT id, project_id, status, format, output_directory, base_name, rows_per_part,
-             completed_parts_json, error_message, created_at, updated_at FROM export_history WHERE id = ?1",
+             completed_parts_json, error_message, created_at, updated_at, sql_text, options_json,
+             duration_ms, rows_written, files_written, bytes_written, error_code
+             FROM export_history WHERE id = ?1",
             [id],
             read_export,
         );
@@ -273,9 +297,11 @@ fn read_source(row: &rusqlite::Row<'_>) -> rusqlite::Result<SourceRecord> {
     })
 }
 
+#[cfg(test)]
 fn read_export(row: &rusqlite::Row<'_>) -> rusqlite::Result<ExportHistoryRecord> {
     let status: String = row.get(2)?;
     let parts: String = row.get(7)?;
+    let options: String = row.get(12)?;
     Ok(ExportHistoryRecord {
         id: row.get(0)?,
         project_id: row.get(1)?,
@@ -301,6 +327,19 @@ fn read_export(row: &rusqlite::Row<'_>) -> rusqlite::Result<ExportHistoryRecord>
         error_message: row.get(8)?,
         created_at: row.get(9)?,
         updated_at: row.get(10)?,
+        sql_text: row.get(11)?,
+        options: serde_json::from_str(&options).map_err(|error| {
+            rusqlite::Error::FromSqlConversionFailure(
+                12,
+                rusqlite::types::Type::Text,
+                Box::new(error),
+            )
+        })?,
+        duration_ms: row.get(13)?,
+        rows_written: row.get(14)?,
+        files_written: row.get(15)?,
+        bytes_written: row.get(16)?,
+        error_code: row.get(17)?,
     })
 }
 
@@ -367,16 +406,29 @@ mod tests {
             output_directory: "/exports".into(),
             base_name: "orders".into(),
             rows_per_part: 1_000_000,
+            sql_text: "SELECT * FROM orders".into(),
+            options: serde_json::json!({ "compression": "snappy" }),
+            duration_ms: Some(125),
+            rows_written: 12,
+            files_written: 1,
+            bytes_written: 400,
             completed_parts: vec![ExportPartSummary {
+                part_number: 1,
                 path: "/exports/orders-part-00001.parquet".into(),
                 rows: 12,
                 bytes: 400,
             }],
+            error_code: None,
             error_message: None,
             created_at: "2026-01-01T00:00:00Z".into(),
             updated_at: "2026-01-01T00:00:01Z".into(),
         };
-        repository.upsert_export(&export).unwrap();
+        assert!(repository.add_terminal_export(&export).unwrap());
+        let mut replay = export.clone();
+        replay.status = ExportStatus::Failed;
+        replay.error_code = Some("late".into());
+        replay.error_message = Some("must not replace terminal state".into());
+        assert!(!repository.add_terminal_export(&replay).unwrap());
 
         assert_eq!(repository.get_export("export-1").unwrap(), Some(export));
     }

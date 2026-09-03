@@ -12,7 +12,7 @@ use super::{
     },
     sessions::{QuerySessionSnapshot, SessionsRepository},
     settings::SettingsRepository,
-    sources::{ExportHistoryRecord, SourceRecord, SourceState, SourcesRepository},
+    sources::{SourceRecord, SourceState, SourcesRepository},
     MetadataDb,
 };
 
@@ -116,26 +116,6 @@ pub fn get_source(
 ) -> Result<Option<SourceRecord>, String> {
     SourcesRepository::new(database.inner().clone())
         .get_source(&id)
-        .map_err(|error| error.to_string())
-}
-
-#[tauri::command]
-pub fn upsert_export_history(
-    export: ExportHistoryRecord,
-    database: State<'_, MetadataDb>,
-) -> Result<(), String> {
-    SourcesRepository::new(database.inner().clone())
-        .upsert_export(&export)
-        .map_err(|error| error.to_string())
-}
-
-#[tauri::command]
-pub fn get_export_history(
-    id: String,
-    database: State<'_, MetadataDb>,
-) -> Result<Option<ExportHistoryRecord>, String> {
-    SourcesRepository::new(database.inner().clone())
-        .get_export(&id)
         .map_err(|error| error.to_string())
 }
 

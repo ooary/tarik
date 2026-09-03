@@ -10,6 +10,9 @@ use uuid::Uuid;
 pub const PROTOCOL_VERSION: u32 = 1;
 pub const MAX_EXPORT_BASE_NAME_BYTES: usize = 128;
 pub const MAX_EXPORT_ROWS_PER_PART: u64 = i64::MAX as u64;
+/// Status and history retain only the most recent part summaries; aggregate
+/// counters remain exact even when an export produces more files.
+pub const MAX_REPORTED_EXPORT_PARTS: usize = 100;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -281,6 +284,18 @@ pub struct ExportStatus {
 }
 
 impl ValidatedExportOptions {
+    pub fn to_options(&self) -> ExportOptions {
+        ExportOptions {
+            format: self.format,
+            output_directory: self.output_directory.to_string_lossy().into_owned(),
+            base_name: self.base_name.clone(),
+            rows_per_part: self.rows_per_part,
+            overwrite: self.overwrite,
+            csv: self.csv.clone(),
+            parquet: self.parquet.clone(),
+        }
+    }
+
     pub fn part_file_name(&self, part_number: u64) -> Result<String, ExportValidationError> {
         if part_number == 0 {
             return Err(ExportValidationError::PartNumberZero);

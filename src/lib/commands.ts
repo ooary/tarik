@@ -596,3 +596,69 @@ export function clearQueryHistory(
 ): Promise<HistoryPruneSummary> {
   return invokeCommand<HistoryPruneSummary>("clear_query_history", { projectId });
 }
+
+export type ExportFormat = "csv" | "parquet";
+export type ExportOverwritePolicy = "fail_if_exists" | "replace";
+export type ParquetCompression = "uncompressed" | "snappy" | "gzip" | "zstd";
+export type ExportState = "queued" | "running" | "succeeded" | "failed" | "cancelled";
+
+export interface ExportOptions {
+  format: ExportFormat;
+  outputDirectory: string;
+  baseName: string;
+  rowsPerPart: number;
+  overwrite: ExportOverwritePolicy;
+  csv: { delimiter: string; includeHeader: boolean } | null;
+  parquet: { compression: ParquetCompression } | null;
+}
+
+export interface ExportPartSummary {
+  partNumber: number;
+  path: string;
+  rows: number;
+  bytes: number;
+}
+
+export interface ExportView {
+  exportId: string;
+  projectId: string;
+  state: ExportState;
+  durationMs: number;
+  rowsWritten: number;
+  filesWritten: number;
+  bytesWritten: number;
+  currentPart: number | null;
+  completedParts: ExportPartSummary[];
+  error: ExecutionError | null;
+}
+
+export function chooseExportDirectory(): Promise<string | null> {
+  return openFileDialog({
+    multiple: false,
+    directory: true,
+    title: "Choose export folder",
+  });
+}
+
+export function executeExport(
+  projectId: string,
+  sql: string,
+  options: ExportOptions,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<ExportView> {
+  return invokeCommand<ExportView>("execute_export", { projectId, sql, options });
+}
+
+export function getExportStatus(
+  exportId: string,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<ExportView | null> {
+  return invokeCommand<ExportView | null>("get_export_status", { exportId });
+}
+
+export function cancelExport(
+  exportId: string,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<ExportView> {
+  return invokeCommand<ExportView>("cancel_export", { exportId });
+}

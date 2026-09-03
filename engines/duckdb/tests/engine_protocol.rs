@@ -341,6 +341,31 @@ fn poll_terminal(engine: &mut Engine, execution_id: &str) -> Value {
     poll_terminal_with_timeout(engine, execution_id, 200)
 }
 
+fn poll_export_terminal(engine: &mut Engine, export_id: &str, attempts: usize) -> Value {
+    for _ in 0..attempts {
+        let status =
+            engine.request("export.status", json!({ "exportId": export_id }))["result"].clone();
+        let state = status["state"].as_str().unwrap_or_default();
+        if state == "succeeded" || state == "failed" || state == "cancelled" {
+            return status;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    panic!("export {export_id} did not reach a terminal state");
+}
+
+fn csv_export_options(output_directory: &std::path::Path, rows_per_part: u64) -> Value {
+    json!({
+        "format": "csv",
+        "outputDirectory": output_directory,
+        "baseName": "orders",
+        "rowsPerPart": rows_per_part,
+        "overwrite": "fail_if_exists",
+        "csv": { "delimiter": ",", "includeHeader": true },
+        "parquet": null
+    })
+}
+
 fn poll_terminal_with_timeout(engine: &mut Engine, execution_id: &str, attempts: usize) -> Value {
     for _ in 0..attempts {
         let status = engine.request("query.status", json!({ "executionId": execution_id }))
@@ -557,6 +582,190 @@ fn paging_reads_windows_across_pages_and_release_removes_artifacts() {
     engine.child.kill().ok();
     let _ = std::fs::remove_file(&database);
     let _ = std::fs::remove_dir_all(&cache_dir);
+}
+
+#[test]
+fn export_protocol_streams_exact_csv_parts_with_bounded_status() {
+    let mut engine = spawn_engine();
+    let database = temp_path("export", ".duckdb");
+    let output = temp_path("export-output", "");
+    std::fs::create_dir(&output).unwrap();
+    engine.assert_ok(
+        "session.open",
+        json!({
+            "sessionId": "es",
+            "locator": { "engineId": "duckdb", "payload": { "path": database } }
+        }),
+    );
+
+    let queued = engine.assert_ok(
+        "export.execute",
+        json!({
+            "sessionId": "es",
+            "exportId": "x1",
+            "sql": "SELECT i, i * 2 AS doubled FROM range(1, 9) t(i)",
+            "options": csv_export_options(&output, 3),
+        }),
+    );
+    assert_eq!(queued["state"], "queued");
+    let status = poll_export_terminal(&mut engine, "x1", 400);
+    assert_eq!(status["state"], "succeeded");
+    assert_eq!(status["rowsWritten"], 8);
+    assert_eq!(status["filesWritten"], 3);
+    assert!(status["bytesWritten"].as_u64().unwrap() > 0);
+    assert_eq!(status["currentPart"], Value::Null);
+    let parts = status["completedParts"].as_array().unwrap();
+    assert_eq!(parts.len(), 3);
+    assert_eq!(parts[0]["rows"], 3);
+    assert_eq!(parts[2]["rows"], 2);
+    assert!(output.join("orders-part-00001.csv").is_file());
+    assert!(!std::fs::read_dir(&output)
+        .unwrap()
+        .flatten()
+        .any(|entry| entry
+            .file_name()
+            .to_string_lossy()
+            .starts_with(".tarik-export-")));
+
+    // Cancelling a terminal export is idempotent and does not delete files.
+    let repeat = engine.assert_ok("export.cancel", json!({ "exportId": "x1" }));
+    assert_eq!(repeat["state"], "succeeded");
+    assert!(output.join("orders-part-00001.csv").is_file());
+
+    engine.child.kill().ok();
+    let _ = std::fs::remove_file(database);
+    let _ = std::fs::remove_dir_all(output);
+}
+
+#[test]
+fn export_invalid_options_fail_before_query_or_file_creation() {
+    let mut engine = spawn_engine();
+    let database = temp_path("export-invalid", ".duckdb");
+    let output = temp_path("export-invalid-output", "");
+    std::fs::create_dir(&output).unwrap();
+    engine.assert_ok(
+        "session.open",
+        json!({
+            "sessionId": "ei",
+            "locator": { "engineId": "duckdb", "payload": { "path": database } }
+        }),
+    );
+    let response = engine.request(
+        "export.execute",
+        json!({
+            "sessionId": "ei",
+            "exportId": "bad",
+            "sql": "CREATE TABLE must_not_exist(i INTEGER)",
+            "options": {
+                "format": "csv",
+                "outputDirectory": output,
+                "baseName": "../unsafe",
+                "rowsPerPart": 3,
+                "overwrite": "fail_if_exists",
+                "csv": { "delimiter": ",", "includeHeader": true },
+                "parquet": null
+            },
+        }),
+    );
+    assert_eq!(response["error"]["code"], "export.invalid_options");
+    assert_eq!(std::fs::read_dir(&output).unwrap().count(), 0);
+    let catalog = engine.assert_ok("catalog.inspect", json!({ "sessionId": "ei" }));
+    assert!(!catalog["objects"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|object| object["name"] == "must_not_exist"));
+
+    engine.child.kill().ok();
+    let _ = std::fs::remove_file(database);
+    let _ = std::fs::remove_dir_all(output);
+}
+
+#[test]
+fn active_export_cancellation_cleans_stage_and_session_remains_usable() {
+    let mut engine = spawn_engine();
+    let database = temp_path("export-cancel", ".duckdb");
+    let output = temp_path("export-cancel-output", "");
+    std::fs::create_dir(&output).unwrap();
+    engine.assert_ok(
+        "session.open",
+        json!({
+            "sessionId": "ec",
+            "locator": { "engineId": "duckdb", "payload": { "path": database } }
+        }),
+    );
+    engine.assert_ok(
+        "export.execute",
+        json!({
+            "sessionId": "ec",
+            "exportId": "cancel-me",
+            "sql": "SELECT i, repeat('x', 1000) AS payload FROM range(1000000000) t(i)",
+            "options": csv_export_options(&output, 100_000),
+        }),
+    );
+    // A second export for the session stays queued behind the active export,
+    // bounding concurrent Arrow writers and making queued cancellation clean.
+    engine.assert_ok(
+        "export.execute",
+        json!({
+            "sessionId": "ec",
+            "exportId": "queued-cancel",
+            "sql": "SELECT 7 AS value",
+            "options": {
+                "format": "csv",
+                "outputDirectory": output,
+                "baseName": "queued",
+                "rowsPerPart": 10,
+                "overwrite": "fail_if_exists",
+                "csv": { "delimiter": ",", "includeHeader": true },
+                "parquet": null
+            },
+        }),
+    );
+    let queued = engine.assert_ok("export.cancel", json!({ "exportId": "queued-cancel" }));
+    assert_eq!(queued["state"], "cancelled");
+    assert!(!output.join("queued-part-00001.csv").exists());
+
+    std::thread::sleep(std::time::Duration::from_millis(20));
+    let first = engine.assert_ok("export.cancel", json!({ "exportId": "cancel-me" }));
+    assert!(first["state"] == "running" || first["state"] == "cancelled");
+    let status = poll_export_terminal(&mut engine, "cancel-me", 800);
+    assert_eq!(status["state"], "cancelled");
+    assert_eq!(status["error"], Value::Null);
+    assert!(!std::fs::read_dir(&output)
+        .unwrap()
+        .flatten()
+        .any(|entry| entry
+            .file_name()
+            .to_string_lossy()
+            .starts_with(".tarik-export-")));
+
+    // The same session can run a later export after interruption.
+    engine.assert_ok(
+        "export.execute",
+        json!({
+            "sessionId": "ec",
+            "exportId": "after-cancel",
+            "sql": "SELECT 42 AS answer",
+            "options": {
+                "format": "parquet",
+                "outputDirectory": output,
+                "baseName": "answer",
+                "rowsPerPart": 10,
+                "overwrite": "fail_if_exists",
+                "csv": null,
+                "parquet": { "compression": "snappy" }
+            },
+        }),
+    );
+    let status = poll_export_terminal(&mut engine, "after-cancel", 400);
+    assert_eq!(status["state"], "succeeded");
+    assert_eq!(status["rowsWritten"], 1);
+    assert!(output.join("answer-part-00001.parquet").is_file());
+
+    engine.child.kill().ok();
+    let _ = std::fs::remove_file(database);
+    let _ = std::fs::remove_dir_all(output);
 }
 
 #[test]

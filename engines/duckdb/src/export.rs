@@ -5,14 +5,14 @@
 //! completed stage is renamed into place. This module owns no async lifecycle;
 //! `ExportRegistry` (E9-T3) will provide queuing, progress, and cancellation.
 
-use std::{fs, path::PathBuf, sync::Arc};
+use std::{collections::VecDeque, fs, path::PathBuf, sync::Arc};
 
 use arrow_csv::WriterBuilder as CsvWriterBuilder;
 use duckdb::{arrow::datatypes::SchemaRef, arrow::record_batch::RecordBatch, Connection};
 use parquet::{arrow::ArrowWriter, basic::Compression, file::properties::WriterProperties};
 use tarik_engine_protocol::{
     ExportFormat, ExportOptions, ExportOverwritePolicy, ExportPartSummary, ParquetCompression,
-    ValidatedExportOptions,
+    ValidatedExportOptions, MAX_REPORTED_EXPORT_PARTS,
 };
 
 use crate::{error::EngineError, sql::split_statements};
@@ -21,9 +21,26 @@ use crate::{error::EngineError, sql::split_statements};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExportOutcome {
     pub rows_written: u64,
+    pub files_written: u64,
     pub bytes_written: u64,
+    /// Bounded newest part summaries; aggregate counters remain exact.
     pub completed_parts: Vec<ExportPartSummary>,
 }
+
+pub trait ExportObserver {
+    /// Called before every batch slice. A cancellation observer returns
+    /// `ExportCancelled` here; dropping the writer removes any current stage.
+    fn check_cancelled(&self, _current_part: u64) -> Result<(), EngineError> {
+        Ok(())
+    }
+
+    fn rows_written(&self, _rows: u64, _current_part: u64) {}
+
+    fn part_completed(&self, _part: &ExportPartSummary) {}
+}
+
+struct NoopObserver;
+impl ExportObserver for NoopObserver {}
 
 /// Validate synchronously, then execute the SQL exactly once and stream its
 /// final row-returning statement into exact-row files.
@@ -38,13 +55,14 @@ pub fn execute_export(
     let options = options
         .validate()
         .map_err(|error| EngineError::ExportInvalid(error.to_string()))?;
-    execute_validated_export(connection, sql, &options)
+    execute_validated_export(connection, sql, &options, &NoopObserver)
 }
 
-fn execute_validated_export(
+pub fn execute_validated_export(
     connection: &Connection,
     sql: &str,
     options: &ValidatedExportOptions,
+    observer: &dyn ExportObserver,
 ) -> Result<ExportOutcome, EngineError> {
     let statements = split_statements(sql);
     let (last, prior) = statements
@@ -55,18 +73,22 @@ fn execute_validated_export(
     // sets are drained without buffering. Only the final statement is exported,
     // matching Tarik's query-result semantics.
     for statement_sql in prior {
+        observer.check_cancelled(1)?;
         let mut statement = connection.prepare(statement_sql)?;
         let batches = statement.stream_arrow([])?;
-        for _ in batches {}
+        for _ in batches {
+            observer.check_cancelled(1)?;
+        }
     }
 
     let mut statement = connection.prepare(last)?;
     let mut batches = statement.stream_arrow([])?;
     let schema = batches.get_schema();
-    let mut writer = ChunkedExportWriter::new(options, schema);
+    let mut writer = ChunkedExportWriter::new(options, schema, observer);
     for batch in batches.by_ref() {
-        writer.write(&batch)?;
+        writer.write(&batch)?
     }
+    observer.check_cancelled(writer.next_part)?;
     writer.finish()
 }
 
@@ -77,11 +99,18 @@ struct ChunkedExportWriter<'a> {
     current_rows: u64,
     next_part: u64,
     rows_written: u64,
-    completed_parts: Vec<ExportPartSummary>,
+    files_written: u64,
+    bytes_written: u64,
+    completed_parts: VecDeque<ExportPartSummary>,
+    observer: &'a dyn ExportObserver,
 }
 
 impl<'a> ChunkedExportWriter<'a> {
-    fn new(options: &'a ValidatedExportOptions, schema: SchemaRef) -> Self {
+    fn new(
+        options: &'a ValidatedExportOptions,
+        schema: SchemaRef,
+        observer: &'a dyn ExportObserver,
+    ) -> Self {
         Self {
             options,
             schema,
@@ -89,13 +118,17 @@ impl<'a> ChunkedExportWriter<'a> {
             current_rows: 0,
             next_part: 1,
             rows_written: 0,
-            completed_parts: Vec::new(),
+            files_written: 0,
+            bytes_written: 0,
+            completed_parts: VecDeque::new(),
+            observer,
         }
     }
 
     fn write(&mut self, batch: &RecordBatch) -> Result<(), EngineError> {
         let mut offset = 0usize;
         while offset < batch.num_rows() {
+            self.observer.check_cancelled(self.next_part)?;
             if self.current.is_none() {
                 self.current = Some(PartWriter::create(
                     self.next_part,
@@ -114,6 +147,7 @@ impl<'a> ChunkedExportWriter<'a> {
                 .write(&slice)?;
             self.current_rows += take as u64;
             self.rows_written += take as u64;
+            self.observer.rows_written(take as u64, self.next_part);
             offset += take;
 
             if self.current_rows == self.options.rows_per_part {
@@ -130,12 +164,19 @@ impl<'a> ChunkedExportWriter<'a> {
         let part_number = self.next_part;
         let rows = self.current_rows;
         let (path, bytes) = current.publish(self.options.overwrite)?;
-        self.completed_parts.push(ExportPartSummary {
+        let summary = ExportPartSummary {
             part_number,
             path: path.to_string_lossy().into_owned(),
             rows,
             bytes,
-        });
+        };
+        self.files_written += 1;
+        self.bytes_written += bytes;
+        self.observer.part_completed(&summary);
+        self.completed_parts.push_back(summary);
+        if self.completed_parts.len() > MAX_REPORTED_EXPORT_PARTS {
+            self.completed_parts.pop_front();
+        }
         self.next_part = self
             .next_part
             .checked_add(1)
@@ -148,11 +189,11 @@ impl<'a> ChunkedExportWriter<'a> {
         if self.current_rows > 0 {
             self.complete_current()?;
         }
-        let bytes_written = self.completed_parts.iter().map(|part| part.bytes).sum();
         Ok(ExportOutcome {
             rows_written: self.rows_written,
-            bytes_written,
-            completed_parts: self.completed_parts,
+            files_written: self.files_written,
+            bytes_written: self.bytes_written,
+            completed_parts: self.completed_parts.into_iter().collect(),
         })
     }
 }
@@ -248,16 +289,32 @@ impl PartWriter {
     fn publish(mut self, overwrite: ExportOverwritePolicy) -> Result<(PathBuf, u64), EngineError> {
         let writer = self.writer.take().expect("part writer is open");
         writer.close(&self.stage_path)?;
-        if overwrite == ExportOverwritePolicy::Replace && self.final_path.exists() {
-            fs::remove_file(&self.final_path).map_err(|source| EngineError::ExportIo {
+        let backup = if overwrite == ExportOverwritePolicy::Replace && self.final_path.exists() {
+            let backup = self
+                .final_path
+                .with_file_name(format!(".tarik-export-backup-{}", uuid::Uuid::new_v4()));
+            fs::rename(&self.final_path, &backup).map_err(|source| EngineError::ExportIo {
                 path: self.final_path.clone(),
                 source,
             })?;
+            Some(backup)
+        } else {
+            None
+        };
+        if let Err(source) = fs::rename(&self.stage_path, &self.final_path) {
+            if let Some(backup) = backup.as_ref() {
+                let _ = fs::rename(backup, &self.final_path);
+            }
+            return Err(EngineError::ExportIo {
+                path: self.final_path.clone(),
+                source,
+            });
         }
-        fs::rename(&self.stage_path, &self.final_path).map_err(|source| EngineError::ExportIo {
-            path: self.final_path.clone(),
-            source,
-        })?;
+        if let Some(backup) = backup {
+            // Publication already succeeded. Backup cleanup is best effort so
+            // a cleanup-only failure cannot misreport the new completed part.
+            let _ = fs::remove_file(backup);
+        }
         let bytes = fs::metadata(&self.final_path)
             .map_err(|source| EngineError::ExportIo {
                 path: self.final_path.clone(),
@@ -306,7 +363,10 @@ impl Writer {
 
 #[cfg(test)]
 mod tests {
-    use std::io::Read;
+    use std::{
+        io::Read,
+        sync::atomic::{AtomicU64, Ordering},
+    };
 
     use arrow_csv::ReaderBuilder as CsvReaderBuilder;
     use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
@@ -540,6 +600,72 @@ mod tests {
             "n\n1\n"
         );
         fs::remove_dir_all(directory).unwrap();
+    }
+
+    struct FailAfterRows {
+        rows: AtomicU64,
+        threshold: u64,
+        cancelled: bool,
+    }
+
+    impl ExportObserver for FailAfterRows {
+        fn check_cancelled(&self, _current_part: u64) -> Result<(), EngineError> {
+            if self.rows.load(Ordering::SeqCst) >= self.threshold {
+                if self.cancelled {
+                    Err(EngineError::ExportCancelled)
+                } else {
+                    Err(EngineError::ExportWrite {
+                        path: PathBuf::from("injected"),
+                        message: "simulated disk full".into(),
+                    })
+                }
+            } else {
+                Ok(())
+            }
+        }
+
+        fn rows_written(&self, rows: u64, _current_part: u64) {
+            self.rows.fetch_add(rows, Ordering::SeqCst);
+        }
+    }
+
+    #[test]
+    fn failure_or_cancel_keeps_completed_parts_and_removes_current_stage() {
+        for cancelled in [false, true] {
+            let directory = output_dir(if cancelled {
+                "partial-cancel"
+            } else {
+                "partial-disk-full"
+            });
+            let options = csv_options(&directory, 2_000).validate().unwrap();
+            let observer = FailAfterRows {
+                rows: AtomicU64::new(0),
+                threshold: 2_001,
+                cancelled,
+            };
+            let connection = connection();
+            let error = execute_validated_export(
+                &connection,
+                "SELECT i, repeat('x', 20) AS payload FROM range(0, 5000) t(i)",
+                &options,
+                &observer,
+            )
+            .unwrap_err();
+            if cancelled {
+                assert!(matches!(error, EngineError::ExportCancelled));
+            } else {
+                assert!(matches!(error, EngineError::ExportWrite { .. }));
+            }
+            assert!(directory.join("orders-part-00001.csv").is_file());
+            assert!(!directory.join("orders-part-00002.csv").exists());
+            assert!(!fs::read_dir(&directory).unwrap().flatten().any(|entry| {
+                entry
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with(".tarik-export-")
+            }));
+            fs::remove_dir_all(directory).unwrap();
+        }
     }
 
     #[test]

@@ -1,4 +1,5 @@
 mod engine_manager;
+mod export;
 mod metadata;
 mod paths;
 mod plan;
@@ -91,11 +92,16 @@ pub fn run() {
                 engine.clone(),
                 database.clone(),
             ));
+            let export_coordinator = Arc::new(export::ExportCoordinator::new(
+                engine.clone(),
+                database.clone(),
+            ));
             let results_store = Arc::new(results::ResultStore::new(engine.clone()));
             app.manage(database);
             app.manage(engine);
             app.manage(project_manager);
             app.manage(coordinator);
+            app.manage(export_coordinator);
             app.manage(results_store);
             Ok(())
         })
@@ -139,8 +145,6 @@ pub fn run() {
             metadata::commands::remove_source,
             metadata::commands::set_source_state,
             metadata::commands::get_source,
-            metadata::commands::upsert_export_history,
-            metadata::commands::get_export_history,
             projects::commands::create_project,
             projects::commands::open_project,
             projects::commands::reopen_recent_project,
@@ -161,6 +165,9 @@ pub fn run() {
             query::commands::get_query_status,
             query::commands::cancel_query,
             query::commands::forget_tab_execution,
+            export::commands::execute_export,
+            export::commands::get_export_status,
+            export::commands::cancel_export,
             results::get_result_page,
             results::release_result,
             results::release_all_results

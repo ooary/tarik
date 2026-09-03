@@ -6,7 +6,8 @@ use std::{
 use serde_json::Value;
 use tarik_engine_client::EngineProcess;
 use tarik_engine_protocol::{
-    CatalogSnapshot, CsvOptions, ImportOptions, ProjectLocator, SourceInspection, SourceRecord,
+    CatalogSnapshot, CsvOptions, ExportOptions, ExportStatus, ImportOptions, ProjectLocator,
+    SourceInspection, SourceRecord,
 };
 
 pub struct EngineManager {
@@ -260,6 +261,51 @@ impl EngineManager {
             }),
         )
         .map(|_| ())
+    }
+
+    /// Submit an asynchronous export for the active engine session. Options
+    /// are validated by the engine before it starts a worker or creates files.
+    pub fn execute_export(
+        &self,
+        export_id: &str,
+        sql: &str,
+        options: &ExportOptions,
+    ) -> Result<(), String> {
+        self.session_request(
+            "export.execute",
+            serde_json::json!({
+                "exportId": export_id,
+                "sql": sql,
+                "options": options,
+            }),
+        )
+        .map(|_| ())
+    }
+
+    pub fn export_status(&self, export_id: &str) -> Result<Option<ExportStatus>, String> {
+        match self.raw_request(
+            "export.status",
+            serde_json::json!({ "exportId": export_id }),
+        ) {
+            Ok(value) => serde_json::from_value(value)
+                .map(Some)
+                .map_err(|error| format!("export status decode failed: {error}")),
+            Err(error) if Self::structured_code(&error) == Some("export.missing") => Ok(None),
+            Err(error) => Err(error),
+        }
+    }
+
+    pub fn cancel_export(&self, export_id: &str) -> Result<Option<ExportStatus>, String> {
+        match self.raw_request(
+            "export.cancel",
+            serde_json::json!({ "exportId": export_id }),
+        ) {
+            Ok(value) => serde_json::from_value(value)
+                .map(Some)
+                .map_err(|error| format!("export status decode failed: {error}")),
+            Err(error) if Self::structured_code(&error) == Some("export.missing") => Ok(None),
+            Err(error) => Err(error),
+        }
     }
 
     /// Poll a job status. `Ok(None)` means the engine no longer tracks the
