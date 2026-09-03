@@ -555,7 +555,13 @@ describe("Tarik workbench shell", () => {
     const toolbar = screen.getByRole("button", { name: /Query library/ }).parentElement!;
     expect(
       [...toolbar.querySelectorAll("button")].map((button) => button.textContent?.trim()),
-    ).toEqual([expect.stringMatching(/^Run query/), "Query library", "Estimate", "Actual Flow"]);
+    ).toEqual([
+      expect.stringMatching(/^Run query/),
+      "Query library",
+      "Estimate",
+      "Actual Flow",
+      "Export",
+    ]);
   });
 
   it("collapses and expands the bottom panel", () => {

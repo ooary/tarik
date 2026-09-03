@@ -27,6 +27,7 @@ rusqlite = { version = "0.37", features = ["bundled"] }
 uuid = { version = "1", features = ["v4"] }
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 tauri-plugin-dialog = "2"
+tauri-plugin-opener = "2"
 tarik-engine-client = { path = "../crates/engine-client" }
 tarik-engine-protocol = { path = "../crates/engine-protocol" }
 tarik-arrow-page-format = { path = "../crates/arrow-page-format" }

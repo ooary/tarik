@@ -70,6 +70,7 @@ fn get_app_directories<R: tauri::Runtime>(
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let directories = paths::resolve_directories(app.handle())
                 .map_err(|error| Box::new(error) as Box<dyn std::error::Error>)?;

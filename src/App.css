@@ -560,6 +560,23 @@ button:disabled {
   justify-content: flex-end;
 }
 
+@media (max-width: 920px) {
+  .run-button kbd,
+  .export-trigger svg {
+    display: none;
+  }
+
+  .editor-toolbar .toolbar-group {
+    gap: 3px;
+  }
+
+  .editor-toolbar .toolbar-button,
+  .editor-toolbar .run-button {
+    padding-inline: 8px;
+    white-space: nowrap;
+  }
+}
+
 .draft-save-error {
   max-width: 170px;
   overflow: hidden;

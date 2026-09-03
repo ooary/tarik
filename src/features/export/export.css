@@ -1,0 +1,254 @@
+.export-dialog {
+  width: min(680px, calc(100vw - 32px));
+  max-height: min(780px, calc(100dvh - 32px));
+}
+
+.export-form,
+.export-progress-view {
+  display: grid;
+  gap: 16px;
+  padding: 16px;
+}
+
+.export-snapshot {
+  display: grid;
+  gap: 6px;
+}
+
+.export-snapshot > span,
+.export-format legend,
+.export-select-field > span,
+.export-parts h3 {
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 680;
+}
+
+.export-snapshot code {
+  max-height: 82px;
+  overflow: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  padding: 9px 10px;
+  color: var(--code-text);
+  background: var(--surface-editor);
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.export-format {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  margin: 0;
+  border: 0;
+  padding: 0;
+}
+
+.export-format legend {
+  grid-column: 1 / -1;
+  margin-bottom: 1px;
+}
+
+.export-format label {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  padding: 9px 10px;
+  cursor: pointer;
+}
+
+.export-format label:has(input:checked) {
+  border-color: var(--accent-solid);
+  background: var(--accent-soft);
+}
+
+.export-format label span {
+  display: grid;
+  gap: 2px;
+}
+
+.export-format label small {
+  color: var(--text-muted);
+}
+
+.export-field-grid,
+.export-format-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 12px;
+}
+
+.export-format-options {
+  align-items: center;
+}
+
+.export-folder-button {
+  flex: 0 0 30px;
+  border-left: 1px solid var(--border-control);
+  border-radius: 0;
+}
+
+.export-select-field {
+  display: grid;
+  gap: 6px;
+}
+
+.export-select-field select {
+  min-height: 34px;
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-control);
+  padding: 0 9px;
+  color: var(--text-primary);
+  background: var(--surface-control);
+}
+
+.export-dialog-footer {
+  display: flex;
+  min-height: 46px;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin: 0 -16px -16px;
+  border-top: 1px solid var(--border-subtle);
+  padding: 8px 16px;
+}
+
+.export-state-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.export-state-heading div {
+  display: grid;
+  gap: 4px;
+}
+
+.export-state-heading span {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.export-state-heading strong {
+  font-size: 15px;
+}
+
+.export-state-heading code {
+  color: var(--text-faint);
+  font-size: 10px;
+}
+
+.export-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  background: var(--border-subtle);
+  overflow: hidden;
+}
+
+.export-metrics div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 9px 10px;
+  background: var(--surface-raised);
+}
+
+.export-metrics span {
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.export-metrics strong {
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  text-overflow: ellipsis;
+}
+
+.export-running-note,
+.export-partial-note,
+.export-parts > p {
+  margin: 0;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.export-partial-note {
+  border-left: 2px solid var(--status-warning);
+  padding-left: 9px;
+  color: var(--text-secondary);
+}
+
+.export-parts {
+  display: grid;
+  gap: 8px;
+}
+
+.export-parts h3 {
+  margin: 0;
+}
+
+.export-part-list {
+  max-height: 250px;
+  border-top: 1px solid var(--border-subtle);
+  overflow: auto;
+}
+
+.export-part-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  min-height: 48px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.export-part-row > div,
+.export-part-row > span {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.export-part-row > div > span {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.export-part-row > span {
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-align: right;
+}
+
+.export-part-row small {
+  color: var(--text-muted);
+}
+
+@media (max-width: 680px) {
+  .export-format,
+  .export-field-grid,
+  .export-format-options {
+    grid-template-columns: 1fr;
+  }
+
+  .export-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

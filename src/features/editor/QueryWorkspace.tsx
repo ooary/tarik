@@ -10,6 +10,7 @@ import {
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { ContextMenu } from "../../components/ui";
 import type { ProjectCatalog } from "../../lib/commands";
+import { ExportDialog } from "../export/ExportDialog";
 import { QueryAnalysisWorkspace } from "../query-flow/QueryAnalysisWorkspace";
 import { useQueryPlan } from "../query-flow/useQueryPlan";
 import { ResultGrid } from "../results/ResultGrid";
@@ -272,6 +273,11 @@ export const QueryWorkspace = forwardRef<QueryWorkspaceHandle, QueryWorkspacePro
             >
               Actual Flow
             </button>
+            <ExportDialog
+              projectId={projectId}
+              sql={activeTab?.sql ?? ""}
+              suggestedName={activeTab?.title ?? "query_export"}
+            />
           </div>
           <div className="toolbar-group toolbar-group-right">
             {saveError && (

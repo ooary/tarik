@@ -1214,13 +1214,18 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
     - Hidden current stages are removed by RAII on cancel/failure, while published parts remain valid. Deterministic observer tests simulate disk-full and cancellation after one completed part; protocol tests cover preflight with no SQL/files, active/queued cancellation, no stage leaks, terminal idempotence, and session reuse.
     - Added desktop `ExportCoordinator` with active-project ownership checks, canonical preflight, bounded polling, and exactly-once immutable terminal SQLite history. Migration 7 stores SQL/options, duration, exact counters, structured error code/message, and completed parts. The prior frontend-writable export-history mutation command was removed.
 
-- [ ] **E9-T4 Build export dialog and completion summary**
+- [x] **E9-T4 Build export dialog and completion summary**
   - Depends on: E9-T1, E9-T3, E1-T1
   - Owns: `src/features/export/`
   - Deliverables: accessible options form, progress view, cancel, completed parts, reveal output location.
   - Acceptance: long operations show continuous non-blocking feedback.
   - Tests: validation, progress events, cancel, success, partial failure.
   - Commit: `feat(export): add chunk export workflow`
+  - Notes:
+    - Added an editor-toolbar Export action after Actual Flow. The controlled Radix dialog is a compact single-page workflow: immutable SQL preview and options, then queued/running progress, then success/failure/cancel summary. Closing the dialog does not cancel active work; polling continues with structurally cleared/retried timers.
+    - Options cover native folder selection, portable base name, positive rows per part, stop-or-replace collision policy, CSV delimiter/header, and Parquet compression (Snappy/Zstandard/Gzip/uncompressed). Frontend field checks are repeated by desktop and engine validators before work. Potentially mutating, `WITH`, unknown, or multi-statement SQL requires confirmation because export executes it once.
+    - Progress uses exact rows/files/bytes and elapsed time without a decorative progress bar. Terminal states distinguish zero rows/no files, full success, failure, and cancellation; partial outcomes disclose that completed files remain valid and the incomplete stage was removed. Completed parts are shown in a bounded scroll area with Reveal output through the official Tauri opener plugin.
+    - Responsive rules preserve single-line toolbar labels at narrow windows and collapse the dialog to one column below 680px. Tests cover disabled/preflight, canonical CSV/Parquet command shapes, polling while closed, cancellation, successful parts/reveal, zero rows, mutating SQL confirmation, and partial failure disclosure.
 
 ---
 

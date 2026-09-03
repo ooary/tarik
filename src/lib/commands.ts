@@ -1,5 +1,6 @@
-import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
+import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
+import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import type { WorkbenchPreferences } from "../app/preferences";
 
 export interface RuntimeInfo {
@@ -638,6 +639,10 @@ export function chooseExportDirectory(): Promise<string | null> {
     directory: true,
     title: "Choose export folder",
   });
+}
+
+export function revealExportPart(path: string): Promise<void> {
+  return revealItemInDir(path);
 }
 
 export function executeExport(

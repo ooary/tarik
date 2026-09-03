@@ -8,6 +8,7 @@ async function loadCommandsModule() {
   const source = await readFile(new URL("../src/lib/commands.ts", import.meta.url), "utf8");
   const withoutTauriImport = source
     .replace('import { open as openFileDialog } from "@tauri-apps/plugin-dialog";\n', "")
+    .replace('import { revealItemInDir } from "@tauri-apps/plugin-opener";\n', "")
     .replace('import { invoke } from "@tauri-apps/api/core";\n', "")
     .replace('import type { WorkbenchPreferences } from "../app/preferences";\n', "");
   const javascript = ts.transpile(withoutTauriImport, {
