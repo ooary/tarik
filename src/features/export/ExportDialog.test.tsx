@@ -204,6 +204,34 @@ describe("ExportDialog", () => {
     ).toBeInTheDocument();
   });
 
+  it("keeps the submitted SQL snapshot and discloses bounded part summaries", async () => {
+    const manyParts = Array.from({ length: 100 }, (_, index) => ({
+      partNumber: index + 21,
+      path: `/exports/orders-part-${String(index + 21).padStart(5, "0")}.parquet`,
+      rows: 1000,
+      bytes: 2048,
+    }));
+    vi.mocked(executeExport).mockResolvedValue({
+      ...succeeded,
+      filesWritten: 120,
+      completedParts: manyParts,
+    });
+    const { rerender } = render(
+      <ExportDialog projectId="p1" sql="SELECT 1 AS original" suggestedName="query" />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Export" }));
+    fireEvent.click(screen.getByRole("button", { name: "Choose output folder" }));
+    await waitFor(() => expect(screen.getByLabelText("Output folder")).toHaveValue("/exports"));
+    fireEvent.click(screen.getByRole("button", { name: "Start export" }));
+    expect(await screen.findByText("Export complete")).toBeInTheDocument();
+
+    rerender(<ExportDialog projectId="p1" sql="SELECT 2 AS edited" suggestedName="query" />);
+    const snapshot = screen.getByRole("region", { name: "Submitted SQL snapshot" });
+    expect(snapshot).toHaveTextContent("SELECT 1 AS original");
+    expect(snapshot).not.toHaveTextContent("SELECT 2 AS edited");
+    expect(screen.getByText("Showing the latest 100 of 120 completed files.")).toBeInTheDocument();
+  });
+
   it("keeps polling after the dialog closes", async () => {
     vi.useFakeTimers();
     vi.mocked(getExportStatus).mockResolvedValueOnce(running).mockResolvedValueOnce(succeeded);

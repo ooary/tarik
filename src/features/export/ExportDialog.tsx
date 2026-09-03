@@ -83,6 +83,7 @@ export function ExportDialog({ projectId, sql, suggestedName }: ExportDialogProp
   const [compression, setCompression] = useState<ParquetCompression>("snappy");
   const [errors, setErrors] = useState<FormErrors>({});
   const [requestError, setRequestError] = useState<string | null>(null);
+  const [submittedSql, setSubmittedSql] = useState<string | null>(null);
   const [view, setView] = useState<ExportView | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [cancelling, setCancelling] = useState(false);
@@ -163,7 +164,9 @@ export function ExportDialog({ projectId, sql, suggestedName }: ExportDialogProp
     }
     setSubmitting(true);
     try {
-      setView(await executeExport(projectId, sql, options));
+      const snapshot = sql;
+      setView(await executeExport(projectId, snapshot, options));
+      setSubmittedSql(snapshot);
     } catch (cause) {
       setRequestError(String(cause));
     } finally {
@@ -187,6 +190,7 @@ export function ExportDialog({ projectId, sql, suggestedName }: ExportDialogProp
 
   function reset() {
     setView(null);
+    setSubmittedSql(null);
     setRequestError(null);
     setErrors({});
     setBaseName(safeSuggestedName(suggestedName));
@@ -371,6 +375,11 @@ export function ExportDialog({ projectId, sql, suggestedName }: ExportDialogProp
                 <code>{view.exportId.slice(0, 8)}</code>
               </header>
 
+              <section className="export-snapshot" aria-label="Submitted SQL snapshot">
+                <span>Submitted SQL</span>
+                <code>{submittedSql?.trim() || "SQL snapshot unavailable"}</code>
+              </section>
+
               <div className="export-metrics" aria-label="Export progress">
                 <div>
                   <span>Rows</span>
@@ -407,6 +416,12 @@ export function ExportDialog({ projectId, sql, suggestedName }: ExportDialogProp
 
               <section className="export-parts" aria-label="Completed export parts">
                 <h3>Completed parts</h3>
+                {view.filesWritten > view.completedParts.length && (
+                  <p>
+                    Showing the latest {view.completedParts.length.toLocaleString("en-US")} of{" "}
+                    {view.filesWritten.toLocaleString("en-US")} completed files.
+                  </p>
+                )}
                 {view.completedParts.length === 0 ? (
                   <p>
                     {view.state === "succeeded"

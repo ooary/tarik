@@ -182,7 +182,19 @@ impl ExportCoordinator {
     }
 
     pub fn cancel(self: &Arc<Self>, export_id: &str) -> Result<ExportView, String> {
-        self.engine.cancel(export_id)?;
+        if let Some(status) = self.engine.cancel(export_id)? {
+            self.apply_status(export_id, &status);
+            if matches!(
+                status.state,
+                ExportState::Succeeded | ExportState::Failed | ExportState::Cancelled
+            ) {
+                let error = status.error.map(|error| ExportErrorView {
+                    code: error.code,
+                    message: error.message,
+                });
+                self.mark_terminal(export_id, status.state, error);
+            }
+        }
         self.status(export_id)
             .ok_or_else(|| "export does not exist".to_string())
     }
@@ -619,6 +631,26 @@ mod tests {
             .unwrap_err();
         assert_eq!(error, "export.project_missing: missing");
         assert!(engine.submitted.lock().unwrap().is_empty());
+        std::fs::remove_dir(directory).unwrap();
+    }
+
+    #[test]
+    fn queued_cancel_applies_terminal_status_and_history_immediately() {
+        let engine = Arc::new(FakeEngine::new(Vec::new()));
+        *engine.last.lock().unwrap() = Some(status(ExportState::Cancelled));
+        let (coordinator, project_id, database) = coordinator(engine.clone());
+        let directory = output_dir("queued-cancel");
+        let queued = coordinator
+            .execute(&project_id, "SELECT 1", options(&directory))
+            .unwrap();
+        let cancelled = coordinator.cancel(&queued.export_id).unwrap();
+        assert_eq!(cancelled.state, ExportState::Cancelled);
+        assert!(*engine.cancel_called.lock().unwrap());
+        let history = SourcesRepository::new(database)
+            .get_export(&queued.export_id)
+            .unwrap()
+            .unwrap();
+        assert_eq!(history.status, HistoryStatus::Cancelled);
         std::fs::remove_dir(directory).unwrap();
     }
 
