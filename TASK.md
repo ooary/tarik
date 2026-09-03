@@ -1160,7 +1160,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
 
 ## EPIC E9 — Streaming chunked exports
 
-**Status:** `IN PROGRESS` - E9 preparation/design complete; E9-T1 is active.
+**Status:** `REVIEW` - E9-T1 through E9-T4 implemented; all automated gates pass. Awaiting CSV/Parquet exactness, collision/replace, progress/cancellation, partial-failure, persistence, and reveal manual sign-off.
 
 **Outcome:** Exact row-count CSV/Parquet chunks with progress, cancellation, and safe partial failure.
 
@@ -1221,6 +1221,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: long operations show continuous non-blocking feedback.
   - Tests: validation, progress events, cancel, success, partial failure.
   - Commit: `feat(export): add chunk export workflow`
+  - Review: `docs/review/E9-EXPORTS.md`
   - Notes:
     - Added an editor-toolbar Export action after Actual Flow. The controlled Radix dialog is a compact single-page workflow: immutable SQL preview and options, then queued/running progress, then success/failure/cancel summary. Closing the dialog does not cancel active work; polling continues with structurally cleared/retried timers.
     - Options cover native folder selection, portable base name, positive rows per part, stop-or-replace collision policy, CSV delimiter/header, and Parquet compression (Snappy/Zstandard/Gzip/uncompressed). Frontend field checks are repeated by desktop and engine validators before work. Potentially mutating, `WITH`, unknown, or multi-statement SQL requires confirmation because export executes it once.
