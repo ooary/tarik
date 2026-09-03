@@ -289,31 +289,53 @@ impl PartWriter {
     fn publish(mut self, overwrite: ExportOverwritePolicy) -> Result<(PathBuf, u64), EngineError> {
         let writer = self.writer.take().expect("part writer is open");
         writer.close(&self.stage_path)?;
-        let backup = if overwrite == ExportOverwritePolicy::Replace && self.final_path.exists() {
-            let backup = self
-                .final_path
-                .with_file_name(format!(".tarik-export-backup-{}", uuid::Uuid::new_v4()));
-            fs::rename(&self.final_path, &backup).map_err(|source| EngineError::ExportIo {
-                path: self.final_path.clone(),
-                source,
-            })?;
-            Some(backup)
-        } else {
-            None
-        };
-        if let Err(source) = fs::rename(&self.stage_path, &self.final_path) {
-            if let Some(backup) = backup.as_ref() {
-                let _ = fs::rename(backup, &self.final_path);
+        match overwrite {
+            ExportOverwritePolicy::FailIfExists => {
+                // Hard-link creation is atomic and fails if a destination
+                // appeared after preflight. Both paths share one directory,
+                // so this never crosses filesystems.
+                fs::hard_link(&self.stage_path, &self.final_path).map_err(|source| {
+                    if source.kind() == std::io::ErrorKind::AlreadyExists {
+                        EngineError::ExportCollision(self.final_path.clone())
+                    } else {
+                        EngineError::ExportIo {
+                            path: self.final_path.clone(),
+                            source,
+                        }
+                    }
+                })?;
+                let _ = fs::remove_file(&self.stage_path);
             }
-            return Err(EngineError::ExportIo {
-                path: self.final_path.clone(),
-                source,
-            });
-        }
-        if let Some(backup) = backup {
-            // Publication already succeeded. Backup cleanup is best effort so
-            // a cleanup-only failure cannot misreport the new completed part.
-            let _ = fs::remove_file(backup);
+            ExportOverwritePolicy::Replace => {
+                let backup = if self.final_path.exists() {
+                    let backup = self
+                        .final_path
+                        .with_file_name(format!(".tarik-export-backup-{}", uuid::Uuid::new_v4()));
+                    fs::rename(&self.final_path, &backup).map_err(|source| {
+                        EngineError::ExportIo {
+                            path: self.final_path.clone(),
+                            source,
+                        }
+                    })?;
+                    Some(backup)
+                } else {
+                    None
+                };
+                if let Err(source) = fs::rename(&self.stage_path, &self.final_path) {
+                    if let Some(backup) = backup.as_ref() {
+                        let _ = fs::rename(backup, &self.final_path);
+                    }
+                    return Err(EngineError::ExportIo {
+                        path: self.final_path.clone(),
+                        source,
+                    });
+                }
+                if let Some(backup) = backup {
+                    // Publication already succeeded. Backup cleanup is best
+                    // effort so cleanup cannot misreport the completed part.
+                    let _ = fs::remove_file(backup);
+                }
+            }
         }
         let bytes = fs::metadata(&self.final_path)
             .map_err(|source| EngineError::ExportIo {
