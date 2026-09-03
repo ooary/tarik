@@ -1108,7 +1108,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
 
 ## EPIC E8 — Saved queries and historical executions
 
-**Status:** `REVIEW` - E8-T1 through E8-T3 implemented; automated gates pass. Awaiting saved-query/history/retention manual sign-off.
+**Status:** `APPROVED` (2026-09-03) - user accepted saved-query persistence, project-scoped history, reopen-without-execution behavior, and retention/clear isolation. E9 is ready but not started.
 
 **Outcome:** Durable query library and useful local audit trail.
 
@@ -1159,6 +1159,8 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
 ---
 
 ## EPIC E9 — Streaming chunked exports
+
+**Status:** `READY` - E8 manual gate approved; implementation not started.
 
 **Outcome:** Exact row-count CSV/Parquet chunks with progress, cancellation, and safe partial failure.
 

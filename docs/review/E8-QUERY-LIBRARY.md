@@ -1,6 +1,6 @@
 # EPIC E8 Review - Query library and history
 
-**Status:** REVIEW  
+**Status:** APPROVED (2026-09-03)  
 **Scope:** Project-scoped saved queries, folders/tags/search, bounded terminal history, reopen-without-execution, retention, and clear isolation.
 
 ## Build and launch
@@ -90,11 +90,11 @@ Open a local project and enter recognizable SQL in the active editor tab.
 
 ## Sign-off
 
-- [ ] Saved query persistence/create-update semantics approved
-- [ ] Folder/tag/search/delete behavior approved
-- [ ] Saved SQL opens without execution
-- [ ] Terminal history accuracy/filtering/pagination approved
-- [ ] Historical SQL opens without execution
-- [ ] Retention and clear isolation approved
+- [x] Saved query persistence/create-update semantics approved
+- [x] Folder/tag/search/delete behavior approved
+- [x] Saved SQL opens without execution
+- [x] Terminal history accuracy/filtering/pagination approved
+- [x] Historical SQL opens without execution
+- [x] Retention and clear isolation approved
 
-When all items pass, reply **“E8 approved”**. E9 remains blocked until approval.
+User sign-off received on 2026-09-03. E9 is unblocked and remains not started.
