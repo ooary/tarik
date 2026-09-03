@@ -1182,7 +1182,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
     - Validation trims and canonicalizes an existing absolute output directory without creating it; restricts portable base names to 128 bytes of ASCII letters/digits/hyphens/underscores; bounds rows per part to `1..=i64::MAX`; rejects cross-format options; and requires one safe ASCII CSV delimiter byte.
     - Deterministic filenames use `<base>-part-00001.<csv|parquet>` with checked one-based numbering and stable expansion beyond five digits. Tests cover wire variants, normalization, invalid directories without creation, unsafe names, row bounds, delimiters, cross-format options, and filename sequences.
 
-- [ ] **E9-T2 Implement one-pass exact row chunk writer**
+- [x] **E9-T2 Implement one-pass exact row chunk writer**
   - Depends on: E9-T1, E5.5-T2
   - Owns: `src-tauri/src/export/`, engine batch stream
   - Deliverables:
@@ -1193,6 +1193,10 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: every non-final part has exactly the requested number of rows.
   - Tests: zero rows, exact boundary, boundary+1, many batches, batch larger than chunk, CSV/Parquet readback.
   - Commit: `feat(export): stream exact row chunks`
+  - Notes:
+    - Added engine-side Arrow 58 CSV and Parquet writers beside DuckDB's streamed record batches. SQL executes once; prior statements are drained in order and only the final row set is exported, matching last-result semantics without `COUNT(*)`, `LIMIT`, `OFFSET`, result pages, or desktop row IPC.
+    - `ChunkedExportWriter` slices batches at remaining part capacity. Every non-final part has exactly `rowsPerPart`, exact boundaries create no empty trailing file, and zero rows create zero files. CSV writes the configured header in every part; Parquet uses bounded 4 MiB row groups and configurable uncompressed/Snappy/Gzip/Zstd encoding.
+    - Each part writes to an engine-generated hidden create-new stage, closes before publication, and returns a bounded path/rows/bytes summary. Fail-if-exists preserves collisions; replace publishes only a completed stage. RAII removes incomplete stages. CSV/Parquet readback tests cover zero, exact, boundary+1, one large batch, many batches, custom delimiter/header, collision/replace, row order, and one-shot multi-statement behavior.
 
 - [ ] **E9-T3 Add export progress, cancellation, and partial-failure policy**
   - Depends on: E9-T2, E2-T5

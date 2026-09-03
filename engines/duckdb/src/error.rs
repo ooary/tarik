@@ -40,6 +40,17 @@ pub enum EngineError {
     },
     #[error("result display conversion failed: {0}")]
     CacheDisplay(String),
+    #[error("invalid export options: {0}")]
+    ExportInvalid(String),
+    #[error("export destination already exists: {0}")]
+    ExportCollision(PathBuf),
+    #[error("export file operation failed at {path}: {source}")]
+    ExportIo {
+        path: PathBuf,
+        source: std::io::Error,
+    },
+    #[error("export writer failed at {path}: {message}")]
+    ExportWrite { path: PathBuf, message: String },
     #[error("source file does not exist: {0}")]
     Missing(PathBuf),
     #[error("unsupported source type: {0}")]
@@ -86,6 +97,10 @@ impl EngineError {
             Self::WorkerSpawn(_) => "engine.worker_spawn",
             Self::RegistryPoisoned => "engine.registry",
             Self::CacheIo { .. } | Self::CacheDisplay(_) => "cache.io",
+            Self::ExportInvalid(_) => "export.invalid_options",
+            Self::ExportCollision(_) => "export.collision",
+            Self::ExportIo { .. } => "export.io",
+            Self::ExportWrite { .. } => "export.write",
             Self::Missing(_) => "source.missing",
             Self::Unsupported(_) => "source.unsupported",
             Self::InvalidPath(_) => "source.invalid_path",

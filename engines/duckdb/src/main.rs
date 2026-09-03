@@ -1,5 +1,6 @@
 mod catalog;
 mod error;
+pub mod export;
 mod jobs;
 mod pages;
 mod session;

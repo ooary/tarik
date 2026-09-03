@@ -247,6 +247,39 @@ impl ExportOptions {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ExportState {
+    Queued,
+    Running,
+    Succeeded,
+    Failed,
+    Cancelled,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportPartSummary {
+    pub part_number: u64,
+    pub path: String,
+    pub rows: u64,
+    pub bytes: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportStatus {
+    pub export_id: String,
+    pub state: ExportState,
+    pub duration_ms: u64,
+    pub rows_written: u64,
+    pub files_written: u64,
+    pub bytes_written: u64,
+    pub current_part: Option<u64>,
+    pub completed_parts: Vec<ExportPartSummary>,
+    pub error: Option<ErrorEnvelope>,
+}
+
 impl ValidatedExportOptions {
     pub fn part_file_name(&self, part_number: u64) -> Result<String, ExportValidationError> {
         if part_number == 0 {

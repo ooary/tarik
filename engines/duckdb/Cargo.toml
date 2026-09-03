@@ -19,5 +19,7 @@ uuid.workspace = true
 duckdb.workspace = true
 glob = "0.3"
 arrow-ipc = "58"
+arrow-csv = "58"
+parquet = { version = "58", default-features = false, features = ["arrow", "flate2-zlib-rs", "snap", "zstd"] }
 tarik-engine-protocol = { path = "../../crates/engine-protocol" }
 tarik-arrow-page-format = { path = "../../crates/arrow-page-format" }
