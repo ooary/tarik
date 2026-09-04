@@ -137,7 +137,7 @@ describe("ExportDialog", () => {
     expect(screen.getByText("orders-part-00002.parquet", { exact: false })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Reveal output" }));
-    expect(revealExportPart).toHaveBeenCalledWith("/exports/orders-part-00001.parquet");
+    expect(revealExportPart).toHaveBeenCalledWith("export-12345678", 1);
   });
 
   it("sends CSV options and requests active cancellation", async () => {

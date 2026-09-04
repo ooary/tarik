@@ -564,6 +564,18 @@ pub fn get_log_info(logger: tauri::State<'_, Arc<AppLogger>>) -> LogInfo {
 }
 
 #[tauri::command]
+pub fn reveal_log_directory<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    logger: tauri::State<'_, Arc<AppLogger>>,
+) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+
+    app.opener()
+        .reveal_item_in_dir(&logger.info().active_file)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 pub fn report_frontend_incident(
     input: FrontendIncidentInput,
     logger: tauri::State<'_, Arc<AppLogger>>,

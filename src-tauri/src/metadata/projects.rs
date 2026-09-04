@@ -91,6 +91,7 @@ impl ProjectsRepository {
         Ok(connection.execute("UPDATE projects SET name = ?2 WHERE id = ?1", (id, name))? > 0)
     }
 
+    #[cfg(test)]
     pub fn touch(&self, id: &str) -> Result<bool, MetadataError> {
         let connection = self.database.connection()?;
         Ok(connection.execute(

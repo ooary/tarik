@@ -1,18 +1,15 @@
-use std::path::Path;
-
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use super::{
-    projects::{ProjectOwnership, ProjectsRepository, RecentProject},
+    projects::{ProjectsRepository, RecentProject},
     queries::{
-        ExecutionStatus, HistoryPruneSummary, HistoryRetentionPolicy, QueriesRepository,
-        QueryFolder, QueryHistoryEntry, QueryHistoryFilter, QueryHistoryPage, SavedQuery,
-        SavedQueryDraft,
+        HistoryPruneSummary, HistoryRetentionPolicy, QueriesRepository, QueryFolder,
+        QueryHistoryFilter, QueryHistoryPage, SavedQuery, SavedQueryDraft,
     },
     sessions::{QuerySessionSnapshot, SessionsRepository},
     settings::SettingsRepository,
-    sources::{SourceRecord, SourceState, SourcesRepository},
+    sources::{SourceRecord, SourcesRepository},
     MetadataDb,
 };
 
@@ -50,34 +47,9 @@ pub fn set_workbench_preferences(
 }
 
 #[tauri::command]
-pub fn upsert_recent_project(
-    name: String,
-    duckdb_path: String,
-    database: State<'_, MetadataDb>,
-) -> Result<RecentProject, String> {
-    ProjectsRepository::new(database.inner().clone())
-        .upsert(&name, Path::new(&duckdb_path), ProjectOwnership::External)
-        .map_err(|error| error.to_string())
-}
-
-#[tauri::command]
 pub fn list_recent_projects(database: State<'_, MetadataDb>) -> Result<Vec<RecentProject>, String> {
     ProjectsRepository::new(database.inner().clone())
         .list()
-        .map_err(|error| error.to_string())
-}
-
-#[tauri::command]
-pub fn touch_recent_project(id: String, database: State<'_, MetadataDb>) -> Result<bool, String> {
-    ProjectsRepository::new(database.inner().clone())
-        .touch(&id)
-        .map_err(|error| error.to_string())
-}
-
-#[tauri::command]
-pub fn upsert_source(source: SourceRecord, database: State<'_, MetadataDb>) -> Result<(), String> {
-    SourcesRepository::new(database.inner().clone())
-        .upsert_source(&source)
         .map_err(|error| error.to_string())
 }
 
@@ -88,34 +60,6 @@ pub fn list_sources(
 ) -> Result<Vec<SourceRecord>, String> {
     SourcesRepository::new(database.inner().clone())
         .list_sources(&project_id)
-        .map_err(|error| error.to_string())
-}
-
-#[tauri::command]
-pub fn remove_source(id: String, database: State<'_, MetadataDb>) -> Result<bool, String> {
-    SourcesRepository::new(database.inner().clone())
-        .remove_source(&id)
-        .map_err(|error| error.to_string())
-}
-
-#[tauri::command]
-pub fn set_source_state(
-    id: String,
-    state: SourceState,
-    database: State<'_, MetadataDb>,
-) -> Result<bool, String> {
-    SourcesRepository::new(database.inner().clone())
-        .set_source_state(&id, state)
-        .map_err(|error| error.to_string())
-}
-
-#[tauri::command]
-pub fn get_source(
-    id: String,
-    database: State<'_, MetadataDb>,
-) -> Result<Option<SourceRecord>, String> {
-    SourcesRepository::new(database.inner().clone())
-        .get_source(&id)
         .map_err(|error| error.to_string())
 }
 
@@ -207,28 +151,6 @@ pub fn delete_saved_query(
 }
 
 #[tauri::command]
-pub fn add_query_history(
-    entry: QueryHistoryEntry,
-    database: State<'_, MetadataDb>,
-) -> Result<(), String> {
-    QueriesRepository::new(database.inner().clone())
-        .add_history(&entry)
-        .map_err(|error| error.to_string())
-}
-
-#[tauri::command]
-pub fn list_query_history(
-    project_id: String,
-    status: Option<ExecutionStatus>,
-    limit: u32,
-    database: State<'_, MetadataDb>,
-) -> Result<Vec<QueryHistoryEntry>, String> {
-    QueriesRepository::new(database.inner().clone())
-        .list_history(&project_id, status, limit)
-        .map_err(|error| error.to_string())
-}
-
-#[tauri::command]
 pub fn list_query_history_page(
     project_id: String,
     filter: QueryHistoryFilter,
@@ -236,17 +158,6 @@ pub fn list_query_history_page(
 ) -> Result<QueryHistoryPage, String> {
     QueriesRepository::new(database.inner().clone())
         .list_history_page(&project_id, &filter)
-        .map_err(|error| error.to_string())
-}
-
-#[tauri::command]
-pub fn prune_query_history(
-    project_id: String,
-    keep: u32,
-    database: State<'_, MetadataDb>,
-) -> Result<usize, String> {
-    QueriesRepository::new(database.inner().clone())
-        .prune_history(&project_id, keep)
         .map_err(|error| error.to_string())
 }
 
@@ -288,12 +199,5 @@ pub fn load_query_session(
 ) -> Result<Option<QuerySessionSnapshot>, String> {
     SessionsRepository::new(database.inner().clone())
         .load(&session_id)
-        .map_err(|error| error.to_string())
-}
-
-#[tauri::command]
-pub fn remove_recent_project(id: String, database: State<'_, MetadataDb>) -> Result<bool, String> {
-    ProjectsRepository::new(database.inner().clone())
-        .remove(&id)
         .map_err(|error| error.to_string())
 }

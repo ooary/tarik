@@ -55,3 +55,20 @@ pub fn cancel_export(
 ) -> Result<ExportView, String> {
     coordinator.cancel(&export_id)
 }
+
+#[tauri::command]
+pub fn reveal_export_part<R: tauri::Runtime>(
+    export_id: String,
+    part_number: u64,
+    app: tauri::AppHandle<R>,
+    coordinator: State<'_, Arc<ExportCoordinator>>,
+) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+
+    let path = coordinator
+        .completed_part_path(&export_id, part_number)
+        .ok_or_else(|| "export part does not belong to a completed tracked export".to_string())?;
+    app.opener()
+        .reveal_item_in_dir(path)
+        .map_err(|error| error.to_string())
+}

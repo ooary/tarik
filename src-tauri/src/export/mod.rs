@@ -225,6 +225,27 @@ impl ExportCoordinator {
             .map(|record| record.view(export_id))
     }
 
+    pub fn completed_part_path(
+        &self,
+        export_id: &str,
+        part_number: u64,
+    ) -> Option<std::path::PathBuf> {
+        let exports = self.exports.lock().ok()?;
+        let record = exports.get(export_id)?;
+        let reported = record
+            .completed_parts
+            .iter()
+            .find(|part| part.part_number == part_number)?;
+        let expected = record
+            .options
+            .clone()
+            .validate()
+            .ok()?
+            .part_path(part_number)
+            .ok()?;
+        (std::path::Path::new(&reported.path) == expected && expected.is_file()).then_some(expected)
+    }
+
     pub fn cancel(self: &Arc<Self>, export_id: &str) -> Result<ExportView, String> {
         if let Some(status) = self.engine.cancel(export_id)? {
             self.apply_status(export_id, &status);
@@ -698,6 +719,37 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(history.status, HistoryStatus::Cancelled);
+        std::fs::remove_dir(directory).unwrap();
+    }
+
+    #[test]
+    fn reveal_path_is_derived_from_tracked_validated_options() {
+        let engine = Arc::new(FakeEngine::new(vec![status(ExportState::Succeeded)]));
+        let (coordinator, project_id, _database) = coordinator(engine);
+        let directory = output_dir("reveal");
+        let queued = coordinator
+            .execute(&project_id, "SELECT 1", options(&directory))
+            .unwrap();
+        wait_terminal(&coordinator, &queued.export_id);
+        let canonical = directory.join("orders-part-00001.csv");
+        coordinator
+            .exports
+            .lock()
+            .unwrap()
+            .get_mut(&queued.export_id)
+            .unwrap()
+            .completed_parts[0]
+            .path = canonical.to_string_lossy().into_owned();
+        std::fs::write(&canonical, "i\n1\n").unwrap();
+
+        assert_eq!(
+            coordinator.completed_part_path(&queued.export_id, 1),
+            Some(canonical.clone())
+        );
+        assert_eq!(coordinator.completed_part_path(&queued.export_id, 2), None);
+        assert_eq!(coordinator.completed_part_path("forged", 1), None);
+        std::fs::remove_file(canonical).unwrap();
+        assert_eq!(coordinator.completed_part_path(&queued.export_id, 1), None);
         std::fs::remove_dir(directory).unwrap();
     }
 

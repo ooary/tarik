@@ -635,7 +635,7 @@ describe("Tarik workbench shell", () => {
     expect(await screen.findByText("7 files, up to 2 MiB each")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Reveal logs" }));
 
-    expect(revealLogDirectory).toHaveBeenCalledWith("/tmp/tarik/logs");
+    expect(revealLogDirectory).toHaveBeenCalledWith();
   });
 
   it("clears only temporary result cache from settings", async () => {

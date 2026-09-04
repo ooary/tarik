@@ -467,7 +467,9 @@ export function ExportDialog({ projectId, sql, suggestedName }: ExportDialogProp
                   <>
                     {view.completedParts[0] && (
                       <Button
-                        onClick={() => void revealExportPart(view.completedParts[0].path)}
+                        onClick={() =>
+                          void revealExportPart(view.exportId, view.completedParts[0].partNumber)
+                        }
                         type="button"
                       >
                         Reveal output

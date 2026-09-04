@@ -1513,7 +1513,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
     - On the i5-1235U/15.3 GiB release run, the checked baseline measured 40.5 MiB idle, 106.7 MiB peak, 3.5 MiB post-cycle growth, zero residual result bytes, and zero hidden stages. A repeat measured 117.4 MiB peak and 7.5 MiB growth; both passed.
     - The fixed evidence supports retaining 500-row/~4 MiB engine pages, a 12-page desktop decoded LRU, one query/export FIFO worker per session, and 4 MiB Parquet row groups. `scripts/build-engine.sh` now correctly maps `CARGO_BUILD_PROFILE` to the Cargo profile.
 
-- [ ] **E11-T3 Security and filesystem boundary review**
+- [x] **E11-T3 Security and filesystem boundary review**
   - Depends on: E4, E9, E10 core tasks
   - Owns: Tauri capabilities, boundary tests, review notes
   - Deliverables:
@@ -1523,6 +1523,12 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: UI cannot invoke arbitrary filesystem or SQL-adjacent internal operations outside declared commands.
   - Tests: malicious path/identifier and command-input tests.
   - Commit: `fix(security): harden local trust boundaries`
+  - Review: `docs/security/E11-BOUNDARY-REVIEW.md`
+  - Notes:
+    - Invoke audit now has exact parity: 54 registered handlers and 54 typed frontend invoke names. Ten unused generic metadata mutators that bypassed project/query/export ownership were removed from the public handler and wrapper modules.
+    - Removed broad `opener:default` WebView permission. Logs are revealed by a no-path backend command; export reveal sends only export ID/part number and Rust derives an existing canonical file from immutable validated options plus the coordinator's completed-part record.
+    - Added a non-null local CSP allowing only self scripts/default content, Tauri IPC, local asset/data images, and inline styles required by CodeMirror/XYFlow geometry; remote scripts/frames/network origins are excluded.
+    - Boundary review records active-project/kind checks, identifier/path escaping, external/managed ownership, export publication/reveal, bounded result paging, cleanup/manifest/symlink behavior, incident redaction, shutdown ownership, and intentional explicit-SQL capabilities with adversarial test evidence.
 
 - [ ] **E11-T4 Add packaging, versioning, and release artifacts**
   - Depends on: E11-T1, E11-T2, E11-T3

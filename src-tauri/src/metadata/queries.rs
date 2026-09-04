@@ -352,6 +352,7 @@ impl QueriesRepository {
         })
     }
 
+    #[cfg(test)]
     pub fn list_history(
         &self,
         project_id: &str,
@@ -429,6 +430,7 @@ impl QueriesRepository {
         })
     }
 
+    #[cfg(test)]
     pub fn prune_history(&self, project_id: &str, keep: u32) -> Result<usize, MetadataError> {
         Ok(self
             .apply_history_retention(

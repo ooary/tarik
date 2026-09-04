@@ -1,6 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
 import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
-import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import type { WorkbenchPreferences } from "../app/preferences";
 
 export interface RuntimeInfo {
@@ -166,8 +165,8 @@ export function getLogInfo(invokeCommand: InvokeCommand = invoke): Promise<LogIn
   return invokeCommand<LogInfo>("get_log_info");
 }
 
-export function revealLogDirectory(directory: string): Promise<void> {
-  return revealItemInDir(directory);
+export function revealLogDirectory(invokeCommand: InvokeCommand = invoke): Promise<void> {
+  return invokeCommand<void>("reveal_log_directory");
 }
 
 export function reportFrontendIncident(
@@ -746,8 +745,12 @@ export function chooseExportDirectory(): Promise<string | null> {
   });
 }
 
-export function revealExportPart(path: string): Promise<void> {
-  return revealItemInDir(path);
+export function revealExportPart(
+  exportId: string,
+  partNumber: number,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<void> {
+  return invokeCommand<void>("reveal_export_part", { exportId, partNumber });
 }
 
 export function executeExport(

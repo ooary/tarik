@@ -8,7 +8,6 @@ async function loadCommandsModule() {
   const source = await readFile(new URL("../src/lib/commands.ts", import.meta.url), "utf8");
   const withoutTauriImport = source
     .replace('import { open as openFileDialog } from "@tauri-apps/plugin-dialog";\n', "")
-    .replace('import { revealItemInDir } from "@tauri-apps/plugin-opener";\n', "")
     .replace('import { invoke } from "@tauri-apps/api/core";\n', "")
     .replace('import type { WorkbenchPreferences } from "../app/preferences";\n', "");
   const javascript = ts.transpile(withoutTauriImport, {
@@ -329,6 +328,8 @@ test("app paths, logs, and incidents use typed commands", async () => {
     clearCache,
     registerShutdownReady,
     completeShutdown,
+    revealLogDirectory,
+    revealExportPart,
   } = await loadCommandsModule();
   const expected = {
     dataDir: "/tmp/tarik/data",
@@ -369,6 +370,8 @@ test("app paths, logs, and incidents use typed commands", async () => {
   assert.deepEqual(await clearCache(invoke), { artifactsRemoved: 0, warnings: [] });
   await registerShutdownReady(invoke);
   assert.deepEqual(await completeShutdown(false, invoke), { phase: "complete" });
+  await revealLogDirectory(invoke);
+  await revealExportPart("export-1", 2, invoke);
 
   assert.equal(
     JSON.stringify(calls),
@@ -380,6 +383,8 @@ test("app paths, logs, and incidents use typed commands", async () => {
       { command: "clear_cache", args: undefined },
       { command: "register_shutdown_ready", args: undefined },
       { command: "complete_shutdown", args: { skipDraft: false } },
+      { command: "reveal_log_directory", args: undefined },
+      { command: "reveal_export_part", args: { exportId: "export-1", partNumber: 2 } },
     ]),
   );
   assert.deepEqual(result, expected);

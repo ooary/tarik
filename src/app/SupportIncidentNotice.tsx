@@ -46,11 +46,7 @@ export function SupportIncidentNotice({
           <CopyIcon aria-hidden="true" size={14} />
           {copied ? "Copied" : "Copy ID"}
         </button>
-        <button
-          className="text-button"
-          onClick={() => void revealLogDirectory(incident.logDirectory)}
-          type="button"
-        >
+        <button className="text-button" onClick={() => void revealLogDirectory()} type="button">
           <FolderOpenIcon aria-hidden="true" size={14} />
           Reveal logs
         </button>

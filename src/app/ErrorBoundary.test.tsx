@@ -40,7 +40,7 @@ describe("ErrorBoundary", () => {
     );
 
     screen.getByRole("button", { name: "Reveal logs" }).click();
-    expect(revealLogDirectory).toHaveBeenCalledWith("/tmp/tarik/logs");
+    expect(revealLogDirectory).toHaveBeenCalledWith();
     consoleError.mockRestore();
   });
 

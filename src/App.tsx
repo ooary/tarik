@@ -539,7 +539,7 @@ function App() {
               <button
                 className="text-button"
                 disabled={!logInfo}
-                onClick={() => logInfo && void revealLogDirectory(logInfo.directory)}
+                onClick={() => logInfo && void revealLogDirectory()}
                 type="button"
               >
                 <FolderOpenIcon aria-hidden="true" size={14} />
