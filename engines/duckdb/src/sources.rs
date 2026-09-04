@@ -264,19 +264,6 @@ pub fn drop_link(connection: &Connection, source: &SourceRecord) -> Result<(), E
     Ok(())
 }
 
-pub fn check_link_health(source: &SourceRecord) -> SourceState {
-    match source.kind {
-        SourceKind::LinkedParquet | SourceKind::LinkedCsv => source
-            .source_path
-            .as_ref()
-            .map(Path::new)
-            .filter(|path| path.is_file())
-            .map(|_| SourceState::Ready)
-            .unwrap_or(SourceState::Missing),
-        SourceKind::DuckdbTable => SourceState::Ready,
-    }
-}
-
 fn source_record(
     project_id: &str,
     name: &str,

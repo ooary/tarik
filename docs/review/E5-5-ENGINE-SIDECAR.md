@@ -17,11 +17,11 @@ src-tauri/                    # desktop: no duckdb/arrow dependencies
 ## Protocol
 
 - `engine.handshake` - engine identity, protocol version, capabilities
-- `engine.ping` / `engine.shutdown`
+- `engine.shutdown` (`engine.handshake` is the startup health check; unused ping was removed in E12-T0)
 - `session.open` / `session.close` (duckdb locator carries the project path)
 - `catalog.inspect`
 - `source.inspect`
-- `duckdb.source.link_parquet` / `import_table` / `repair_link` / `drop_link` / `check_health`
+- `duckdb.source.link_parquet` / `import_table` / `repair_link` / `drop_link` (linked-file health is owned by project reopen; the duplicate unused sidecar health method was removed in E12-T0)
 
 Requests and responses are single-line JSON. Unknown methods and missing sessions return structured error envelopes with stable codes.
 

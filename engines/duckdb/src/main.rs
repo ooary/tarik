@@ -14,7 +14,7 @@ use std::io::{BufRead, Write};
 use serde_json::Value;
 use tarik_engine_protocol::{
     Capabilities, EngineInfo, ErrorEnvelope, ProjectLocator, RequestEnvelope, ResponseEnvelope,
-    SourceState, PROTOCOL_VERSION,
+    PROTOCOL_VERSION,
 };
 
 use crate::error::EngineError;
@@ -176,16 +176,6 @@ fn dispatch(
             sources::drop_link(connection, &source)?;
             Ok(Value::Null)
         }
-        "duckdb.source.check_health" => {
-            let source: tarik_engine_protocol::SourceRecord = serde_json::from_value(
-                params
-                    .get("source")
-                    .cloned()
-                    .ok_or_else(|| EngineError::MissingField("source".into()))?,
-            )?;
-            let state: SourceState = sources::check_link_health(&source);
-            Ok(serde_json::to_value(state)?)
-        }
         "session.close" => {
             let session_id = required_string(params, "sessionId")?;
             // Cancel queued/running jobs first so closing cannot strand work.
@@ -288,7 +278,6 @@ fn dispatch(
             Ok(Value::Null)
         }
         "result.release_all" => Ok(Value::from(jobs.release_all_results()?)),
-        "engine.ping" => Ok(Value::String("pong".into())),
         _ => Err(EngineError::MethodNotFound(request.method.clone())),
     }
 }
