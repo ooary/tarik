@@ -44,3 +44,70 @@ jobs:
           ./scripts/build-engine.sh
           ./scripts/check-engine.sh
       - run: cargo test --workspace --no-fail-fast
+
+  windows:
+    runs-on: windows-latest
+    env:
+      CARGO_TERM_COLOR: always
+      DUCKDB_DOWNLOAD_LIB: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.91.0
+          components: rustfmt, clippy
+          targets: x86_64-pc-windows-msvc
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: .
+      - run: npm ci
+      - run: npm run format:check
+      - run: npm run docs:check
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run test:ui
+      - run: npm run build
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets --target x86_64-pc-windows-msvc -- -D warnings
+      - name: Build DuckDB sidecar
+        run: cargo build -p tarik-engine-duckdb --target x86_64-pc-windows-msvc
+      - name: Stage DuckDB runtime DLL
+        shell: pwsh
+        run: |
+          $target = "x86_64-pc-windows-msvc"
+          $targetDebug = "target/$target/debug"
+          $dll = Get-ChildItem "target/duckdb-download/$target" -Recurse -Filter duckdb.dll |
+            Select-Object -First 1
+          if (-not $dll) { throw "Pinned DuckDB runtime DLL was not downloaded" }
+          Copy-Item $dll.FullName "$targetDebug/duckdb.dll" -Force
+          if (-not (Test-Path "$targetDebug/tarik-engine-duckdb.exe")) {
+            throw "DuckDB sidecar executable was not built"
+          }
+          # Desktop integration helpers use the normal native target/debug
+          # location; stage the same verified pair there for the test run.
+          New-Item -ItemType Directory -Force "target/debug" | Out-Null
+          Copy-Item "$targetDebug/tarik-engine-duckdb.exe" "target/debug/tarik-engine-duckdb.exe" -Force
+          Copy-Item "$targetDebug/duckdb.dll" "target/debug/duckdb.dll" -Force
+      - name: Verify real DuckDB sidecar handshake
+        shell: pwsh
+        run: |
+          $request = '{"id":"windows-ci","method":"engine.handshake","params":{}}'
+          $response = $request | & "target/x86_64-pc-windows-msvc/debug/tarik-engine-duckdb.exe" | Select-Object -First 1 | ConvertFrom-Json
+          if (-not $response.ok) { throw "Engine handshake failed: $($response.error.message)" }
+          if ($response.result.engineId -ne "duckdb") { throw "Unexpected engine: $($response.result.engineId)" }
+          if ($response.result.protocolVersion -ne 1) { throw "Unexpected protocol: $($response.result.protocolVersion)" }
+      - name: Test Windows workspace with real sidecar
+        run: cargo test --workspace --target x86_64-pc-windows-msvc --no-fail-fast
+      - name: Compile Tauri Windows application
+        run: npm run tauri build -- --target x86_64-pc-windows-msvc --no-bundle
+      - name: Verify Windows desktop output
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "target/x86_64-pc-windows-msvc/release/tarik.exe")) {
+            throw "Tauri Windows executable was not produced"
+          }

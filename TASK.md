@@ -1737,11 +1737,15 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
     - Before/after: tracked files 236 → 229; tracked bytes −133,506; frontend −208 lines; Rust −219 lines; desktop binary −5,760 B; sidecar −576 B; portable −7,801 B; DEB −7,156 B; AppImage unchanged because its runtime/container dominates.
     - Full direct gates, 150 UI tests, real sidecar/golden restart, release memory (108.5 MiB peak, 3.5 MiB growth, zero residual cache/stages), and Linux portable/DEB/AppImage content/launch/checksums pass. Evidence: `docs/design/E12-CODEBASE-CLEANUP.md`.
 
-- [ ] **E12-T1 Add Windows x64 compile and test CI**
+- [x] **E12-T1 Add Windows x64 compile and test CI**
   - Depends on: E12-T0, E3
   - Deliverables: `windows-latest` checks for frontend, Rust, bundled DuckDB, and Tauri build using `x86_64-pc-windows-msvc`.
   - Acceptance: every pull request proves the cleaned current source compiles and tests on Windows.
   - Commit: `ci(windows): add native windows build checks`
+  - Notes:
+    - Added a native `windows-latest` job pinned to Node 24 and Rust 1.91/MSVC. It runs every frontend gate, target-specific Clippy, downloads/builds against pinned DuckDB 1.5.5, stages `duckdb.dll`, performs a real sidecar handshake, runs the complete workspace with the real `.exe`, and compiles the Tauri release executable without bundling.
+    - Windows engine discovery now uses `tarik-engine-duckdb.exe`; the sidecar emits `$ORIGIN` only for Linux, and integration tests set `LD_LIBRARY_PATH` only on Unix. Full Linux regression remains green.
+    - This local checkout has no Git remote, so a hosted runner could not be triggered here. The workflow is fail-closed and becomes authoritative on its first push/PR; local MSVC-target checking reached native SQLite/zstd build scripts before stopping because Linux has no MSVC C linker.
 
 - [ ] **E12-T2 Make development and filesystem boundaries cross-platform**
   - Depends on: E12-T1

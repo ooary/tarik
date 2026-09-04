@@ -13,6 +13,7 @@ struct Engine {
     stdout: BufReader<std::process::ChildStdout>,
 }
 
+#[cfg(unix)]
 fn duckdb_lib_dir() -> PathBuf {
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     manifest
@@ -23,8 +24,10 @@ fn duckdb_lib_dir() -> PathBuf {
 
 fn spawn_engine() -> Engine {
     let bin = env!("CARGO_BIN_EXE_tarik-engine-duckdb");
-    let mut child = Command::new(bin)
-        .env("LD_LIBRARY_PATH", duckdb_lib_dir())
+    let mut command = Command::new(bin);
+    #[cfg(unix)]
+    command.env("LD_LIBRARY_PATH", duckdb_lib_dir());
+    let mut child = command
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit())
