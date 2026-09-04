@@ -1580,14 +1580,122 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
 
 ---
 
+## EPIC E11.5 — Desktop theme, table creation, and context interactions
+
+**Status:** `READY / NOT STARTED` - user-reported Linux review corrections are specified below. This is a blocking fix epic before any E12 Windows work; no application code has been changed for these items yet.
+
+**Design read:** Focused correction pass for a calm, dense SQL workbench. Preserve the existing IDE structure and restrained green accent while making effective-theme behavior, command affordances, context menus, selection, and connection state explicit rather than browser-like.
+
+**Outcome:** Dark mode is legible and consistently Dracula-themed in SQL editors, New table is a real safe workflow, native browser context menus never leak through, and each desktop surface exposes only the context actions appropriate to it.
+
+**Interaction policy:**
+
+| Surface                                                        | Right-click behavior                                                                                                           |
+| -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| App header, panel headings, result column headers, empty space | Suppress the browser/WebView menu; show no custom menu                                                                         |
+| SQL editor                                                     | Tarik menu with **Run query** plus applicable editing actions; use the same run/mutation path as the toolbar                   |
+| Result body cell                                               | Tarik menu for bounded cell/selection copying and **Run query again**                                                          |
+| Left explorer project row                                      | Tarik project menu, after selecting that project/workspace row                                                                 |
+| Other left explorer content                                    | Suppress right-click; table/source actions must use an explicit accessible row action rather than browser or right-click menus |
+
+- [ ] **E11.5-T0 Design the effective-theme and context-command graph**
+  - Depends on: E11 implementation
+  - Owns: `docs/design/E11-5-DESIGN-GRAPH.md`
+  - Deliverables:
+    - Define one effective theme shape (`light | dark`) derived from manual Light/Dark or live system preference and consumed by CSS and CodeMirror.
+    - Define scoped context targets, commands, selection coordinates, immutable rerun snapshots, mutation confirmation, and browser-menu suppression boundaries.
+    - Define New table DDL generation/identifier validation, catalog refresh, connection-state truth, keyboard equivalents, and teardown of media/context listeners.
+  - Acceptance: graph uses Graph Protocol sections and resolves click/right-click/Shift/Ctrl-or-Command semantics, no-project/error states, and virtualized-page boundaries before implementation.
+  - Tests: design completeness and current-code mismatch inventory.
+  - Commit: `docs(design): define E11.5 desktop interaction fixes`
+
+- [ ] **E11.5-T1 Make dark mode legible and theme CodeMirror with Dracula**
+  - Depends on: E11.5-T0
+  - Owns: effective theme resolver, `src/styles/tokens.css`, result styles, `src/features/editor/SqlEditor.tsx`, theme tests
+  - Deliverables:
+    - Use readable near-white primary text for all result values in effective dark mode, including nulls, active/selected rows, loading, error, and virtualized cells; retain secondary hierarchy and WCAG AA contrast.
+    - Apply the Dracula editor palette whenever the **effective** theme is dark: manual Dark and System while `prefers-color-scheme: dark`. Keep the existing light editor theme when effective light.
+    - Reconfigure existing CodeMirror views without destroying editor history, selection, diagnostics, completion state, or focus; react live to system-theme changes and remove listeners on teardown.
+    - Use Dracula's canonical background/foreground/selection and syntax colors consistently rather than approximating dark mode with only a background swap.
+  - Acceptance: manual Light, Dark, System-light, System-dark, and live OS theme changes keep Results and every SQL snapshot/editor readable; system dark produces the Dracula editor theme.
+  - Tests: token contrast checks, effective-theme resolver tests, CodeMirror reconfiguration tests, result loading/error/selected states, both manual and mocked system media changes.
+  - Commit: `fix(theme): align dark results and editor colors`
+
+- [ ] **E11.5-T2 Implement the New table workflow**
+  - Depends on: E11.5-T0
+  - Owns: explorer New table action, accessible dialog/form, typed Tauri command/service, DuckDB DDL boundary, catalog refresh
+  - Deliverables:
+    - Replace the inert **New table** control with a project-scoped dialog for a table name and one or more columns containing name, supported DuckDB type, and nullability.
+    - Require an open project and at least one valid uniquely named column. Use a reviewed type allow-list and the central DuckDB identifier-quoting path; never concatenate raw identifiers or arbitrary type text into DDL.
+    - Show submitting, inline validation, duplicate-table, engine, and success states. On success, close the dialog, refresh catalog/completion, and make the table immediately available without an implicit query run.
+    - Preserve the dialog on recoverable failure and create no phantom SQLite source record or partially represented catalog entry.
+  - Acceptance: a beginner can create, discover, insert into, query, and later delete an empty table; quoted/reserved-word names are either safely supported or rejected with exact guidance.
+  - Tests: no-project disabled state, keyboard/focus cycle, empty/duplicate/quoted/malicious names, duplicate columns, supported types/nullability, engine failure, exactly one CREATE execution, catalog/completion refresh.
+  - Commit: `feat(sources): add safe new table workflow`
+
+- [ ] **E11.5-T3 Replace browser context menus with scoped Tarik menus**
+  - Depends on: E11.5-T0
+  - Owns: app-shell context policy, editor menu, explorer project/row actions, `ContextMenu` accessibility and tests
+  - Deliverables:
+    - Prevent WebView/browser entries such as Reload and Inspect element across application chrome, headings, empty areas, and unsupported explorer/result targets in both development and packaged builds.
+    - Add an editor context menu whose **Run query** command delegates to the same immutable submission and mutation-confirmation path as toolbar Run/`Ctrl-or-Command+Enter`; retain applicable Cut, Copy, Paste, and Select all behavior.
+    - Reserve explorer right-click for a selected active/recent project row. Empty explorer space, headings, table rows, and linked-source rows must not open browser or context menus.
+    - Keep existing catalog/source operations reachable through explicit visible, keyboard-accessible row action controls when their old right-click menu is removed.
+    - Support keyboard invocation (`Shift+F10`/Menu key), focus restoration, Escape dismissal, disabled states, and screen-reader labels; never rely on pointer-only commands.
+  - Acceptance: exhaustive surface testing produces either the declared Tarik menu or no menu, never browser Reload/Inspect; toolbar/keyboard alternatives remain available.
+  - Tests: contextmenu event matrix for header/editor/result header/result body/explorer/project rows/empty space, editor command delegation, clipboard permissions/failure, keyboard menu navigation, production WebView smoke.
+  - Commit: `fix(app): scope desktop context menus`
+
+- [ ] **E11.5-T4 Add bounded spreadsheet-style result selection and context actions**
+  - Depends on: E11.5-T3, E6 result paging
+  - Owns: `src/features/results/ResultGrid.tsx`, result selection model/menu, query rerun integration, tests
+  - Deliverables:
+    - Make a body cell the selection anchor; Shift-click/right-click extends one rectangular range, while Ctrl-click on Windows/Linux or Command-click on macOS toggles disjoint cells. Right-click inside the current selection preserves it.
+    - Render selected cells with dark/light accessible styling independent of the active-row keyboard cue. Store selection as row/column coordinates, not DOM nodes, so virtualization remains bounded and correct.
+    - Provide context actions **Copy cell**, **Copy selected cells**, **Copy row**, **Copy page with headers**, and **Run query again** when applicable. Serialize rectangular selections as TSV with stable row/column order and explicit `NULL`; clear selection on result/page replacement.
+    - Limit multi-cell selection to the currently loaded bounded page. Do not fetch hidden pages, collect the full result, or increase the 500-row/12-page memory limits for copying.
+    - **Run query again** must explicitly rerun the immutable SQL snapshot that produced the displayed result, not silently use edited SQL. It must pass through normal mutation warnings, cancellation/history, terminal-state, and previous-result release behavior.
+    - Result column headers and their resize handles never open a context menu; resize and keyboard-resize behavior remain intact.
+  - Acceptance: Shift and Ctrl/Command selections copy exactly the visibly selected bounded data, work with row/column virtualization, and rerun cannot execute a different editor revision accidentally.
+  - Tests: single/range/disjoint selection, right-click preservation, NULL/tab/newline clipboard escaping policy, page/result reset, offscreen virtualized cells, header suppression, resize regression, immutable SELECT/mutation rerun, clipboard failure feedback.
+  - Commit: `feat(results): add scoped selection context actions`
+
+- [ ] **E11.5-T5 Correct explorer/header actions and DuckDB connection status**
+  - Depends on: E11.5-T0
+  - Owns: header/explorer controls, semantic action tokens, engine status indicator, accessibility and visual tests
+  - Deliverables:
+    - Remove the `+` button beside **Workspace / Explorer** entirely, including its misleading Refresh catalog label and unused icon import. Existing automatic refresh after project/source/query/table changes remains the catalog truth.
+    - Style **New project** as the green primary action and **Close project** as a red action in light and dark themes, with WCAG AA text/icon contrast and non-color labels. Do not make unrelated neutral actions green/red.
+    - Increase the DuckDB connection orb to a clearly visible 9–10 px indicator. Connected uses a restrained green inner highlight/halo; disconnected/no-project uses a neutral reflective ring with no false green glow; connecting and failed states remain textually distinguishable.
+    - Drive “connected” only after the sidecar handshake, protocol check, and project session open succeed—not merely from the presence of project metadata. Preserve adjacent text such as **Connected to …** / **No DuckDB project open** so color is never the only signal.
+    - Any status transition motion must communicate connection change, honor `prefers-reduced-motion`, and stop after the transition rather than pulse forever.
+  - Acceptance: no plus control appears in the explorer; action hierarchy and connection truth are obvious at minimum viewport in both themes and with reduced motion/high contrast.
+  - Tests: button semantic states/contrast, no-project/connecting/connected/failed/closed engine states, handshake/session failure cannot show connected, reduced-motion styles, minimum viewport and keyboard focus.
+  - Commit: `fix(shell): clarify project and engine states`
+
+- [ ] **E11.5-T6 Review the desktop correction pass**
+  - Depends on: E11.5-T1, E11.5-T2, E11.5-T3, E11.5-T4, E11.5-T5
+  - Owns: `docs/review/E11-5-DESKTOP-UX.md`
+  - Deliverables:
+    - Combined checklist mapping every user report to implementation and automated/manual evidence.
+    - Light/Dark/System screenshots at normal and minimum viewport, context-menu surface matrix, New table walkthrough, selection clipboard samples, immutable rerun proof, and engine failure/recovery states.
+    - Re-run E6 bounded-results, E9.5 diagnostics, E10 shutdown/draft, and E11 security/CSP/invoke parity regression gates.
+  - Acceptance: user manually approves all nine reported corrections before E12 becomes READY; deferred E6/E7/E10 and final-release blockers remain separately reopenable.
+  - Tests: full direct Rust/workspace/frontend/docs/lint/typecheck/build gates plus packaged Linux smoke; no critical command piped through `tail` without preserving its exit status.
+  - Commit: `docs(review): add E11.5 desktop correction checklist`
+
+---
+
 ## EPIC E12 — Windows portable application support
+
+**Status:** `BLOCKED` - E11.5 desktop corrections must be implemented and manually approved before Windows work begins.
 
 **Outcome:** Signed or checksummed Windows x64 portable ZIP that runs without an installer and keeps user data in normal Windows application-data directories.
 
 **Portable definition:** The user downloads a ZIP, extracts it, and launches `Tarik.exe` without administrator rights or an installer. Tarik operational metadata remains in Windows AppData by default. User DuckDB, CSV, Parquet, and export files remain where the user chooses. A fully self-contained mode that writes metadata beside the executable is explicitly out of scope unless requested later.
 
 - [ ] **E12-T1 Add Windows x64 compile and test CI**
-  - Depends on: E3
+  - Depends on: E11.5 approval, E3
   - Deliverables: `windows-latest` checks for frontend, Rust, bundled DuckDB, and Tauri build using `x86_64-pc-windows-msvc`.
   - Acceptance: every pull request proves the current source compiles and tests on Windows.
   - Commit: `ci(windows): add native windows build checks`
