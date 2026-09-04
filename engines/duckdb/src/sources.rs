@@ -514,6 +514,28 @@ fn validate_type(data_type: &str) -> Result<(), EngineError> {
     }
 }
 
+fn value_to_json(value: ValueRef<'_>) -> serde_json::Value {
+    match value {
+        ValueRef::Null => serde_json::Value::Null,
+        ValueRef::Boolean(value) => value.into(),
+        ValueRef::TinyInt(value) => value.into(),
+        ValueRef::SmallInt(value) => value.into(),
+        ValueRef::Int(value) => value.into(),
+        ValueRef::BigInt(value) => value.into(),
+        ValueRef::UTinyInt(value) => value.into(),
+        ValueRef::USmallInt(value) => value.into(),
+        ValueRef::UInt(value) => value.into(),
+        ValueRef::UBigInt(value) => value.into(),
+        ValueRef::Float(value) => serde_json::json!(value),
+        ValueRef::Double(value) => serde_json::json!(value),
+        ValueRef::Text(value) => String::from_utf8_lossy(value).into_owned().into(),
+        ValueRef::Blob(value) | ValueRef::Geometry(value) => {
+            format!("<{} bytes>", value.len()).into()
+        }
+        other => format!("{other:?}").into(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -584,27 +606,5 @@ mod tests {
             )
             .unwrap();
         assert_eq!(count, 0);
-    }
-}
-
-fn value_to_json(value: ValueRef<'_>) -> serde_json::Value {
-    match value {
-        ValueRef::Null => serde_json::Value::Null,
-        ValueRef::Boolean(value) => value.into(),
-        ValueRef::TinyInt(value) => value.into(),
-        ValueRef::SmallInt(value) => value.into(),
-        ValueRef::Int(value) => value.into(),
-        ValueRef::BigInt(value) => value.into(),
-        ValueRef::UTinyInt(value) => value.into(),
-        ValueRef::USmallInt(value) => value.into(),
-        ValueRef::UInt(value) => value.into(),
-        ValueRef::UBigInt(value) => value.into(),
-        ValueRef::Float(value) => serde_json::json!(value),
-        ValueRef::Double(value) => serde_json::json!(value),
-        ValueRef::Text(value) => String::from_utf8_lossy(value).into_owned().into(),
-        ValueRef::Blob(value) | ValueRef::Geometry(value) => {
-            format!("<{} bytes>", value.len()).into()
-        }
-        other => format!("{other:?}").into(),
     }
 }
