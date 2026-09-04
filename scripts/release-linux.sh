@@ -41,7 +41,7 @@ ldd target/release/tarik-engine-duckdb | grep -Eq 'libduckdb\.so => .*/target/re
 printf '==> Build Tauri Linux bundles\n'
 # Arch and other rolling distributions can expose symbols unknown to the
 # linuxdeploy strip tool. Rust release binaries are already stripped by Cargo.
-NO_STRIP=true npm run tauri build -- --bundles deb,appimage
+NO_STRIP=true npm run tauri build -- --config src-tauri/tauri.release.conf.json --bundles deb,appimage
 
 printf '==> Generate dependency inventories\n'
 cargo metadata --format-version 1 > "$STAGE/cargo-metadata.json"
@@ -102,9 +102,12 @@ find target/release/bundle -type f \( -name '*.deb' -o -name '*.AppImage' \) -pr
 printf '==> Verify bundle contents and AppImage startup\n'
 DEB=$(find "$STAGE" -maxdepth 1 -name '*.deb' -print -quit)
 APPIMAGE=$(find "$STAGE" -maxdepth 1 -name '*.AppImage' -print -quit)
+DEB_CONTENTS="$STAGE/.deb-contents"
+ar p "$DEB" data.tar.gz | tar -tzf - > "$DEB_CONTENTS"
 for expected in usr/bin/tarik usr/bin/tarik-engine-duckdb usr/bin/libduckdb.so usr/lib/Tarik/COMPATIBILITY.md usr/lib/Tarik/THIRD_PARTY_NOTICES.md; do
-  ar p "$DEB" data.tar.gz | tar -tzf - | grep -qx "$expected"
+  grep -Fx "$expected" "$DEB_CONTENTS" >/dev/null
 done
+rm "$DEB_CONTENTS"
 SMOKE_ROOT=$(mktemp -d -t tarik-appimage-smoke-XXXXXX)
 set +e
 XDG_DATA_HOME="$SMOKE_ROOT/data" XDG_CACHE_HOME="$SMOKE_ROOT/cache" XDG_CONFIG_HOME="$SMOKE_ROOT/config" \
@@ -125,8 +128,9 @@ done < <(find "$STAGE" -maxdepth 1 -type f \( -name '*.deb' -o -name '*.AppImage
 (cd "$STAGE" && sha256sum -c SHA256SUMS)
 
 python3 - "$STAGE" "$VERSION" "$TARGET_TRIPLE" <<'PY'
-import hashlib,json,pathlib,sys
+import hashlib,json,pathlib,subprocess,sys
 stage=pathlib.Path(sys.argv[1]); version=sys.argv[2]; target=sys.argv[3]
+revision=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()
 artifacts=[]
 for path in sorted(stage.iterdir()):
     if path.is_file() and (path.suffix in {'.deb','.AppImage','.gz'}):
@@ -136,6 +140,7 @@ manifest={
   'product':'Tarik',
   'version':version,
   'target':target,
+  'gitRevision':revision,
   'signed':False,
   'checksums':'SHA256SUMS',
   'artifacts':artifacts,

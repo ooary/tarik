@@ -1,0 +1,5 @@
+{
+  "bundle": {
+    "externalBin": ["binaries/tarik-engine-duckdb", "binaries/libduckdb.so"]
+  }
+}
