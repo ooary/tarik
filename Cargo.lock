@@ -4172,7 +4172,6 @@ dependencies = [
  "duckdb",
  "glob",
  "parquet",
- "serde",
  "serde_json",
  "tarik-engine-protocol",
  "thiserror 2.0.20",
