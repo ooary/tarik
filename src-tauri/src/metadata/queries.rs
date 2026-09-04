@@ -430,19 +430,6 @@ impl QueriesRepository {
         })
     }
 
-    #[cfg(test)]
-    pub fn prune_history(&self, project_id: &str, keep: u32) -> Result<usize, MetadataError> {
-        Ok(self
-            .apply_history_retention(
-                project_id,
-                &HistoryRetentionPolicy {
-                    max_count: Some(keep),
-                    max_age_days: None,
-                },
-                chrono::Utc::now(),
-            )?
-            .deleted as usize)
-    }
 }
 
 fn normalize_saved_draft(draft: &SavedQueryDraft) -> Result<SavedQueryDraft, MetadataError> {
@@ -909,7 +896,17 @@ mod tests {
         assert_eq!(second_page.entries[0].id, "history-0");
         assert_eq!(second_page.next_offset, None);
 
-        assert_eq!(repository.prune_history(&project_id, 2).unwrap(), 1);
+        let pruned = repository
+            .apply_history_retention(
+                &project_id,
+                &HistoryRetentionPolicy {
+                    max_count: Some(2),
+                    max_age_days: None,
+                },
+                chrono::Utc::now(),
+            )
+            .unwrap();
+        assert_eq!(pruned.deleted, 1);
         assert_eq!(
             repository
                 .list_history(&project_id, None, 10)

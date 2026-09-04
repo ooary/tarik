@@ -91,15 +91,6 @@ impl ProjectsRepository {
         Ok(connection.execute("UPDATE projects SET name = ?2 WHERE id = ?1", (id, name))? > 0)
     }
 
-    #[cfg(test)]
-    pub fn touch(&self, id: &str) -> Result<bool, MetadataError> {
-        let connection = self.database.connection()?;
-        Ok(connection.execute(
-            "UPDATE projects SET last_opened_at = datetime('now') WHERE id = ?1",
-            [id],
-        )? > 0)
-    }
-
     pub fn find(&self, id: &str) -> Result<Option<RecentProject>, MetadataError> {
         let connection = self.database.connection()?;
         Ok(connection
@@ -227,6 +218,9 @@ mod tests {
 
         let projects = repository.list().unwrap();
         assert_eq!(projects[0].id, second.id);
-        assert!(repository.touch(&first.id).unwrap());
+        let reopened = repository
+            .upsert("First", Path::new("/data/first.duckdb"), ProjectOwnership::External)
+            .unwrap();
+        assert_eq!(reopened.id, first.id);
     }
 }
