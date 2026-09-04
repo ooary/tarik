@@ -1598,7 +1598,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
 | Left explorer project row                                      | Tarik project menu, after selecting that project/workspace row                                                                 |
 | Other left explorer content                                    | Suppress right-click; table/source actions must use an explicit accessible row action rather than browser or right-click menus |
 
-- [ ] **E11.5-T0 Design the effective-theme and context-command graph**
+- [x] **E11.5-T0 Design the effective-theme and context-command graph**
   - Depends on: E11 implementation
   - Owns: `docs/design/E11-5-DESIGN-GRAPH.md`
   - Deliverables:
@@ -1608,6 +1608,9 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: graph uses Graph Protocol sections and resolves click/right-click/Shift/Ctrl-or-Command semantics, no-project/error states, and virtualized-page boundaries before implementation.
   - Tests: design completeness and current-code mismatch inventory.
   - Commit: `docs(design): define E11.5 desktop interaction fixes`
+  - Notes:
+    - Added a Graph Protocol contract for effective theme and live CodeMirror reconfiguration, safe allow-listed table DDL, global native-menu suppression with target classification, current-page coordinate selection/TSV copying, immutable result SQL reruns, and handshake/session-owned connection state.
+    - Current-code verdict explicitly records the six gaps this epic must close; listener, editor, selection, menu, clipboard, and DuckDB session resources all have structural scope.
 
 - [ ] **E11.5-T1 Make dark mode legible and theme CodeMirror with Dracula**
   - Depends on: E11.5-T0
