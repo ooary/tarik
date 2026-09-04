@@ -3,6 +3,9 @@ name = "tarik"
 version = "0.1.0"
 description = "A local-first desktop SQL workbench"
 authors = ["Tarik contributors"]
+license = "MIT"
+homepage = "https://github.com/tarik-desktop/tarik"
+repository = "https://github.com/tarik-desktop/tarik"
 edition = "2021"
 rust-version = "1.91"
 

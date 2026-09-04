@@ -23,7 +23,18 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["deb", "appimage"],
+    "publisher": "Tarik contributors",
+    "category": "DeveloperTool",
+    "shortDescription": "Local-first DuckDB SQL workbench",
+    "longDescription": "A local-first desktop SQL workbench for learning, querying, explaining, and exporting local CSV, Parquet, and DuckDB data.",
+    "license": "MIT",
+    "licenseFile": "../LICENSE",
+    "externalBin": ["binaries/tarik-engine-duckdb", "binaries/libduckdb.so"],
+    "resources": {
+      "../THIRD_PARTY_NOTICES.md": "THIRD_PARTY_NOTICES.md",
+      "../docs/release/COMPATIBILITY.md": "COMPATIBILITY.md"
+    },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

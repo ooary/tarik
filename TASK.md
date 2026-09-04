@@ -1530,7 +1530,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
     - Added a non-null local CSP allowing only self scripts/default content, Tauri IPC, local asset/data images, and inline styles required by CodeMirror/XYFlow geometry; remote scripts/frames/network origins are excluded.
     - Boundary review records active-project/kind checks, identifier/path escaping, external/managed ownership, export publication/reveal, bounded result paging, cleanup/manifest/symlink behavior, incident redaction, shutdown ownership, and intentional explicit-SQL capabilities with adversarial test evidence.
 
-- [ ] **E11-T4 Add packaging, versioning, and release artifacts**
+- [x] **E11-T4 Add packaging, versioning, and release artifacts**
   - Depends on: E11-T1, E11-T2, E11-T3
   - Owns: packaging/release config and docs
   - Deliverables:
@@ -1540,6 +1540,11 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: clean-machine install/start/uninstall smoke test on each declared platform.
   - Tests: release build and packaged smoke test.
   - Commit: `chore(release): package tarik desktop mvp`
+  - Notes:
+    - Added reproducible `npm run release:linux` packaging for Linux x86_64 only. It verifies npm/Tauri/Cargo version parity, builds the pinned release sidecar, checks `$ORIGIN`/`libduckdb.so`, stages target-triple Tauri external binaries, builds DEB/AppImage, and assembles a portable tarball.
+    - The script generates exact Cargo/npm dependency inventories, includes Tarik MIT license, DuckDB/third-party notices and compatibility/backup guidance, verifies sidecar handshake, checks DEB contents, launches the portable desktop and AppImage under clean XDG roots, generates SHA-256 checksums, verifies them, and writes a machine-readable release manifest.
+    - Built artifacts: 139 MiB AppImage, 30 MiB DEB, and 29 MiB portable tarball in `target/release-artifacts`; all checksums pass. Artifacts are explicitly unsigned and the manifest retains deferred E6/E7/E10 release gates.
+    - AppImage uses `NO_STRIP=true` because rolling-distribution symbols can break linuxdeploy's strip tool; Cargo's release profile already strips Rust binaries. Windows packaging remains E12 and is not implied.
 
 - [ ] **E11-T5 Write user documentation and ship checklist**
   - Depends on: E11-T4

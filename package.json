@@ -2,6 +2,7 @@
   "name": "tarik",
   "private": true,
   "version": "0.1.0",
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -18,7 +19,8 @@
     "test:ui:watch": "vitest",
     "dev:webview-reset": "rm -rf ~/.local/share/com.tarik.desktop",
     "sweep": "cargo sweep --time 30 --manifest-path src-tauri/Cargo.toml",
-    "benchmark:memory": "python3 scripts/benchmark-memory.py"
+    "benchmark:memory": "python3 scripts/benchmark-memory.py",
+    "release:linux": "./scripts/release-linux.sh"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.3",
