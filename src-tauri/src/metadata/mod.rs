@@ -106,6 +106,12 @@ impl MetadataDb {
     pub fn path(&self) -> &Path {
         &self.path
     }
+
+    pub fn checkpoint(&self) -> Result<(), MetadataError> {
+        self.connection()?
+            .execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")?;
+        Ok(())
+    }
 }
 
 fn configure(connection: &Connection) -> Result<(), MetadataError> {

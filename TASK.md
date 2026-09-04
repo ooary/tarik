@@ -1428,7 +1428,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
     - Every export registers an atomic cache-owned recovery manifest before sidecar submission. Sidecar hidden stage/backup names include the export UUID and exact part number, allowing next-start reconciliation to remove only exact incomplete stages or restore an exact backup when its canonical part is absent.
     - Cleanup never recursively deletes a user-selected output directory and never deletes canonical `<base>-part-NNNNN.<ext>` files. Malformed/unsafe manifests are removed without touching their claimed output paths.
 
-- [ ] **E10-T4 Add graceful application shutdown coordinator**
+- [x] **E10-T4 Add graceful application shutdown coordinator**
   - Depends on: E5.5-T3, E5-T3, E6-T2, E9-T3
   - Owns: app shutdown composition
   - Deliverables:
@@ -1438,6 +1438,11 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: forced test shutdown leaves databases reopenable and no owned temp file locked.
   - Tests: shutdown during edit, query, and export.
   - Commit: `feat(app): coordinate graceful shutdown`
+  - Notes:
+    - One idempotent backend coordinator owns all shutdown resources at setup. Close is intercepted only after the mounted workbench registers; the frontend flushes the latest immutable tab snapshot and preferences before invoking terminal shutdown.
+    - Draft flush failure keeps the window open and presents Retry save or explicit Quit without latest changes; Tarik never claims an unsaved draft persisted.
+    - Terminal shutdown cancels queued/running query and export work, waits at most two seconds for terminal history, releases all sidecar results, closes the DuckDB session and sidecar, truncates/checkpoints SQLite WAL, records a bounded shutdown event, flushes logs, then destroys the window.
+    - If the frontend never registered, native close is not intercepted and the Destroyed fallback still stops the engine and flushes logs.
 
 ---
 

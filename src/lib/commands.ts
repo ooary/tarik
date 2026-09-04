@@ -43,6 +43,15 @@ export interface CleanupSummary {
   warnings: string[];
 }
 
+export interface ShutdownReport {
+  phase: "complete";
+  queriesCancelled: number;
+  exportsCancelled: number;
+  resultsReleased: number;
+  metadataCheckpointed: boolean;
+  warnings: string[];
+}
+
 export interface ActiveProject {
   id: string;
   name: string;
@@ -176,6 +185,17 @@ export function getLastSupportIncident(
 
 export function clearCache(invokeCommand: InvokeCommand = invoke): Promise<CleanupSummary> {
   return invokeCommand<CleanupSummary>("clear_cache");
+}
+
+export function registerShutdownReady(invokeCommand: InvokeCommand = invoke): Promise<void> {
+  return invokeCommand<void>("register_shutdown_ready");
+}
+
+export function completeShutdown(
+  skipDraft = false,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<ShutdownReport> {
+  return invokeCommand<ShutdownReport>("complete_shutdown", { skipDraft });
 }
 
 export function getWorkbenchPreferences(

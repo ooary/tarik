@@ -113,4 +113,32 @@ describe("useQueryTabs", () => {
     expect(result.current.saveError).toContain("disk full");
     expect(result.current.tabs[0].dirty).toBe(true);
   });
+
+  it("flush saves the latest revision without a debounce delay", async () => {
+    const { result } = renderHook(() => useQueryTabs("p1"));
+    await act(async () => Promise.resolve());
+    const tabId = result.current.tabs[0].id;
+
+    act(() => result.current.editSql(tabId, "SELECT 42"));
+    await act(async () => result.current.flush());
+
+    expect(saveQuerySession).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(saveQuerySession).mock.calls[0][0].tabs[0].sqlText).toBe("SELECT 42");
+    expect(result.current.saveError).toBeNull();
+  });
+
+  it("flush rejects when the latest draft cannot be saved", async () => {
+    vi.mocked(saveQuerySession).mockRejectedValue(new Error("disk full"));
+    const { result } = renderHook(() => useQueryTabs("p1"));
+    await act(async () => Promise.resolve());
+    const tabId = result.current.tabs[0].id;
+
+    act(() => result.current.editSql(tabId, "SELECT 1"));
+    await expect(
+      act(async () => {
+        await result.current.flush();
+      }),
+    ).rejects.toThrow("disk full");
+    expect(result.current.tabs[0].dirty).toBe(true);
+  });
 });

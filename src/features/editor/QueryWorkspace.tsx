@@ -27,6 +27,7 @@ type AnalysisMode = "explain" | "profile";
 export interface QueryWorkspaceHandle {
   insertSql(text: string): void;
   openPreview(sql: string): void;
+  flushDraft(): Promise<void>;
 }
 
 interface QueryWorkspaceProps {
@@ -63,6 +64,7 @@ export const QueryWorkspace = forwardRef<QueryWorkspaceHandle, QueryWorkspacePro
       duplicateTab,
       moveTab,
       editSql,
+      flush,
     } = useQueryTabs(projectId);
     const sectionRef = useRef<HTMLElement>(null);
     const { executions, run, cancel, forget } = useQueryExecution(projectId, onQuerySucceeded);
@@ -140,8 +142,11 @@ export const QueryWorkspace = forwardRef<QueryWorkspaceHandle, QueryWorkspacePro
         openPreview(sql: string) {
           addTab(sql);
         },
+        flushDraft() {
+          return flush();
+        },
       }),
-      [tabs, activeTabId, editSql, addTab],
+      [tabs, activeTabId, editSql, addTab, flush],
     );
 
     function resizeBottom(event: React.PointerEvent<HTMLDivElement>) {

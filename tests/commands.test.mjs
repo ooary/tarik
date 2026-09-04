@@ -327,6 +327,8 @@ test("app paths, logs, and incidents use typed commands", async () => {
     reportFrontendIncident,
     getLastSupportIncident,
     clearCache,
+    registerShutdownReady,
+    completeShutdown,
   } = await loadCommandsModule();
   const expected = {
     dataDir: "/tmp/tarik/data",
@@ -357,6 +359,7 @@ test("app paths, logs, and incidents use typed commands", async () => {
     if (command === "get_app_directories") return expected;
     if (command === "get_log_info") return logInfo;
     if (command === "clear_cache") return { artifactsRemoved: 0, warnings: [] };
+    if (command === "complete_shutdown") return { phase: "complete" };
     return incident;
   };
   const result = await getAppDirectories(invoke);
@@ -364,13 +367,20 @@ test("app paths, logs, and incidents use typed commands", async () => {
   assert.deepEqual(await reportFrontendIncident(input, invoke), incident);
   assert.deepEqual(await getLastSupportIncident(invoke), incident);
   assert.deepEqual(await clearCache(invoke), { artifactsRemoved: 0, warnings: [] });
+  await registerShutdownReady(invoke);
+  assert.deepEqual(await completeShutdown(false, invoke), { phase: "complete" });
 
-  assert.deepEqual(calls, [
-    { command: "get_app_directories", args: undefined },
-    { command: "get_log_info", args: undefined },
-    { command: "report_frontend_incident", args: { input } },
-    { command: "get_last_support_incident", args: undefined },
-    { command: "clear_cache", args: undefined },
-  ]);
+  assert.equal(
+    JSON.stringify(calls),
+    JSON.stringify([
+      { command: "get_app_directories", args: undefined },
+      { command: "get_log_info", args: undefined },
+      { command: "report_frontend_incident", args: { input } },
+      { command: "get_last_support_incident", args: undefined },
+      { command: "clear_cache", args: undefined },
+      { command: "register_shutdown_ready", args: undefined },
+      { command: "complete_shutdown", args: { skipDraft: false } },
+    ]),
+  );
   assert.deepEqual(result, expected);
 });

@@ -190,6 +190,43 @@ impl QueryCoordinator {
             .ok_or_else(|| "execution registry poisoned".to_string())
     }
 
+    pub fn cancel_all(self: &Arc<Self>) -> u64 {
+        let ids = self
+            .executions
+            .lock()
+            .map(|executions| {
+                executions
+                    .iter()
+                    .filter(|(_, record)| {
+                        matches!(
+                            record.state,
+                            ExecutionState::Queued | ExecutionState::Running
+                        )
+                    })
+                    .map(|(id, _)| id.clone())
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        for id in &ids {
+            let _ = self.engine.cancel(id);
+        }
+        ids.len() as u64
+    }
+
+    pub fn has_active(&self) -> bool {
+        self.executions
+            .lock()
+            .map(|executions| {
+                executions.values().any(|record| {
+                    matches!(
+                        record.state,
+                        ExecutionState::Queued | ExecutionState::Running
+                    )
+                })
+            })
+            .unwrap_or(false)
+    }
+
     /// Drop the tracked execution for a closed editor tab. Terminal history
     /// already persisted is untouched.
     pub fn forget(&self, tab_id: &str) -> Result<(), String> {

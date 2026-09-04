@@ -8,6 +8,7 @@ import {
   chooseParquetFile,
   chooseSourceFile,
   closeProject,
+  completeShutdown,
   createProject,
   dropCatalogObject,
   getActiveProject,
@@ -23,6 +24,7 @@ import {
   listSources,
   loadQuerySession,
   openProject,
+  registerShutdownReady,
   removeLinkedSource,
   removeProject,
   repairLinkedSource,
@@ -33,6 +35,14 @@ import {
   setWorkbenchPreferences,
 } from "./lib/commands";
 
+const shutdownListeners = new Set<(event: unknown) => void>();
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: vi.fn((_event: string, handler: (event: unknown) => void) => {
+    shutdownListeners.add(handler);
+    return Promise.resolve(() => shutdownListeners.delete(handler));
+  }),
+}));
+
 vi.mock("./lib/commands", () => ({
   cancelSourceOperation: vi.fn(),
   clearCache: vi.fn(),
@@ -40,6 +50,7 @@ vi.mock("./lib/commands", () => ({
   chooseParquetFile: vi.fn(),
   chooseSourceFile: vi.fn(),
   closeProject: vi.fn(),
+  completeShutdown: vi.fn(),
   createProject: vi.fn(),
   dropCatalogObject: vi.fn(),
   getActiveProject: vi.fn(),
@@ -55,6 +66,7 @@ vi.mock("./lib/commands", () => ({
   listSources: vi.fn(),
   loadQuerySession: vi.fn(),
   openProject: vi.fn(),
+  registerShutdownReady: vi.fn(),
   removeLinkedSource: vi.fn(),
   removeProject: vi.fn(),
   repairLinkedSource: vi.fn(),
@@ -102,6 +114,15 @@ describe("Tarik workbench shell", () => {
     vi.mocked(listRecentProjects).mockResolvedValue([]);
     vi.mocked(listSources).mockResolvedValue([]);
     vi.mocked(cancelSourceOperation).mockResolvedValue(true);
+    vi.mocked(registerShutdownReady).mockResolvedValue(undefined);
+    vi.mocked(completeShutdown).mockResolvedValue({
+      phase: "complete",
+      queriesCancelled: 0,
+      exportsCancelled: 0,
+      resultsReleased: 0,
+      metadataCheckpointed: true,
+      warnings: [],
+    });
     vi.mocked(clearCache).mockResolvedValue({
       artifactsRemoved: 2,
       bytesRemoved: 4096,
@@ -626,6 +647,30 @@ describe("Tarik workbench shell", () => {
     await waitFor(() => expect(clearCache).toHaveBeenCalled());
     expect(screen.getByText("Removed 2 temporary artifacts.")).toBeInTheDocument();
     expect(screen.getByText(/completed exports are preserved/i)).toBeInTheDocument();
+  });
+
+  it("offers retry or forced quit when the latest draft cannot be saved", async () => {
+    vi.mocked(completeShutdown)
+      .mockRejectedValueOnce(new Error("shutdown.draft_flush_failed"))
+      .mockResolvedValueOnce({
+        phase: "complete",
+        queriesCancelled: 0,
+        exportsCancelled: 0,
+        resultsReleased: 0,
+        metadataCheckpointed: true,
+        warnings: [],
+      });
+    render(<App />);
+    await screen.findByText("No DuckDB project open");
+    await waitFor(() => expect(registerShutdownReady).toHaveBeenCalled());
+
+    // A draft save failure surfaces explicit recovery choices.
+    vi.mocked(saveQuerySession).mockRejectedValue(new Error("disk full"));
+    for (const handler of shutdownListeners) handler({ payload: undefined });
+    await waitFor(() => expect(completeShutdown).toHaveBeenCalledWith(false));
+
+    fireEvent.click(await screen.findByRole("button", { name: "Quit without latest changes" }));
+    await waitFor(() => expect(completeShutdown).toHaveBeenCalledWith(true));
   });
 
   it("shows a browser-safe connection state when Tauri is unavailable", async () => {

@@ -186,6 +186,37 @@ impl ExportCoordinator {
             .ok_or_else(|| "export registry poisoned".to_string())
     }
 
+    pub fn cancel_all(self: &Arc<Self>) -> u64 {
+        let ids = self
+            .exports
+            .lock()
+            .map(|exports| {
+                exports
+                    .iter()
+                    .filter(|(_, record)| {
+                        matches!(record.state, ExportState::Queued | ExportState::Running)
+                    })
+                    .map(|(id, _)| id.clone())
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        for id in &ids {
+            let _ = self.cancel(id);
+        }
+        ids.len() as u64
+    }
+
+    pub fn has_active(&self) -> bool {
+        self.exports
+            .lock()
+            .map(|exports| {
+                exports.values().any(|record| {
+                    matches!(record.state, ExportState::Queued | ExportState::Running)
+                })
+            })
+            .unwrap_or(false)
+    }
+
     pub fn status(&self, export_id: &str) -> Option<ExportView> {
         self.exports
             .lock()

@@ -6,7 +6,7 @@ import {
   TableIcon,
 } from "@phosphor-icons/react";
 import { listen } from "@tauri-apps/api/event";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import "./App.css";
 import { ContextMenu, Dialog } from "./components/ui";
 import { QueryWorkspace, type QueryWorkspaceHandle } from "./features/editor/QueryWorkspace";
@@ -26,6 +26,7 @@ import {
   chooseParquetFile,
   chooseSourceFile,
   closeProject,
+  completeShutdown,
   createProject,
   dropCatalogObject,
   releaseAllResults,
@@ -42,6 +43,7 @@ import {
   listSources,
   openProject,
   removeLinkedSource,
+  registerShutdownReady,
   removeProject,
   repairLinkedSource,
   renameProject,
@@ -99,6 +101,8 @@ function App() {
   const [supportIncident, setSupportIncident] = useState<SupportIncident | null>(null);
   const [cacheStatus, setCacheStatus] = useState<string | null>(null);
   const [clearingCache, setClearingCache] = useState(false);
+  const [shutdownError, setShutdownError] = useState<string | null>(null);
+  const shutdownInFlight = useRef(false);
   const [preferences, setPreferences] = useState<WorkbenchPreferences>(defaultWorkbenchPreferences);
   const { bottomPanelOpen: bottomOpen, sidebarOpen } = preferences;
 
@@ -184,7 +188,7 @@ function App() {
 
   useEffect(() => {
     let disposed = false;
-    let unlisten = () => undefined;
+    let unlisten: (() => void) | undefined;
     listen<SupportIncident>("support-incident", (event) => {
       if (!disposed) setSupportIncident(event.payload);
     })
@@ -195,9 +199,44 @@ function App() {
       .catch(() => undefined);
     return () => {
       disposed = true;
-      unlisten();
+      unlisten?.();
     };
   }, []);
+
+  const finishShutdown = useCallback(
+    async (skipDraft = false) => {
+      if (shutdownInFlight.current) return;
+      shutdownInFlight.current = true;
+      setShutdownError(null);
+      try {
+        if (!skipDraft) {
+          await queryWorkspaceActionsRef.current?.flushDraft();
+          await preferencesRepository.save(preferences);
+        }
+        await completeShutdown(skipDraft);
+      } catch (error) {
+        setShutdownError(String(error));
+        shutdownInFlight.current = false;
+      }
+    },
+    [preferences],
+  );
+
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    registerShutdownReady()
+      .then(() => listen("shutdown-requested", () => void finishShutdown(false)))
+      .then((remove) => {
+        if (disposed) remove();
+        else unlisten = remove;
+      })
+      .catch(() => undefined);
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [finishShutdown]);
 
   useEffect(() => {
     if (!preferencesReady) return;
@@ -741,6 +780,22 @@ function App() {
           onInspectCsv={reinspectCsv}
           onSubmit={submitSource}
         />
+      )}
+
+      {shutdownError && (
+        <div className="shutdown-recovery" role="alertdialog" aria-label="Draft could not be saved">
+          <strong>Tarik could not save the latest draft</strong>
+          <p>Keep the window open and retry, or quit knowing the latest unsaved changes may be lost.</p>
+          <code>{shutdownError}</code>
+          <div>
+            <button className="text-button" onClick={() => void finishShutdown(false)} type="button">
+              Retry save
+            </button>
+            <button className="text-button" onClick={() => void finishShutdown(true)} type="button">
+              Quit without latest changes
+            </button>
+          </div>
+        </div>
       )}
 
       {supportIncident && (

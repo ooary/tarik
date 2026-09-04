@@ -7,6 +7,7 @@ mod plan;
 mod projects;
 mod query;
 mod results;
+mod shutdown;
 mod storage;
 
 use std::{
@@ -130,6 +131,15 @@ pub fn run() {
                     .with_cleanup(cleanup.clone()),
             );
             let results_store = Arc::new(results::ResultStore::new(engine.clone()));
+            let shutdown = Arc::new(shutdown::ShutdownCoordinator::new(
+                coordinator.clone(),
+                export_coordinator.clone(),
+                results_store.clone(),
+                project_manager.clone(),
+                engine.clone(),
+                database.clone(),
+                logger.clone(),
+            ));
             app.manage(logger);
             app.manage(cleanup);
             app.manage(database);
@@ -138,10 +148,21 @@ pub fn run() {
             app.manage(coordinator);
             app.manage(export_coordinator);
             app.manage(results_store);
+            app.manage(shutdown);
             Ok(())
         })
-        .on_window_event(|window, event| {
-            if let tauri::WindowEvent::Destroyed = event {
+        .on_window_event(|window, event| match event {
+            tauri::WindowEvent::CloseRequested { api, .. } => {
+                if let Some(coordinator) = window
+                    .app_handle()
+                    .try_state::<Arc<shutdown::ShutdownCoordinator>>()
+                {
+                    if shutdown::request_frontend_shutdown(window, &coordinator) {
+                        api.prevent_close();
+                    }
+                }
+            }
+            tauri::WindowEvent::Destroyed => {
                 if let Some(engine) = window
                     .app_handle()
                     .try_state::<Arc<engine_manager::EngineManager>>()
@@ -161,6 +182,7 @@ pub fn run() {
                     let _ = logger.flush();
                 }
             }
+            _ => {}
         })
         .invoke_handler(tauri::generate_handler![
             get_runtime_info,
@@ -169,6 +191,8 @@ pub fn run() {
             observability::get_last_support_incident,
             observability::report_frontend_incident,
             storage::clear_cache,
+            shutdown::register_shutdown_ready,
+            shutdown::complete_shutdown,
             metadata::commands::get_workbench_preferences,
             metadata::commands::set_workbench_preferences,
             metadata::commands::upsert_recent_project,

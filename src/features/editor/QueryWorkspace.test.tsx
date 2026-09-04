@@ -137,6 +137,26 @@ describe("QueryWorkspace", () => {
     });
   });
 
+  it("flushes the latest draft through the workspace handle", async () => {
+    const ref = createRef<QueryWorkspaceHandle>();
+    render(
+      <QueryWorkspace
+        bottomOpen
+        bottomPanelHeight={292}
+        catalog={catalog}
+        onSetBottomHeight={vi.fn()}
+        onToggleBottom={vi.fn()}
+        projectId="p1"
+        ref={ref}
+      />,
+    );
+    await act(async () => Promise.resolve());
+
+    act(() => ref.current?.insertSql("SELECT 1"));
+    await act(async () => ref.current?.flushDraft());
+    expect(saveQuerySession).toHaveBeenCalledTimes(1);
+  });
+
   it("adds tabs and exposes SQL insertion/preview actions", async () => {
     const ref = createRef<QueryWorkspaceHandle>();
     const { container } = render(

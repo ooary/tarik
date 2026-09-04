@@ -234,10 +234,13 @@ export function useQueryTabs(projectId: string) {
             setTabs((current) => current.map((tab) => ({ ...tab, dirty: false })));
           }
           setSaveError(null);
+          saveFailure.current = null;
         } catch (error) {
           if (!pendingSave.current) pendingSave.current = next;
           queuedRevision.current = -1;
-          setSaveError(`Draft save failed: ${String(error)}`);
+          const failure = `Draft save failed: ${String(error)}`;
+          saveFailure.current = failure;
+          setSaveError(failure);
           break;
         }
       }
@@ -247,10 +250,17 @@ export function useQueryTabs(projectId: string) {
     return drainPromise.current;
   }, []);
 
-  const flush = useCallback(() => {
+  const saveFailure = useRef<string | null>(null);
+
+  const flush = useCallback((): Promise<void> => {
     if (!projectId || revision.current === 0) return Promise.resolve();
     const current = latest.current;
-    return enqueueSave(snapshotFor(projectId, current.tabs, current.activeTabId), revision.current);
+    return enqueueSave(
+      snapshotFor(projectId, current.tabs, current.activeTabId),
+      revision.current,
+    ).then(() => {
+      if (saveFailure.current) throw new Error(saveFailure.current);
+    });
   }, [enqueueSave, projectId]);
 
   useEffect(() => {
@@ -267,13 +277,13 @@ export function useQueryTabs(projectId: string) {
 
   useEffect(() => {
     const onPageHide = () => {
-      void flush();
+      void flush().catch(() => undefined);
     };
     window.addEventListener("pagehide", onPageHide);
     return () => {
       window.removeEventListener("pagehide", onPageHide);
       if (saveTimer.current) clearTimeout(saveTimer.current);
-      void flush();
+      void flush().catch(() => undefined);
     };
   }, [flush]);
 
