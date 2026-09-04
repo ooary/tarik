@@ -28,6 +28,10 @@ pub struct ExportOutcome {
 }
 
 pub trait ExportObserver {
+    fn export_id(&self) -> Option<&str> {
+        None
+    }
+
     /// Called before every batch slice. A cancellation observer returns
     /// `ExportCancelled` here; dropping the writer removes any current stage.
     fn check_cancelled(&self, _current_part: u64) -> Result<(), EngineError> {
@@ -134,6 +138,7 @@ impl<'a> ChunkedExportWriter<'a> {
                     self.next_part,
                     self.options,
                     Arc::clone(&self.schema),
+                    self.observer.export_id(),
                 )?);
             }
             let capacity = self.options.rows_per_part - self.current_rows;
@@ -242,9 +247,30 @@ fn remove_stale_replaced_parts(
     Ok(())
 }
 
+fn hidden_stage_name(export_id: Option<&str>, part_number: u64) -> String {
+    match export_id {
+        Some(export_id) => format!(
+            ".tarik-export-{export_id}-part-{part_number:05}-{}.tmp",
+            uuid::Uuid::new_v4()
+        ),
+        None => format!(".tarik-export-{}.tmp", uuid::Uuid::new_v4()),
+    }
+}
+
+fn hidden_backup_name(export_id: Option<&str>, part_number: u64) -> String {
+    match export_id {
+        Some(export_id) => format!(
+            ".tarik-export-backup-{export_id}-part-{part_number:05}-{}",
+            uuid::Uuid::new_v4()
+        ),
+        None => format!(".tarik-export-backup-{}", uuid::Uuid::new_v4()),
+    }
+}
+
 struct PartWriter {
     stage_path: PathBuf,
     final_path: PathBuf,
+    backup_name: String,
     writer: Option<Writer>,
 }
 
@@ -253,6 +279,7 @@ impl PartWriter {
         part_number: u64,
         options: &ValidatedExportOptions,
         schema: SchemaRef,
+        export_id: Option<&str>,
     ) -> Result<Self, EngineError> {
         let final_path = options
             .part_path(part_number)
@@ -260,7 +287,8 @@ impl PartWriter {
         if options.overwrite == ExportOverwritePolicy::FailIfExists && final_path.exists() {
             return Err(EngineError::ExportCollision(final_path));
         }
-        let stage_name = format!(".tarik-export-{}.tmp", uuid::Uuid::new_v4());
+        let stage_name = hidden_stage_name(export_id, part_number);
+        let backup_name = hidden_backup_name(export_id, part_number);
         let stage_path = options.output_directory.join(stage_name);
         let file = fs::OpenOptions::new()
             .write(true)
@@ -306,6 +334,7 @@ impl PartWriter {
         Ok(Self {
             stage_path,
             final_path,
+            backup_name,
             writer: Some(writer),
         })
     }
@@ -352,9 +381,7 @@ impl PartWriter {
             }
             ExportOverwritePolicy::Replace => {
                 let backup = if self.final_path.exists() {
-                    let backup = self
-                        .final_path
-                        .with_file_name(format!(".tarik-export-backup-{}", uuid::Uuid::new_v4()));
+                    let backup = self.final_path.with_file_name(&self.backup_name);
                     fs::rename(&self.final_path, &backup).map_err(|source| {
                         EngineError::ExportIo {
                             path: self.final_path.clone(),

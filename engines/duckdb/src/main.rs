@@ -275,6 +275,7 @@ fn dispatch(
             jobs.release_result(&result_id)?;
             Ok(Value::Null)
         }
+        "result.release_all" => Ok(Value::from(jobs.release_all_results()?)),
         "engine.ping" => Ok(Value::String("pong".into())),
         _ => Err(EngineError::MethodNotFound(request.method.clone())),
     }

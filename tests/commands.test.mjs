@@ -321,8 +321,13 @@ test("session snapshots use typed metadata commands", async () => {
 });
 
 test("app paths, logs, and incidents use typed commands", async () => {
-  const { getAppDirectories, getLogInfo, reportFrontendIncident, getLastSupportIncident } =
-    await loadCommandsModule();
+  const {
+    getAppDirectories,
+    getLogInfo,
+    reportFrontendIncident,
+    getLastSupportIncident,
+    clearCache,
+  } = await loadCommandsModule();
   const expected = {
     dataDir: "/tmp/tarik/data",
     cacheDir: "/tmp/tarik/cache",
@@ -351,18 +356,21 @@ test("app paths, logs, and incidents use typed commands", async () => {
     calls.push({ command, args });
     if (command === "get_app_directories") return expected;
     if (command === "get_log_info") return logInfo;
+    if (command === "clear_cache") return { artifactsRemoved: 0, warnings: [] };
     return incident;
   };
   const result = await getAppDirectories(invoke);
   assert.deepEqual(await getLogInfo(invoke), logInfo);
   assert.deepEqual(await reportFrontendIncident(input, invoke), incident);
   assert.deepEqual(await getLastSupportIncident(invoke), incident);
+  assert.deepEqual(await clearCache(invoke), { artifactsRemoved: 0, warnings: [] });
 
   assert.deepEqual(calls, [
     { command: "get_app_directories", args: undefined },
     { command: "get_log_info", args: undefined },
     { command: "report_frontend_incident", args: { input } },
     { command: "get_last_support_incident", args: undefined },
+    { command: "clear_cache", args: undefined },
   ]);
   assert.deepEqual(result, expected);
 });

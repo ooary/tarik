@@ -7,6 +7,7 @@ mod plan;
 mod projects;
 mod query;
 mod results;
+mod storage;
 
 use std::{
     path::{Path, PathBuf},
@@ -90,10 +91,27 @@ pub fn run() {
             );
             let database = metadata::MetadataDb::open(directories.data_dir.join("tarik.sqlite"))
                 .map_err(|error| Box::new(error) as Box<dyn std::error::Error>)?;
+            let cleanup = Arc::new(storage::CleanupService::new(directories.cache_dir.clone()));
+            let cleanup_summary = cleanup.startup_cleanup();
+            logger.record(
+                if cleanup_summary.warnings.is_empty() {
+                    LogLevel::Info
+                } else {
+                    LogLevel::Warning
+                },
+                "storage",
+                "startup_cleanup",
+                EventFields {
+                    status: Some(if cleanup_summary.warnings.is_empty() {
+                        "succeeded"
+                    } else {
+                        "completed_with_warnings"
+                    }),
+                    message: cleanup_summary.warnings.first().map(String::as_str),
+                    ..EventFields::default()
+                },
+            );
             let result_root = directories.cache_dir.join("results");
-            // Result artifacts are ephemeral by definition; a crashed or
-            // killed session must not leave page directories behind.
-            results::cleanup_stale_results(&result_root);
             let engine = Arc::new(engine_manager::EngineManager::new(
                 locate_engine_binary(),
                 result_root,
@@ -107,12 +125,13 @@ pub fn run() {
                 engine.clone(),
                 database.clone(),
             ));
-            let export_coordinator = Arc::new(export::ExportCoordinator::new(
-                engine.clone(),
-                database.clone(),
-            ));
+            let export_coordinator = Arc::new(
+                export::ExportCoordinator::new(engine.clone(), database.clone())
+                    .with_cleanup(cleanup.clone()),
+            );
             let results_store = Arc::new(results::ResultStore::new(engine.clone()));
             app.manage(logger);
+            app.manage(cleanup);
             app.manage(database);
             app.manage(engine);
             app.manage(project_manager);
@@ -149,6 +168,7 @@ pub fn run() {
             observability::get_log_info,
             observability::get_last_support_incident,
             observability::report_frontend_incident,
+            storage::clear_cache,
             metadata::commands::get_workbench_preferences,
             metadata::commands::set_workbench_preferences,
             metadata::commands::upsert_recent_project,

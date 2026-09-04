@@ -1412,7 +1412,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
     - Frontend render failures report one typed, bounded incident (`frontend.render`) and show a friendly recovery surface with a copyable incident ID, local log disclosure, Reveal logs, and Retry. Raw render details are neither the heading nor required user guidance.
     - The workbench consumes backend panic incidents live and once after restart; the marker is removed after reading so old incidents do not recur forever. Reporting/clipboard/reveal failures keep visible fallback instructions.
 
-- [ ] **E10-T3 Clean stale caches and incomplete exports safely**
+- [x] **E10-T3 Clean stale caches and incomplete exports safely**
   - Depends on: E5.5-T2, E6-T3, E9-T3
   - Owns: cache cleanup service
   - Deliverables:
@@ -1422,6 +1422,11 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: cleanup is constrained to Tarik-owned cache/staging directories.
   - Tests: path safety, stale/fresh distinction, partial export handling.
   - Commit: `chore(storage): clean stale temporary artifacts`
+  - Notes:
+    - Startup cleanup now applies a 24-hour age limit and 512 MiB oldest-first budget only to direct non-symlink artifacts below Tarik's resolved `<cache>/results` root; errors are bounded warnings and outside sentinels are preserved.
+    - Explicit Settings cleanup first asks the live sidecar to release every published result, clears the desktop decoded-page LRU, then removes owned result artifacts. It never accepts a frontend path and clearly states completed exports are preserved.
+    - Every export registers an atomic cache-owned recovery manifest before sidecar submission. Sidecar hidden stage/backup names include the export UUID and exact part number, allowing next-start reconciliation to remove only exact incomplete stages or restore an exact backup when its canonical part is absent.
+    - Cleanup never recursively deletes a user-selected output directory and never deletes canonical `<base>-part-NNNNN.<ext>` files. Malformed/unsafe manifests are removed without touching their claimed output paths.
 
 - [ ] **E10-T4 Add graceful application shutdown coordinator**
   - Depends on: E5.5-T3, E5-T3, E6-T2, E9-T3

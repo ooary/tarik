@@ -350,6 +350,23 @@ impl JobRegistry {
         Ok(())
     }
 
+    /// Release every published result before explicit cache cleanup or shutdown.
+    pub fn release_all_results(&self) -> Result<u64, EngineError> {
+        let page_dirs = {
+            let mut inner = self.lock()?;
+            inner
+                .results
+                .drain()
+                .map(|(_, result)| result.page_dir)
+                .collect::<Vec<_>>()
+        };
+        let count = page_dirs.len() as u64;
+        for page_dir in page_dirs {
+            pages::discard_dir(&page_dir);
+        }
+        Ok(count)
+    }
+
     /// Remove the temporary directory of a finished (failed/cancelled) job.
     fn cleanup_tmp(&self, execution_id: &str) {
         let tmp = self.lock().ok().and_then(|inner| {

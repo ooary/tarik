@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import {
   cancelSourceOperation,
+  clearCache,
   chooseDuckDbFile,
   chooseParquetFile,
   chooseSourceFile,
@@ -34,6 +35,7 @@ import {
 
 vi.mock("./lib/commands", () => ({
   cancelSourceOperation: vi.fn(),
+  clearCache: vi.fn(),
   chooseDuckDbFile: vi.fn(),
   chooseParquetFile: vi.fn(),
   chooseSourceFile: vi.fn(),
@@ -100,6 +102,12 @@ describe("Tarik workbench shell", () => {
     vi.mocked(listRecentProjects).mockResolvedValue([]);
     vi.mocked(listSources).mockResolvedValue([]);
     vi.mocked(cancelSourceOperation).mockResolvedValue(true);
+    vi.mocked(clearCache).mockResolvedValue({
+      artifactsRemoved: 2,
+      bytesRemoved: 4096,
+      exportBackupsRestored: 0,
+      warnings: [],
+    });
     vi.mocked(chooseSourceFile).mockResolvedValue("/data/orders.csv");
     vi.mocked(chooseParquetFile).mockResolvedValue("/data/replacement.parquet");
     vi.mocked(inspectSourceFile).mockResolvedValue(sourceInspection);
@@ -607,6 +615,17 @@ describe("Tarik workbench shell", () => {
     fireEvent.click(screen.getByRole("button", { name: "Reveal logs" }));
 
     expect(revealLogDirectory).toHaveBeenCalledWith("/tmp/tarik/logs");
+  });
+
+  it("clears only temporary result cache from settings", async () => {
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Clear cache" }));
+
+    await waitFor(() => expect(clearCache).toHaveBeenCalled());
+    expect(screen.getByText("Removed 2 temporary artifacts.")).toBeInTheDocument();
+    expect(screen.getByText(/completed exports are preserved/i)).toBeInTheDocument();
   });
 
   it("shows a browser-safe connection state when Tauri is unavailable", async () => {

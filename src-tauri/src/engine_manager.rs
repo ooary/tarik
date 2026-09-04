@@ -391,6 +391,22 @@ impl EngineManager {
         .map(|_| ())
     }
 
+    pub fn release_all_results(&self) -> Result<u64, String> {
+        let mut guard = self
+            .process
+            .lock()
+            .map_err(|_| "engine process lock".to_string())?;
+        let Some(process) = guard.as_mut() else {
+            return Ok(0);
+        };
+        let value = process
+            .request("result.release_all", serde_json::json!({}))
+            .map_err(|error| error.to_string())?;
+        value
+            .as_u64()
+            .ok_or_else(|| "result release count decode failed".to_string())
+    }
+
     pub fn shutdown(&self) {
         if let Ok(mut guard) = self.process.lock() {
             if let Some(process) = guard.take() {

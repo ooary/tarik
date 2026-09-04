@@ -298,6 +298,10 @@ struct RegistryObserver<'a> {
 }
 
 impl ExportObserver for RegistryObserver<'_> {
+    fn export_id(&self) -> Option<&str> {
+        Some(self.export_id)
+    }
+
     fn check_cancelled(&self, current_part: u64) -> Result<(), EngineError> {
         if self.registry.is_cancel_requested(self.export_id) {
             return Err(EngineError::ExportCancelled);

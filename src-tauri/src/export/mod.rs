@@ -15,13 +15,16 @@ use std::{
 use serde::Serialize;
 use tarik_engine_protocol::{ExportOptions, ExportPartSummary, ExportState, ExportStatus};
 
-use crate::metadata::{
-    projects::ProjectsRepository,
-    sources::{
-        ExportHistoryRecord, ExportPartSummary as HistoryPart, ExportStatus as HistoryStatus,
-        SourcesRepository,
+use crate::{
+    metadata::{
+        projects::ProjectsRepository,
+        sources::{
+            ExportHistoryRecord, ExportPartSummary as HistoryPart, ExportStatus as HistoryStatus,
+            SourcesRepository,
+        },
+        MetadataDb,
     },
-    MetadataDb,
+    storage::CleanupService,
 };
 
 const POLL_INTERVAL: Duration = Duration::from_millis(150);
@@ -92,6 +95,7 @@ pub struct ExportCoordinator {
     database: MetadataDb,
     exports: Mutex<HashMap<String, ExportRecord>>,
     poll_interval: Duration,
+    cleanup: Option<Arc<CleanupService>>,
 }
 
 impl ExportCoordinator {
@@ -101,7 +105,13 @@ impl ExportCoordinator {
             database,
             exports: Mutex::new(HashMap::new()),
             poll_interval: POLL_INTERVAL,
+            cleanup: None,
         }
+    }
+
+    pub fn with_cleanup(mut self, cleanup: Arc<CleanupService>) -> Self {
+        self.cleanup = Some(cleanup);
+        self
     }
 
     #[cfg(test)]
@@ -131,6 +141,9 @@ impl ExportCoordinator {
             .map_err(|error| format!("export.invalid_options.{}: {error}", error.field()))?;
         let options = validated.to_options();
         let export_id = uuid::Uuid::new_v4().to_string();
+        if let Some(cleanup) = self.cleanup.as_ref() {
+            cleanup.register_export(&export_id, &options)?;
+        }
         self.exports
             .lock()
             .map_err(|_| "export registry poisoned".to_string())?
@@ -338,6 +351,9 @@ impl ExportCoordinator {
             SourcesRepository::new(self.database.clone()).add_terminal_export(&history)
         {
             eprintln!("tarik: could not persist export history: {error}");
+        }
+        if let Some(cleanup) = self.cleanup.as_ref() {
+            cleanup.complete_export(export_id);
         }
     }
 }

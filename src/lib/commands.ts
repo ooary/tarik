@@ -36,6 +36,13 @@ export interface FrontendIncidentInput {
   message: string;
 }
 
+export interface CleanupSummary {
+  artifactsRemoved: number;
+  bytesRemoved: number;
+  exportBackupsRestored: number;
+  warnings: string[];
+}
+
 export interface ActiveProject {
   id: string;
   name: string;
@@ -165,6 +172,10 @@ export function getLastSupportIncident(
   invokeCommand: InvokeCommand = invoke,
 ): Promise<SupportIncident | null> {
   return invokeCommand<SupportIncident | null>("get_last_support_incident");
+}
+
+export function clearCache(invokeCommand: InvokeCommand = invoke): Promise<CleanupSummary> {
+  return invokeCommand<CleanupSummary>("clear_cache");
 }
 
 export function getWorkbenchPreferences(

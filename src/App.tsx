@@ -21,6 +21,7 @@ import {
 } from "./app/preferences";
 import {
   cancelSourceOperation,
+  clearCache,
   chooseDuckDbFile,
   chooseParquetFile,
   chooseSourceFile,
@@ -96,6 +97,8 @@ function App() {
   const [preferencesReady, setPreferencesReady] = useState(false);
   const [logInfo, setLogInfo] = useState<LogInfo | null>(null);
   const [supportIncident, setSupportIncident] = useState<SupportIncident | null>(null);
+  const [cacheStatus, setCacheStatus] = useState<string | null>(null);
+  const [clearingCache, setClearingCache] = useState(false);
   const [preferences, setPreferences] = useState<WorkbenchPreferences>(defaultWorkbenchPreferences);
   const { bottomPanelOpen: bottomOpen, sidebarOpen } = preferences;
 
@@ -215,6 +218,24 @@ function App() {
     ]);
     setCatalog(projectCatalog);
     setSources(projectSources);
+  }
+
+  async function clearTemporaryCache() {
+    setClearingCache(true);
+    setCacheStatus(null);
+    try {
+      const summary = await clearCache();
+      const removed = summary.artifactsRemoved.toLocaleString("en-US");
+      setCacheStatus(
+        summary.warnings.length > 0
+          ? `Removed ${removed} temporary artifacts with ${summary.warnings.length.toLocaleString("en-US")} warning(s).`
+          : `Removed ${removed} temporary artifacts.`,
+      );
+    } catch (error) {
+      setCacheStatus(`Cache cleanup failed: ${String(error)}`);
+    } finally {
+      setClearingCache(false);
+    }
   }
 
   async function createLocalProject() {
@@ -484,6 +505,21 @@ function App() {
               >
                 <FolderOpenIcon aria-hidden="true" size={14} />
                 Reveal logs
+              </button>
+            </section>
+            <section className="settings-diagnostics" aria-label="Temporary cache">
+              <div>
+                <strong>Temporary result cache</strong>
+                <span>Clears result pages only; completed exports are preserved.</span>
+                {cacheStatus && <span role="status">{cacheStatus}</span>}
+              </div>
+              <button
+                className="text-button"
+                disabled={clearingCache}
+                onClick={() => void clearTemporaryCache()}
+                type="button"
+              >
+                {clearingCache ? "Clearing" : "Clear cache"}
               </button>
             </section>
           </Dialog>
