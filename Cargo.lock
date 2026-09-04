@@ -4158,11 +4158,9 @@ dependencies = [
 name = "tarik-engine-client"
 version = "0.1.0"
 dependencies = [
- "serde",
  "serde_json",
  "tarik-engine-protocol",
  "thiserror 2.0.20",
- "uuid",
 ]
 
 [[package]]
@@ -4187,7 +4185,6 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
- "thiserror 2.0.20",
  "uuid",
 ]
 

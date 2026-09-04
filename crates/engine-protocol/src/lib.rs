@@ -572,16 +572,6 @@ pub struct ExecutionStatus {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct EngineManifest {
-    pub id: String,
-    pub executable: String,
-    pub protocol_version: u32,
-    pub display_name: String,
-    pub description: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct ErrorEnvelope {
     pub code: String,
     pub message: String,
@@ -668,15 +658,6 @@ impl ResponseEnvelope {
     }
 }
 
-/// Framed wire messages. `EngineFrame::Request` flows desktop → engine;
-/// `EngineFrame::Response` flows engine → desktop.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", tag = "kind")]
-pub enum EngineFrame {
-    Request(RequestEnvelope),
-    Response(ResponseEnvelope),
-}
-
 pub fn new_request_id() -> String {
     Uuid::new_v4().to_string()
 }
@@ -695,7 +676,7 @@ mod tests {
     }
 
     #[test]
-    fn request_response_round_trip_keeps_ids_and_unknown_fields() {
+    fn request_envelope_round_trip_keeps_ids_and_unknown_params() {
         let request = RequestEnvelope {
             id: "req-1".into(),
             method: "catalog.inspect".into(),
@@ -704,16 +685,10 @@ mod tests {
                 .unwrap()
                 .clone(),
         };
-        let frame = EngineFrame::Request(request);
-        let wire = serde_json::to_string(&frame).unwrap();
-        let decoded: EngineFrame = serde_json::from_str(&wire).unwrap();
-        match decoded {
-            EngineFrame::Request(decoded) => {
-                assert_eq!(decoded.id, "req-1");
-                assert_eq!(decoded.params["futureField"], 1);
-            }
-            EngineFrame::Response(_) => panic!("expected request"),
-        }
+        let wire = serde_json::to_string(&request).unwrap();
+        let decoded: RequestEnvelope = serde_json::from_str(&wire).unwrap();
+        assert_eq!(decoded.id, "req-1");
+        assert_eq!(decoded.params["futureField"], 1);
     }
 
     #[test]
