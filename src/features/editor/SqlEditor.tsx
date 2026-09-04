@@ -26,6 +26,7 @@ import {
 } from "@codemirror/view";
 import { useEffect, useRef } from "react";
 import type { EffectiveTheme } from "../../app/preferences";
+import { ContextMenu } from "../../components/ui";
 import type { SqlDiagnostic } from "../../lib/commands";
 import { createCatalogCompletionSource, type SqlTable } from "./sqlCompletion";
 
@@ -206,5 +207,38 @@ export function SqlEditor({
     }
   }, [value]);
 
-  return <div ref={containerRef} className="sql-codemirror" />;
+  function runEditorSql() {
+    const view = viewRef.current;
+    if (view) onRunRef.current?.(view.state.doc.toString());
+  }
+
+  function runEditorCommand(command: "undo" | "redo" | "selectAll" | "copy" | "cut" | "paste") {
+    const view = viewRef.current;
+    if (!view) return;
+    view.focus();
+    if (command === "selectAll") {
+      view.dispatch({ selection: { anchor: 0, head: view.state.doc.length } });
+      return;
+    }
+    document.execCommand(command);
+  }
+
+  const hasSelection = Boolean(viewRef.current && !viewRef.current.state.selection.main.empty);
+
+  return (
+    <ContextMenu
+      items={[
+        { disabled: !onRun, label: "Run query", onSelect: runEditorSql },
+        { label: "Undo", onSelect: () => runEditorCommand("undo") },
+        { label: "Redo", onSelect: () => runEditorCommand("redo") },
+        { disabled: !hasSelection, label: "Cut", onSelect: () => runEditorCommand("cut") },
+        { disabled: !hasSelection, label: "Copy", onSelect: () => runEditorCommand("copy") },
+        { label: "Paste", onSelect: () => runEditorCommand("paste") },
+        { label: "Select all", onSelect: () => runEditorCommand("selectAll") },
+      ]}
+      label="SQL editor actions"
+    >
+      <div ref={containerRef} className="sql-codemirror" />
+    </ContextMenu>
+  );
 }

@@ -661,7 +661,23 @@ button:disabled {
 }
 
 .catalog-object-row {
-  grid-template-columns: 18px minmax(0, 1fr) auto;
+  grid-template-columns: 18px minmax(0, 1fr) auto 28px;
+}
+
+.tree-row:has(.tree-row-actions) {
+  grid-template-columns: 18px minmax(0, 1fr) auto 28px;
+}
+
+.tree-row-actions {
+  min-height: 26px;
+  width: 26px;
+  opacity: 0.62;
+}
+
+.tree-row:hover .tree-row-actions,
+.tree-row-actions:focus-visible,
+.tree-row-actions[data-state="open"] {
+  opacity: 1;
 }
 
 .source-icon {

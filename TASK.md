@@ -1642,7 +1642,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
     - Added a project-scoped Radix dialog for table name and dynamic name/type/nullability columns with inline validation, retry-preserving engine errors, and catalog/completion refresh only after success.
     - The typed desktop/sidecar protocol accepts eight exact DuckDB types, validates active-project ownership, quotes every identifier centrally, rejects case-insensitive duplicate columns, and creates no SQLite source metadata for an empty user table.
 
-- [ ] **E11.5-T3 Replace browser context menus with scoped Tarik menus**
+- [x] **E11.5-T3 Replace browser context menus with scoped Tarik menus**
   - Depends on: E11.5-T0
   - Owns: app-shell context policy, editor menu, explorer project/row actions, `ContextMenu` accessibility and tests
   - Deliverables:
@@ -1654,6 +1654,9 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: exhaustive surface testing produces either the declared Tarik menu or no menu, never browser Reload/Inspect; toolbar/keyboard alternatives remain available.
   - Tests: contextmenu event matrix for header/editor/result header/result body/explorer/project rows/empty space, editor command delegation, clipboard permissions/failure, keyboard menu navigation, production WebView smoke.
   - Commit: `fix(app): scope desktop context menus`
+  - Notes:
+    - A document-scoped lifecycle listener now suppresses the native WebView browser menu everywhere; Radix context triggers still receive and render only Tarik commands.
+    - SQL editor right-click offers Run query plus editing actions and delegates Run to the same workspace callback. Explorer context menus remain only on recent project rows; table and linked-source operations moved to visible Phosphor overflow controls using the keyboard-accessible dropdown primitive.
 
 - [ ] **E11.5-T4 Add bounded spreadsheet-style result selection and context actions**
   - Depends on: E11.5-T3, E6 result paging

@@ -1,14 +1,14 @@
 import {
   DatabaseIcon,
+  DotsThreeIcon,
   FolderOpenIcon,
   ListIcon,
-  PlusIcon,
   TableIcon,
 } from "@phosphor-icons/react";
 import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useRef, useState } from "react";
 import "./App.css";
-import { ContextMenu, Dialog } from "./components/ui";
+import { ContextMenu, Dialog, Menu } from "./components/ui";
 import { QueryWorkspace, type QueryWorkspaceHandle } from "./features/editor/QueryWorkspace";
 import { previewTableSql, qualifiedSqlName } from "./features/editor/sqlText";
 import { formatCompactCount } from "./features/sources/format";
@@ -130,6 +130,12 @@ function App() {
     document.addEventListener("pointerup", stop, { once: true });
     event.currentTarget.setPointerCapture(event.pointerId);
   }
+
+  useEffect(() => {
+    const suppressNativeContextMenu = (event: MouseEvent) => event.preventDefault();
+    document.addEventListener("contextmenu", suppressNativeContextMenu);
+    return () => document.removeEventListener("contextmenu", suppressNativeContextMenu);
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -502,10 +508,10 @@ function App() {
             {project ? "DuckDB ready" : "DuckDB idle"}
           </span>
           {project ? (
-            <button className="text-button" onClick={closeLocalProject} type="button">Close project</button>
+            <button className="text-button project-close-button" onClick={closeLocalProject} type="button">Close project</button>
           ) : (
             <>
-              <button className="text-button" onClick={createLocalProject} type="button">New project</button>
+              <button className="text-button project-new-button" onClick={createLocalProject} type="button">New project</button>
               <button className="text-button" onClick={openLocalProject} type="button">Open</button>
             </>
           )}
@@ -577,7 +583,7 @@ function App() {
               <p className="panel-kicker">Workspace</p>
               <h2>Explorer</h2>
             </div>
-            <button aria-label="Refresh catalog" className="icon-button add-button" disabled={!project} onClick={async () => project && setCatalog(await inspectProjectCatalog())} type="button"><PlusIcon aria-hidden="true" size={17} weight="bold" /></button>
+
           </div>
 
           <div className="source-tree">
@@ -616,50 +622,53 @@ function App() {
                         ? undefined
                         : `${cachedExact ? "Exact cached" : "Estimated"}: ${rowCount.toLocaleString()} rows`;
                     const qualifiedName = qualifiedSqlName(object.schema, object.name);
+                    const items = [
+                      {
+                        label: "Insert name",
+                        onSelect: () => queryWorkspaceActionsRef.current?.insertSql(qualifiedName),
+                      },
+                      {
+                        label: "Preview rows",
+                        onSelect: () =>
+                          queryWorkspaceActionsRef.current?.openPreview(
+                            previewTableSql(object.schema, object.name),
+                          ),
+                      },
+                      {
+                        label: "Copy qualified name",
+                        onSelect: () => void navigator.clipboard?.writeText(qualifiedName),
+                      },
+                      {
+                        label:
+                          object.kind === "view" && sourceMetadata?.kind === "linked_parquet"
+                            ? "Remove link"
+                            : object.kind === "table"
+                              ? "Delete table"
+                              : "Delete view",
+                        onSelect: () => removeCatalogObject(object),
+                      },
+                    ];
                     return (
-                      <ContextMenu
-                        items={[
-                          {
-                            label: "Insert name",
-                            onSelect: () => queryWorkspaceActionsRef.current?.insertSql(qualifiedName),
-                          },
-                          {
-                            label: "Preview rows",
-                            onSelect: () =>
-                              queryWorkspaceActionsRef.current?.openPreview(
-                                previewTableSql(object.schema, object.name),
-                              ),
-                          },
-                          {
-                            label: "Copy qualified name",
-                            onSelect: () => void navigator.clipboard?.writeText(qualifiedName),
-                          },
-                          {
-                            danger: object.kind === "table",
-                            label:
-                              object.kind === "view" && sourceMetadata?.kind === "linked_parquet"
-                                ? "Remove link"
-                                : object.kind === "table"
-                                  ? "Delete table"
-                                  : "Delete view",
-                            onSelect: () => removeCatalogObject(object),
-                          },
-                        ]}
+                      <div
+                        className="tree-row tree-row-child catalog-object-row"
                         key={`${object.database}.${object.schema}.${object.name}`}
-                        label={`${object.name} table actions`}
                       >
-                        <button
-                          className="tree-row tree-row-child catalog-object-row"
-                          type="button"
-                        >
-                          <SourceIcon kind="table" />
-                          <span title={`${object.schema}.${object.name}`}>{object.name}</span>
-                          <span className="row-meta-group">
-                            <span>{object.kind === "view" ? "view" : `${count} cols`}</span>
-                            {rowLabel && <span title={exactTitle}>{rowLabel}</span>}
-                          </span>
-                        </button>
-                      </ContextMenu>
+                        <SourceIcon kind="table" />
+                        <span title={`${object.schema}.${object.name}`}>{object.name}</span>
+                        <span className="row-meta-group">
+                          <span>{object.kind === "view" ? "view" : `${count} cols`}</span>
+                          {rowLabel && <span title={exactTitle}>{rowLabel}</span>}
+                        </span>
+                        <Menu
+                          items={items}
+                          label={`${object.name} table actions`}
+                          trigger={
+                            <button className="icon-button tree-row-actions" type="button">
+                              <DotsThreeIcon aria-hidden="true" size={15} weight="bold" />
+                            </button>
+                          }
+                        />
+                      </div>
                     );
                   })
                 )}
@@ -669,35 +678,33 @@ function App() {
                     {sources
                       .filter((source) => source.kind === "linked_parquet")
                       .map((source) => (
-                        <ContextMenu
-                          items={[
-                            {
-                              disabled: source.state !== "missing",
-                              label: "Locate replacement",
-                              onSelect: () => repairSource(source),
-                            },
-                            {
-                              danger: false,
-                              label: "Remove link",
-                              onSelect: () => removeSource(source),
-                            },
-                          ]}
+                        <div
+                          className={`tree-row ${source.state === "missing" ? "source-row-missing" : ""}`}
                           key={source.id}
-                          label={`${source.displayName} source actions`}
+                          title={source.sourcePath ?? source.displayName}
                         >
-                          <button
-                            className={`tree-row ${source.state === "missing" ? "source-row-missing" : ""}`}
-                            onClick={() => source.state === "missing" && repairSource(source)}
-                            title={source.sourcePath ?? source.displayName}
-                            type="button"
-                          >
-                            <SourceIcon kind="table" />
-                            <span>{source.displayName}</span>
-                            <span className="row-meta">
-                              {source.state === "missing" ? "Missing" : "Linked"}
-                            </span>
-                          </button>
-                        </ContextMenu>
+                          <SourceIcon kind="table" />
+                          <span>{source.displayName}</span>
+                          <span className="row-meta">
+                            {source.state === "missing" ? "Missing" : "Linked"}
+                          </span>
+                          <Menu
+                            items={[
+                              {
+                                disabled: source.state !== "missing",
+                                label: "Locate replacement",
+                                onSelect: () => repairSource(source),
+                              },
+                              { label: "Remove link", onSelect: () => removeSource(source) },
+                            ]}
+                            label={`${source.displayName} source actions`}
+                            trigger={
+                              <button className="icon-button tree-row-actions" type="button">
+                                <DotsThreeIcon aria-hidden="true" size={15} weight="bold" />
+                              </button>
+                            }
+                          />
+                        </div>
                       ))}
                   </>
                 )}

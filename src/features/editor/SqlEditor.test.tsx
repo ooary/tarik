@@ -1,4 +1,4 @@
-import { fireEvent, render, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { buildSqlCompletionSchema } from "./sqlCompletion";
 import { SqlEditor } from "./SqlEditor";
@@ -131,6 +131,16 @@ describe("SqlEditor", () => {
     await waitFor(() => expect(getComputedStyle(editor).backgroundColor).toBe("rgb(40, 42, 54)"));
     expect(content).toHaveTextContent("SELECT 1;");
     expect(document.activeElement).toBe(content);
+  });
+
+  it("runs the current editor document from its scoped context menu", async () => {
+    const onRun = vi.fn();
+    const { container } = render(<SqlEditor onChange={vi.fn()} onRun={onRun} value="SELECT 42;" />);
+
+    fireEvent.contextMenu(container.querySelector(".sql-codemirror")!);
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Run query" }));
+
+    expect(onRun).toHaveBeenCalledWith("SELECT 42;");
   });
 
   it("handles Ctrl+Enter through the run callback", () => {

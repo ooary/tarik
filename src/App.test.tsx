@@ -215,6 +215,14 @@ describe("Tarik workbench shell", () => {
     });
   });
 
+  it("suppresses the native WebView menu on unsupported chrome", () => {
+    render(<App />);
+    const event = new MouseEvent("contextmenu", { bubbles: true, cancelable: true });
+    screen.getByRole("banner").dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(true);
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  });
+
   it("renders the workbench regions and runtime status", async () => {
     render(<App />);
 
@@ -393,8 +401,11 @@ describe("Tarik workbench shell", () => {
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
     render(<App />);
 
-    const row = await screen.findByTitle("main.orders");
-    fireEvent.contextMenu(row.closest("button")!);
+    await screen.findByTitle("main.orders");
+    fireEvent.pointerDown(screen.getByRole("button", { name: "orders table actions" }), {
+      button: 0,
+      ctrlKey: false,
+    });
     fireEvent.click(await screen.findByRole("menuitem", { name: "Delete table" }));
 
     await waitFor(() =>
@@ -448,8 +459,11 @@ describe("Tarik workbench shell", () => {
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
     render(<App />);
 
-    const row = await screen.findByTitle("main.orders_link");
-    fireEvent.contextMenu(row.closest("button")!);
+    await screen.findByTitle("main.orders_link");
+    fireEvent.pointerDown(screen.getByRole("button", { name: "orders_link table actions" }), {
+      button: 0,
+      ctrlKey: false,
+    });
     fireEvent.click(await screen.findByRole("menuitem", { name: "Remove link" }));
 
     await waitFor(() => expect(removeLinkedSource).toHaveBeenCalledWith("source-2"));
@@ -498,7 +512,12 @@ describe("Tarik workbench shell", () => {
     ]);
     render(<App />);
 
-    fireEvent.click(await screen.findByTitle("/data/missing.parquet"));
+    await screen.findByTitle("/data/missing.parquet");
+    fireEvent.pointerDown(screen.getByRole("button", { name: "orders source actions" }), {
+      button: 0,
+      ctrlKey: false,
+    });
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Locate replacement" }));
 
     await waitFor(() =>
       expect(repairLinkedSource).toHaveBeenCalledWith("source-2", "/data/replacement.parquet"),
@@ -574,8 +593,11 @@ describe("Tarik workbench shell", () => {
     });
     render(<App />);
 
-    const table = await screen.findByTitle("analytics.order lines");
-    fireEvent.contextMenu(table.closest("button")!);
+    await screen.findByTitle("analytics.order lines");
+    fireEvent.pointerDown(screen.getByRole("button", { name: "order lines table actions" }), {
+      button: 0,
+      ctrlKey: false,
+    });
     fireEvent.click(await screen.findByRole("menuitem", { name: "Preview rows" }));
 
     await waitFor(() =>
