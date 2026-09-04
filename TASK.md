@@ -1462,7 +1462,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
 
 ## EPIC E11 — Quality, performance, packaging, and release
 
-**Status:** `IN PROGRESS` - user authorized progression with E10 review deferred; E11-T0 release design is active.
+**Status:** `REVIEW / RELEASE BLOCKED` - E11-T0 through E11-T5 implemented and automated evidence passes. Awaiting E11 package/documentation review plus deferred E6, E7, and E10 manual gates before final publication.
 
 **Outcome:** Repeatable, measured MVP release with documented limits.
 
@@ -1562,6 +1562,21 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
     - Added a beginner walkthrough for project ownership, CSV/Parquet import/link tradeoffs, table/view semantics, completion/diagnostics, bounded result browsing, Estimate versus Actual Flow, saved queries/history, exact export/cancel/recovery behavior, logs/cache, backup/upgrades, removal, and known limitations using current visible labels.
     - Added an evidence-based ship checklist covering versions, direct full gates, memory budgets, security boundaries, artifact content/checksums/smokes, documentation walkthrough, clean-machine package tests, and final publication. E6/E7/E10 remain explicit unchecked release blockers.
     - Added `npm run docs:check` and CI enforcement for local Markdown links, documented npm commands, version parity, required beginner topics, and retained deferred gates.
+
+- [x] **E11-T6 Review release evidence together**
+  - Depends on: E11-T1, E11-T2, E11-T3, E11-T4, E11-T5
+  - Owns: `docs/review/E11-RELEASE.md`
+  - Deliverables:
+    - Combined manual checklist for the golden workflow, memory evidence, security boundaries, Linux packages, upgrade/backup/notices, and beginner documentation.
+    - Preserve E6/E7/E10 and cross-distro package smoke as explicit unchecked blockers; do not claim final release from automated evidence.
+  - Acceptance: E11-specific evidence is reviewable and final publication remains mechanically blocked until every deferred/manual item is signed.
+  - Tests: full workspace/frontend/docs/build/memory/package checks against a precise source revision.
+  - Commit: `docs(review): add E11 release checklist`
+  - Review: `docs/review/E11-RELEASE.md`
+  - Notes:
+    - Clean Linux artifacts were generated from commit `fb0c71d`: AppImage 138.7 MiB, DEB 30.1 MiB, portable tarball 29.4 MiB; sidecar/RPATH/content/clean-XDG smoke and all SHA-256 checks pass.
+    - Final release-candidate memory run measured 105.0 MiB sidecar peak and 1.4 MiB post-cycle growth with zero residual result bytes or hidden export stages.
+    - Release remains blocked by E11 package/doc manual checks and deferred E6 result, E7 flow, and E10 recovery reviews.
 
 ---
 

@@ -34,7 +34,7 @@ npm run build
 - [x] Exact export boundary/cancel/collision/recovery tests pass.
 - [x] Cleanup outside-sentinel/symlink tests pass.
 - [x] Invoke handler/frontend command parity is exact.
-- [ ] Final full-gate run recorded against the release commit.
+- [x] Final full-gate run recorded against source commit `fb0c71d` (artifact source; review docs follow).
 
 ## 3. Memory evidence
 
@@ -48,7 +48,7 @@ npm run benchmark:memory -- --record
 - [x] Twelve query-release cycles retain less than 64 MiB.
 - [x] Result cache is zero bytes after release.
 - [x] Export cancellation leaves no hidden stage.
-- [ ] Release-commit report reviewed and committed if materially different.
+- [x] Release-candidate report passed at 105.0 MiB peak / 1.4 MiB post-cycle growth with zero residual result/stage bytes.
 
 ## 4. Security and filesystem boundaries
 
