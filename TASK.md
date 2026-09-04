@@ -1232,7 +1232,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
 
 ## EPIC E9.5 — Beginner SQL intelligence
 
-**Status:** `IN PROGRESS` - E9.5-T1 design complete; E9.5-T2 aggregate semantics is active.
+**Status:** `REVIEW` - E9.5-T1 through E9.5-T4 implemented; full automated gates pass. Awaiting combined aggregate-flow, autocomplete, and non-executing diagnostic manual sign-off.
 
 **Outcome:** Make SQL construction and pre-run correction approachable for beginners while preserving DuckDB's physical truth.
 
@@ -1344,7 +1344,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
     - QueryWorkspace clears diagnostics immediately on edit, waits 650 ms, validates the immutable SQL/catalog revision, rejects stale or wrong-revision responses, revalidates on catalog change, and treats engine unavailability as non-blocking. Clean state says `No problems detected before execution` and explicitly allows runtime-only failure.
     - Official `@codemirror/lint` supplies accessible gutter markers, hover messages, keyboard navigation, and error/warning wavy underlines for reliable ranges. Message-only diagnostics remain in the compact toolbar summary. Tests cover debounce, stale races, unmount cleanup, catalog revisions, mounted marker clearing, clean/unavailable states, multiline/offset caret mapping, warnings, project command shape, and no execution.
 
-- [ ] **E9.5-T5 Review beginner SQL intelligence together**
+- [x] **E9.5-T5 Review beginner SQL intelligence together**
   - Depends on: E9.5-T2, E9.5-T3, E9.5-T4
   - Owns: `docs/review/E9-5-SQL-INTELLIGENCE.md`
   - Deliverables:
@@ -1353,6 +1353,11 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: a beginner can write the example query with completion, correct mistakes before Run, and explain each displayed group/count/distinct step without being taught a false physical sequence.
   - Tests: full Rust/TypeScript/lint/build gates and focused regression matrix.
   - Commit: `docs(review): add E9.5 SQL intelligence checklist`
+  - Review: `docs/review/E9-5-SQL-INTELLIGENCE.md`
+  - Notes:
+    - Combined review covers the accepted five-step grouped COUNT DISTINCT graph, single-owner physical metrics, aggregate variants/multiple summaries, conservative DISTINCT redundancy, raw plan preservation, and Estimate/Actual Flow immutable snapshots.
+    - Completion review covers FROM/JOIN/schema tables/views, aliases, unambiguous columns, safe quoting, Ctrl+Space, live catalog/project refresh, and ambiguity fallbacks.
+    - Diagnostic review covers clean/checking/problem/unavailable states, syntax/binder/catalog errors, reliable and message-only locations, debounce/stale races, catalog revalidation, keyboard access, the narrow mutation warning, and manual proof that validation never changes data.
 
 ---
 
