@@ -1306,7 +1306,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
     - Aggregate-free DISTINCT grouping becomes `Remove duplicate result rows`. Redundancy is stated only when selected non-aggregate keys exactly cover all grouping keys and the projection is a verified simple group/aggregate shape.
     - Added sanitized real DuckDB Explain/Profile fixtures for the accepted query. Both render exactly `Read data_2021 → Group rows by commodity → Count non-null market values per group → Remove duplicate result rows → Query result`; semantic node selection highlights GROUP BY, count(market), or DISTINCT, and the inspector discloses shared physical work.
 
-- [ ] **E9.5-T3 Complete catalog-aware SQL autocomplete**
+- [x] **E9.5-T3 Complete catalog-aware SQL autocomplete**
   - Depends on: E9.5-T1, E4-T3, E5-T1
   - Owns: `src/features/editor/sqlCompletion.ts`, `src/features/editor/SqlEditor.tsx`
   - Deliverables:
@@ -1318,6 +1318,11 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: typing `FROM data_` suggests `data_2021`; accepting a non-simple identifier inserts valid quoted SQL; `d.` after `FROM "main"."data_2021" d` suggests its columns.
   - Tests: completion-source interaction tests for FROM/JOIN, schema qualification, aliases, ambiguous columns, safe quoting, manual trigger, catalog refresh, and empty catalog.
   - Commit: `feat(editor): add catalog-aware SQL completion`
+  - Notes:
+    - Replaced schema-only completion with a synchronous project-catalog `CompletionSource` layered alongside CodeMirror's uppercase SQL keyword/function source. FROM/JOIN contexts rank tables/views and schemas with textual type labels; duplicate relation names insert schema-qualified identifiers.
+    - `schema.` scopes relations, and recognized unique aliases scope `alias.` columns even when the FROM clause follows the SELECT cursor. Manual completion offers only columns unambiguous across recognized source relations; ambiguous aliases/columns make no catalog claim and preserve general language completion.
+    - Completion applies portable safe identifier quoting for spaces, reserved words, and embedded quotes. Catalog changes reconfigure only the completion compartment, preserving editor text, selection, history, and Ctrl+Enter behavior; typing after `.` or pressing Ctrl+Space opens contextual suggestions.
+    - Direct CompletionContext tests cover FROM/JOIN, schema qualification, table/view distinction, aliases, ambiguity, unqualified columns, safe quoting, and empty catalogs. Mounted CodeMirror tests prove Ctrl+Space and live catalog refresh; a test-only Range geometry shim supports tooltip layout in jsdom.
 
 - [ ] **E9.5-T4 Add non-executing pre-run SQL diagnostics**
   - Depends on: E9.5-T1, E5.5-T2, E5-T1

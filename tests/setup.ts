@@ -23,6 +23,16 @@ if (typeof globalThis.ResizeObserver === "undefined") {
   };
 }
 
+// CodeMirror measures completion tooltip text with DOM Range geometry, which
+// jsdom does not implement. Layout-neutral empty rectangles are sufficient for
+// interaction tests; browser/Tauri layout uses the native implementation.
+if (typeof Range !== "undefined" && !Range.prototype.getClientRects) {
+  Range.prototype.getClientRects = () => [] as unknown as DOMRectList;
+}
+if (typeof Range !== "undefined" && !Range.prototype.getBoundingClientRect) {
+  Range.prototype.getBoundingClientRect = () => new DOMRect();
+}
+
 if (typeof globalThis.DOMMatrixReadOnly === "undefined") {
   // DOMMatrix's standard API has many parameters that a layout-neutral jsdom
   // identity shim intentionally ignores.

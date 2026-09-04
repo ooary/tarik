@@ -1,6 +1,6 @@
 import { autocompletion, completionKeymap } from "@codemirror/autocomplete";
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
-import { sql } from "@codemirror/lang-sql";
+import { keywordCompletionSource, sql, StandardSQL } from "@codemirror/lang-sql";
 import { bracketMatching, defaultHighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { searchKeymap } from "@codemirror/search";
 import { Compartment, EditorState } from "@codemirror/state";
@@ -12,7 +12,7 @@ import {
   placeholder as viewPlaceholder,
 } from "@codemirror/view";
 import { useEffect, useRef } from "react";
-import { buildSqlCompletionSchema, type SqlTable } from "./sqlCompletion";
+import { createCatalogCompletionSource, type SqlTable } from "./sqlCompletion";
 
 export function SqlEditor({
   value,
@@ -27,7 +27,7 @@ export function SqlEditor({
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
-  const schemaCompartment = useRef(new Compartment());
+  const completionCompartment = useRef(new Compartment());
   const onChangeRef = useRef(onChange);
   const onRunRef = useRef(onRun);
   useEffect(() => {
@@ -49,7 +49,6 @@ export function SqlEditor({
           history(),
           bracketMatching(),
           syntaxHighlighting(defaultHighlightStyle),
-          autocompletion(),
           keymap.of([
             {
               key: "Mod-Enter",
@@ -64,7 +63,15 @@ export function SqlEditor({
             ...searchKeymap,
             indentWithTab,
           ]),
-          schemaCompartment.current.of(sql({ schema: buildSqlCompletionSchema(tables) })),
+          sql({ upperCaseKeywords: true }),
+          completionCompartment.current.of(
+            autocompletion({
+              override: [
+                createCatalogCompletionSource(tables),
+                keywordCompletionSource(StandardSQL, true),
+              ],
+            }),
+          ),
           viewPlaceholder("SELECT * FROM ..."),
           EditorState.tabSize.of(2),
           EditorView.updateListener.of((update) => {
@@ -86,8 +93,13 @@ export function SqlEditor({
     const view = viewRef.current;
     if (!view) return;
     view.dispatch({
-      effects: schemaCompartment.current.reconfigure(
-        sql({ schema: buildSqlCompletionSchema(tables) }),
+      effects: completionCompartment.current.reconfigure(
+        autocompletion({
+          override: [
+            createCatalogCompletionSource(tables),
+            keywordCompletionSource(StandardSQL, true),
+          ],
+        }),
       ),
     });
   }, [tables]);

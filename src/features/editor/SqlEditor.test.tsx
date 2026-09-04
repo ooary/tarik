@@ -1,4 +1,4 @@
-import { fireEvent, render } from "@testing-library/react";
+import { fireEvent, render, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { buildSqlCompletionSchema } from "./sqlCompletion";
 import { SqlEditor } from "./SqlEditor";
@@ -30,6 +30,51 @@ describe("SqlEditor", () => {
         },
       ]),
     ).toEqual({ analytics: { "order lines": ["order id", "amount"] } });
+  });
+
+  it("opens project relation completion with Ctrl+Space", async () => {
+    const { container } = render(
+      <SqlEditor
+        onChange={vi.fn()}
+        value="SELECT * FROM data_"
+        tables={[{ schema: "main", label: "data_2021", type: "table", columns: ["commodity"] }]}
+      />,
+    );
+    const content = container.querySelector<HTMLElement>(".cm-content")!;
+    content.focus();
+    fireEvent.keyDown(content, { key: "End", code: "End" });
+    fireEvent.keyDown(content, { key: " ", code: "Space", ctrlKey: true });
+    await waitFor(() =>
+      expect(document.querySelector(".cm-tooltip-autocomplete")).toHaveTextContent("data_2021"),
+    );
+  });
+
+  it("refreshes completion catalog without replacing editor text", async () => {
+    const { container, rerender } = render(
+      <SqlEditor
+        onChange={vi.fn()}
+        value="SELECT * FROM fresh_"
+        tables={[{ schema: "main", label: "orders", type: "table", columns: ["id"] }]}
+      />,
+    );
+    rerender(
+      <SqlEditor
+        onChange={vi.fn()}
+        value="SELECT * FROM fresh_"
+        tables={[
+          { schema: "main", label: "orders", type: "table", columns: ["id"] },
+          { schema: "main", label: "fresh_table", type: "view", columns: ["id"] },
+        ]}
+      />,
+    );
+    const content = container.querySelector<HTMLElement>(".cm-content")!;
+    expect(content).toHaveTextContent("SELECT * FROM fresh_");
+    content.focus();
+    fireEvent.keyDown(content, { key: "End", code: "End" });
+    fireEvent.keyDown(content, { key: " ", code: "Space", ctrlKey: true });
+    await waitFor(() =>
+      expect(document.querySelector(".cm-tooltip-autocomplete")).toHaveTextContent("fresh_table"),
+    );
   });
 
   it("handles Ctrl+Enter through the run callback", () => {
