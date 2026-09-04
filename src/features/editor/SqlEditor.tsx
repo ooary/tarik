@@ -223,16 +223,14 @@ export function SqlEditor({
     document.execCommand(command);
   }
 
-  const hasSelection = Boolean(viewRef.current && !viewRef.current.state.selection.main.empty);
-
   return (
     <ContextMenu
       items={[
         { disabled: !onRun, label: "Run query", onSelect: runEditorSql },
         { label: "Undo", onSelect: () => runEditorCommand("undo") },
         { label: "Redo", onSelect: () => runEditorCommand("redo") },
-        { disabled: !hasSelection, label: "Cut", onSelect: () => runEditorCommand("cut") },
-        { disabled: !hasSelection, label: "Copy", onSelect: () => runEditorCommand("copy") },
+        { label: "Cut", onSelect: () => runEditorCommand("cut") },
+        { label: "Copy", onSelect: () => runEditorCommand("copy") },
         { label: "Paste", onSelect: () => runEditorCommand("paste") },
         { label: "Select all", onSelect: () => runEditorCommand("selectAll") },
       ]}
