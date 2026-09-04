@@ -25,11 +25,11 @@ use observability::{AppLogger, EventFields, LogLevel};
 /// Locate the DuckDB engine adapter binary.
 ///
 /// Development: sibling of the current executable or the workspace debug build.
-/// Packaged: a sibling `tarik-engine-duckdb` next to `tarik`.
+/// Packaged: a sibling `tarik-engine-duckdb[.exe]` next to `tarik[.exe]`.
 fn locate_engine_binary() -> PathBuf {
     if let Ok(current) = std::env::current_exe() {
         if let Some(parent) = current.parent() {
-            let sibling = parent.join("tarik-engine-duckdb");
+            let sibling = parent.join(engine_executable_name());
             if sibling.exists() {
                 return sibling;
             }
@@ -38,11 +38,23 @@ fn locate_engine_binary() -> PathBuf {
     let workspace = Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .unwrap_or_else(|| Path::new("."));
-    let debug = workspace.join("target/debug/tarik-engine-duckdb");
+    let debug = workspace
+        .join("target/debug")
+        .join(engine_executable_name());
     if debug.exists() {
         return debug;
     }
-    workspace.join("target/release/tarik-engine-duckdb")
+    workspace
+        .join("target/release")
+        .join(engine_executable_name())
+}
+
+fn engine_executable_name() -> &'static str {
+    if cfg!(windows) {
+        "tarik-engine-duckdb.exe"
+    } else {
+        "tarik-engine-duckdb"
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]

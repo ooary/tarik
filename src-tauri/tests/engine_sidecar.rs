@@ -9,7 +9,12 @@ fn locate_engine_binary() -> PathBuf {
     manifest
         .parent()
         .unwrap()
-        .join("target/debug/tarik-engine-duckdb")
+        .join("target/debug")
+        .join(if cfg!(windows) {
+            "tarik-engine-duckdb.exe"
+        } else {
+            "tarik-engine-duckdb"
+        })
 }
 
 fn temp_path(name: &str, suffix: &str) -> PathBuf {
