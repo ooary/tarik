@@ -1363,7 +1363,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
 
 ## EPIC E10 — Diagnostics, recovery, and cleanup
 
-**Status:** `REVIEW` - E10-T1 through E10-T4 implemented with full automated gates passing. Awaiting combined logging, incident, cleanup, and shutdown manual sign-off.
+**Status:** `PROVISIONALLY ACCEPTED` (2026-09-04) - user authorized E11 progression and deferred the combined logging, incident, cleanup, and shutdown review. E10 remains reopenable and its manual checklist remains unsigned until final release acceptance.
 
 **Outcome:** Diagnosable failures and bounded on-disk application state.
 
@@ -1461,6 +1461,8 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
 ---
 
 ## EPIC E11 — Quality, performance, packaging, and release
+
+**Status:** `IN PROGRESS` - user authorized progression with E10 review deferred; E11-T0 release design is active.
 
 **Outcome:** Repeatable, measured MVP release with documented limits.
 

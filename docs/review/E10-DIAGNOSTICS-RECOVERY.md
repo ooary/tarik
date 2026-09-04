@@ -1,6 +1,6 @@
 # E10 diagnostics, recovery, cleanup, and shutdown review
 
-**Status:** REVIEW  
+**Status:** DEFERRED / REOPENABLE (2026-09-04)  
 **Scope:** Bounded structured logging, support incidents, safe cache/abandoned-export cleanup, and graceful shutdown.
 
 ## Build and launch
@@ -142,4 +142,4 @@ npm run tauri dev
 - [ ] Draft flush failure offers explicit retry/quit choices; never silently claims saved
 - [ ] Frontend-unregistered close still stops the engine and flushes logs
 
-When all items pass, reply **“E10 approved”**. E11 depends on E10 acceptance.
+Manual review was postponed on 2026-09-04. The user authorized provisional progression to E11 without checking these items. E10 remains reopenable and requires final sign-off before release acceptance.
