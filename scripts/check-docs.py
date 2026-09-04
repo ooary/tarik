@@ -14,9 +14,9 @@ LINK = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
 NPM_COMMAND = re.compile(r"\bnpm run ([a-zA-Z0-9:_-]+)")
 errors: list[str] = []
 
-package = json.loads((ROOT / "package.json").read_text())
-tauri = json.loads((ROOT / "src-tauri/tauri.conf.json").read_text())
-cargo = (ROOT / "src-tauri/Cargo.toml").read_text()
+package = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
+tauri = json.loads((ROOT / "src-tauri/tauri.conf.json").read_text(encoding="utf-8"))
+cargo = (ROOT / "src-tauri/Cargo.toml").read_text(encoding="utf-8")
 cargo_version = re.search(r"(?ms)^\[package\].*?^version = \"([^\"]+)\"", cargo)
 versions = {
     "package.json": package["version"],
@@ -27,7 +27,7 @@ if len(set(versions.values())) != 1:
     errors.append(f"application version mismatch: {versions}")
 
 for document in MARKDOWN:
-    text = document.read_text()
+    text = document.read_text(encoding="utf-8")
     for target in LINK.findall(text):
         target = target.split("#", 1)[0]
         if not target or "://" in target or target.startswith("mailto:"):
@@ -49,12 +49,12 @@ required_user_topics = {
     "data location": ["~/.local/share/com.tarik.desktop"],
     "limitations": ["Known limitations"],
 }
-user_guide = (ROOT / "docs/user/USER-GUIDE.md").read_text()
+user_guide = (ROOT / "docs/user/USER-GUIDE.md").read_text(encoding="utf-8")
 for topic, phrases in required_user_topics.items():
     if any(phrase not in user_guide for phrase in phrases):
         errors.append(f"user guide missing {topic}: {phrases}")
 
-ship = (ROOT / "docs/release/SHIP-CHECKLIST.md").read_text()
+ship = (ROOT / "docs/release/SHIP-CHECKLIST.md").read_text(encoding="utf-8")
 for gate in ["E6 final review", "E7 final review", "E10 review"]:
     if f"- [ ] **{gate}" not in ship:
         errors.append(f"ship checklist does not retain unchecked blocker {gate}")
