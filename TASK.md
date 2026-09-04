@@ -1496,7 +1496,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
     - The workflow creates a managed project, imports orders, links markets, executes/paginates a grouped join, captures Explain and Actual Flow, saves SQL, exports exact one-row parts, cancels long query/export work, proves session reuse, persists a draft, closes every service, creates fresh service objects, reopens the project, detects and repairs a missing link, and verifies catalog/session/saved/history/export continuity.
     - CI now formats, Clippy-checks, and tests the whole Rust workspace, explicitly builds/checks the real sidecar before tests, and caches the workspace root rather than only `src-tauri`.
 
-- [~] **E11-T2 Establish performance and memory budgets** — build-loop optimization foundation in progress
+- [x] **E11-T2 Establish performance and memory budgets**
   - Depends on: E6-T5, E9-T3
   - Owns: benchmark harness and performance docs
   - Deliverables:
@@ -1507,6 +1507,11 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: no unbounded growth across repeated result open/close and export cancellation loops.
   - Tests: repeatable benchmark/stress scripts.
   - Commit: `perf(app): establish memory regression budgets`
+  - Notes:
+    - Added a release-sidecar Linux `/proc` harness with fixed idle/import/100K-row result/12-cycle query-release/large-export-cancel scenarios, 20 ms RSS/HWM and owned-disk sampling, machine/tool/DuckDB/dataset metadata, JSON evidence, and check/record modes.
+    - Version-controlled ceilings are 512 MiB fixed-workload peak sidecar RSS, 64 MiB retained growth after twelve run/page/release cycles, zero result cache bytes after release, and zero hidden export stages after cancellation. These are regression limits, not arbitrary-SQL memory promises.
+    - On the i5-1235U/15.3 GiB release run, the checked baseline measured 40.5 MiB idle, 106.7 MiB peak, 3.5 MiB post-cycle growth, zero residual result bytes, and zero hidden stages. A repeat measured 117.4 MiB peak and 7.5 MiB growth; both passed.
+    - The fixed evidence supports retaining 500-row/~4 MiB engine pages, a 12-page desktop decoded LRU, one query/export FIFO worker per session, and 4 MiB Parquet row groups. `scripts/build-engine.sh` now correctly maps `CARGO_BUILD_PROFILE` to the Cargo profile.
 
 - [ ] **E11-T3 Security and filesystem boundary review**
   - Depends on: E4, E9, E10 core tasks

@@ -1,0 +1,488 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-09-04T04:34:05Z",
+  "machine": {
+    "os": "Linux-7.1.8-arch1-3-x86_64-with-glibc2.44",
+    "architecture": "x86_64",
+    "cpu": "12th Gen Intel(R) Core(TM) i5-1235U",
+    "logicalCpuCount": 12,
+    "memoryTotal": "15992044 kB",
+    "python": "3.14.0",
+    "rustc": "rustc 1.91.0 (f8297e351 2025-10-28)",
+    "node": "v25.0.0",
+    "engine": "target/release/tarik-engine-duckdb",
+    "gitRevision": "802841deae3564254b9b69fa9e9fb0db5bcd6ff4"
+  },
+  "engineInfo": {
+    "capabilities": {
+      "boundedPages": true,
+      "cancelQuery": true,
+      "explain": true,
+      "exportCsv": true,
+      "exportParquet": true,
+      "importCsv": true,
+      "importParquet": true,
+      "linkParquet": true,
+      "profile": true,
+      "schemas": true,
+      "transactions": true,
+      "views": true
+    },
+    "engineId": "duckdb",
+    "engineName": "DuckDB",
+    "engineVersion": "0.1.0",
+    "metadata": {},
+    "protocolVersion": 1
+  },
+  "dataset": {
+    "importRows": 50000,
+    "largeResultRows": 100000,
+    "largeResultPayloadBytes": 128,
+    "repeatCycles": 12,
+    "repeatRows": 20000,
+    "exportRowsRequested": 1000000000,
+    "exportPayloadBytes": 512,
+    "exportRowsPerPart": 100000
+  },
+  "defaults": {
+    "enginePageRows": 500,
+    "enginePageByteTarget": 4194304,
+    "desktopDecodedPages": 12,
+    "sessionQueryWorkers": 1,
+    "sessionExportWorkers": 1,
+    "parquetRowGroupByteTarget": 4194304
+  },
+  "scenarios": {
+    "idle": {
+      "rssKiB": 41516,
+      "hwmKiB": 41516
+    },
+    "import": {
+      "durationMs": 306,
+      "inspectedRows": 50000,
+      "importedRows": 50000
+    },
+    "largeResult": {
+      "durationMs": 50,
+      "rows": 100000,
+      "firstPageRows": 500,
+      "lastPageRows": 500,
+      "cacheBytesBeforeRelease": 14212112,
+      "cacheBytesAfterRelease": 0
+    },
+    "repeatedQuery": {
+      "durationMs": 416,
+      "cycles": 12,
+      "rssBeforeKiB": 66132,
+      "rssAfterKiB": 69668,
+      "growthKiB": 3536,
+      "cacheBytesAfterRelease": 0
+    },
+    "exportCancel": {
+      "state": "cancelled",
+      "publishedRows": 0,
+      "publishedFiles": 0,
+      "hiddenStagesAfterCancel": [],
+      "outputBytes": 0
+    }
+  },
+  "summary": {
+    "peakSidecarRssKiB": 109268,
+    "peakSidecarHwmKiB": 109268,
+    "postCycleGrowthKiB": 3536,
+    "resultCacheBytesAfterRelease": 0,
+    "hiddenExportStagesAfterCancel": 0
+  },
+  "samples": [
+    {
+      "elapsedMs": 1,
+      "rssKiB": 484,
+      "hwmKiB": 484,
+      "cacheBytes": 0,
+      "outputBytes": 0
+    },
+    {
+      "elapsedMs": 21,
+      "rssKiB": 9688,
+      "hwmKiB": 9688,
+      "cacheBytes": 0,
+      "outputBytes": 0
+    },
+    {
+      "elapsedMs": 42,
+      "rssKiB": 14092,
+      "hwmKiB": 14092,
+      "cacheBytes": 0,
+      "outputBytes": 0
+    },
+    {
+      "elapsedMs": 62,
+      "rssKiB": 29944,
+      "hwmKiB": 29944,
+      "cacheBytes": 0,
+      "outputBytes": 0
+    },
+    {
+      "elapsedMs": 83,
+      "rssKiB": 40452,
+      "hwmKiB": 40452,
+      "cacheBytes": 0,
+      "outputBytes": 0
+    },
+    {
+      "elapsedMs": 103,
+      "rssKiB": 41516,
+      "hwmKiB": 41516,
+      "cacheBytes": 0,
+      "outputBytes": 0
+    },
+    {
+      "elapsedMs": 124,
+      "rssKiB": 41516,
+      "hwmKiB": 41516,
+      "cacheBytes": 0,
+      "outputBytes": 0
+    },
+    {
+      "elapsedMs": 145,
+      "rssKiB": 41516,
+      "hwmKiB": 41516,
+      "cacheBytes": 0,
+      "outputBytes": 0
+    },
+    {
+      "elapsedMs": 165,
+      "rssKiB": 41516,
+      "hwmKiB": 41516,
+      "cacheBytes": 0,
+      "outputBytes": 0
+    },
+    {
+      "elapsedMs": 186,
+      "rssKiB": 41516,
+      "hwmKiB": 41516,
+      "cacheBytes": 0,
+      "outputBytes": 0
+    },
+    {
+      "elapsedMs": 206,
+      "rssKiB": 41516,
+      "hwmKiB": 41516,
+      "cacheBytes": 0,
+      "outputBytes": 0
+    },
+    {
+      "elapsedMs": 227,
+      "rssKiB": 41516,
+      "hwmKiB": 41516,
+      "cacheBytes": 0,
+      "outputBytes": 0
+    },
+    {
+      "elapsedMs": 247,
+      "rssKiB": 42548,
+      "hwmKiB": 42548,
+      "cacheBytes": 0,
+      "outputBytes": 0
+    },
+    {
+      "elapsedMs": 268,
+      "rssKiB": 50768,
+      "hwmKiB": 50768,
+      "cacheBytes": 0,
+      "outputBytes": 0
+    },
+    {
+      "elapsedMs": 288,
+      "rssKiB": 51812,
+      "hwmKiB": 51812,
+      "cacheBytes": 0,
+      "outputBytes": 0
+    },
+    {
+      "elapsedMs": 308,
+      "rssKiB": 52536,
+      "hwmKiB": 52536,
+      "cacheBytes": 0,
+      "outputBytes": 0
+    },
+    {
+      "elapsedMs": 329,
+      "rssKiB": 56688,
+      "hwmKiB": 56688,
+      "cacheBytes": 0,
+      "outputBytes": 0
+    },
+    {
+      "elapsedMs": 350,
+      "rssKiB": 58796,
+      "hwmKiB": 58796,
+      "cacheBytes": 0,
+      "outputBytes": 0
+    },
+    {
+      "elapsedMs": 370,
+      "rssKiB": 61060,
+      "hwmKiB": 61060,
+      "cacheBytes": 0,
+      "outputBytes": 0
+    },
+    {
+      "elapsedMs": 391,
+      "rssKiB": 51484,
+      "hwmKiB": 60060,
+      "cacheBytes": 0,
+      "outputBytes": 0
+    },
+    {
+      "elapsedMs": 411,
+      "rssKiB": 57264,
+      "hwmKiB": 60060,
+      "cacheBytes": 0,
+      "outputBytes": 0
+    },
+    {
+      "elapsedMs": 432,
+      "rssKiB": 57456,
+      "hwmKiB": 60060,
+      "cacheBytes": 0,
+      "outputBytes": 0
+    },
+    {
+      "elapsedMs": 453,
+      "rssKiB": 57516,
+      "hwmKiB": 60060,
+      "cacheBytes": 0,
+      "outputBytes": 0
+    },
+    {
+      "elapsedMs": 473,
+      "rssKiB": 61668,
+      "hwmKiB": 61668,
+      "cacheBytes": 0,
+      "outputBytes": 0
+    },
+    {
+      "elapsedMs": 494,
+      "rssKiB": 63992,
+      "hwmKiB": 63992,
+      "cacheBytes": 0,
+      "outputBytes": 0
+    },
+    {
+      "elapsedMs": 514,
+      "rssKiB": 56608,
+      "hwmKiB": 63204,
+      "cacheBytes": 0,
+      "outputBytes": 0
+    },
+    {
+      "elapsedMs": 535,
+      "rssKiB": 60568,
+      "hwmKiB": 63204,
+      "cacheBytes": 0,
+      "outputBytes": 0
+    },
+    {
+      "elapsedMs": 555,
+      "rssKiB": 76456,
+      "hwmKiB": 76456,
+      "cacheBytes": 1136680,
+      "outputBytes": 0
+    },
+    {
+      "elapsedMs": 576,
+      "rssKiB": 66056,
+      "hwmKiB": 75960,
+      "cacheBytes": 14212112,
+      "outputBytes": 0
+    },
+    {
+      "elapsedMs": 599,
+      "rssKiB": 68312,
+      "hwmKiB": 75960,
+      "cacheBytes": 62462,
+      "outputBytes": 0
+    },
+    {
+      "elapsedMs": 619,
+      "rssKiB": 67592,
+      "hwmKiB": 75960,
+      "cacheBytes": 0,
+      "outputBytes": 0
+    },
+    {
+      "elapsedMs": 640,
+      "rssKiB": 67588,
+      "hwmKiB": 75960,
+      "cacheBytes": 17748,
+      "outputBytes": 0
+    },
+    {
+      "elapsedMs": 663,
+      "rssKiB": 67588,
+      "hwmKiB": 75960,
+      "cacheBytes": 152234,
+      "outputBytes": 0
+    },
+    {
+      "elapsedMs": 685,
+      "rssKiB": 67588,
+      "hwmKiB": 75960,
+      "cacheBytes": 268628,
+      "outputBytes": 0
+    },
+    {
+      "elapsedMs": 706,
+      "rssKiB": 67588,
+      "hwmKiB": 75960,
+      "cacheBytes": 358056,
+      "outputBytes": 0
+    },
+    {
+      "elapsedMs": 728,
+      "rssKiB": 67588,
+      "hwmKiB": 75960,
+      "cacheBytes": 358056,
+      "outputBytes": 0
+    },
+    {
+      "elapsedMs": 749,
+      "rssKiB": 67600,
+      "hwmKiB": 75960,
+      "cacheBytes": 358056,
+      "outputBytes": 0
+    },
+    {
+      "elapsedMs": 771,
+      "rssKiB": 67600,
+      "hwmKiB": 75960,
+      "cacheBytes": 358056,
+      "outputBytes": 0
+    },
+    {
+      "elapsedMs": 794,
+      "rssKiB": 67600,
+      "hwmKiB": 75960,
+      "cacheBytes": 358056,
+      "outputBytes": 0
+    },
+    {
+      "elapsedMs": 815,
+      "rssKiB": 69664,
+      "hwmKiB": 75960,
+      "cacheBytes": 358056,
+      "outputBytes": 0
+    },
+    {
+      "elapsedMs": 836,
+      "rssKiB": 69668,
+      "hwmKiB": 75960,
+      "cacheBytes": 358056,
+      "outputBytes": 0
+    },
+    {
+      "elapsedMs": 857,
+      "rssKiB": 69668,
+      "hwmKiB": 75960,
+      "cacheBytes": 358056,
+      "outputBytes": 0
+    },
+    {
+      "elapsedMs": 878,
+      "rssKiB": 69668,
+      "hwmKiB": 75960,
+      "cacheBytes": 0,
+      "outputBytes": 0
+    },
+    {
+      "elapsedMs": 898,
+      "rssKiB": 69668,
+      "hwmKiB": 75960,
+      "cacheBytes": 0,
+      "outputBytes": 0
+    },
+    {
+      "elapsedMs": 919,
+      "rssKiB": 69668,
+      "hwmKiB": 75960,
+      "cacheBytes": 0,
+      "outputBytes": 0
+    },
+    {
+      "elapsedMs": 939,
+      "rssKiB": 69668,
+      "hwmKiB": 75960,
+      "cacheBytes": 0,
+      "outputBytes": 0
+    },
+    {
+      "elapsedMs": 960,
+      "rssKiB": 69668,
+      "hwmKiB": 75960,
+      "cacheBytes": 0,
+      "outputBytes": 0
+    },
+    {
+      "elapsedMs": 980,
+      "rssKiB": 69668,
+      "hwmKiB": 75960,
+      "cacheBytes": 0,
+      "outputBytes": 0
+    },
+    {
+      "elapsedMs": 1001,
+      "rssKiB": 69668,
+      "hwmKiB": 75960,
+      "cacheBytes": 0,
+      "outputBytes": 0
+    },
+    {
+      "elapsedMs": 1021,
+      "rssKiB": 92724,
+      "hwmKiB": 92724,
+      "cacheBytes": 0,
+      "outputBytes": 0
+    },
+    {
+      "elapsedMs": 1042,
+      "rssKiB": 107748,
+      "hwmKiB": 107748,
+      "cacheBytes": 0,
+      "outputBytes": 11429028
+    },
+    {
+      "elapsedMs": 1062,
+      "rssKiB": 107748,
+      "hwmKiB": 107748,
+      "cacheBytes": 0,
+      "outputBytes": 24435876
+    },
+    {
+      "elapsedMs": 1083,
+      "rssKiB": 107748,
+      "hwmKiB": 107748,
+      "cacheBytes": 0,
+      "outputBytes": 38253732
+    },
+    {
+      "elapsedMs": 1104,
+      "rssKiB": 109268,
+      "hwmKiB": 109268,
+      "cacheBytes": 0,
+      "outputBytes": 0
+    },
+    {
+      "elapsedMs": 1124,
+      "rssKiB": 66912,
+      "hwmKiB": 108740,
+      "cacheBytes": 0,
+      "outputBytes": 0
+    }
+  ],
+  "budget": {
+    "source": "docs/performance/E11-MEMORY-BUDGETS.json",
+    "passed": true,
+    "failures": []
+  }
+}

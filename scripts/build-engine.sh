@@ -4,10 +4,21 @@ set -euo pipefail
 # Build the DuckDB engine adapter and place libduckdb next to the binary so it
 # can find its runtime library via $ORIGIN without LD_LIBRARY_PATH.
 
-cargo build -p tarik-engine-duckdb
-
 PROFILE="${CARGO_BUILD_PROFILE:-debug}"
+case "$PROFILE" in
+  debug)
+    cargo build -p tarik-engine-duckdb
+    ;;
+  release)
+    cargo build -p tarik-engine-duckdb --release
+    ;;
+  *)
+    cargo build -p tarik-engine-duckdb --profile "$PROFILE"
+    ;;
+esac
+
 BIN_DIR="target/$PROFILE"
+mkdir -p "$BIN_DIR"
 
 # Locate the prebuilt dynamic library downloaded by libduckdb-sys.
 LIB=$(find target/duckdb-download -name 'libduckdb.so' -o -name 'duckdb.dll' 2>/dev/null | head -n 1 || true)

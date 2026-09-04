@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "platform": "linux-x86_64",
+  "profile": "release",
+  "maximums": {
+    "peakSidecarRssKiB": 524288,
+    "postCycleGrowthKiB": 65536,
+    "resultCacheBytesAfterRelease": 0,
+    "hiddenExportStagesAfterCancel": 0
+  },
+  "rationale": {
+    "peakSidecarRssKiB": "512 MiB ceiling for the fixed E11 sidecar workload; not an idle-memory claim.",
+    "postCycleGrowthKiB": "At most 64 MiB retained after twelve fixed run/page/release cycles.",
+    "resultCacheBytesAfterRelease": "Every fixed result is explicitly released, so no result page bytes may remain.",
+    "hiddenExportStagesAfterCancel": "Cancellation must remove the current hidden stage exactly."
+  }
+}
