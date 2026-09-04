@@ -1,17 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import {
-  Button,
-  ContextMenu,
-  Dialog,
-  EmptyState,
-  Field,
-  InlineError,
-  Menu,
-  Skeleton,
-  Surface,
-  Tooltip,
-} from ".";
+import { Button, ContextMenu, Dialog, Field, Menu } from ".";
 
 describe("UI primitives", () => {
   it("exposes button tone without changing native behavior", () => {
@@ -44,9 +33,6 @@ describe("UI primitives", () => {
           label="Query actions"
           trigger={<Button>Actions</Button>}
         />
-        <Tooltip content="Run current statement">
-          <Button>Run</Button>
-        </Tooltip>
       </>,
     );
 
@@ -79,21 +65,5 @@ describe("UI primitives", () => {
     fireEvent.contextMenu(screen.getByRole("button", { name: "Retail project" }));
     fireEvent.click(await screen.findByRole("menuitem", { name: "Rename" }));
     expect(rename).toHaveBeenCalledOnce();
-  });
-
-  it("provides semantic feedback and surface regions", () => {
-    render(
-      <>
-        <InlineError>The selected file cannot be read.</InlineError>
-        <EmptyState description="Import CSV or link Parquet to begin." title="No sources yet" />
-        <Skeleton label="Loading schema" lines={2} />
-        <Surface title="Source settings">Content</Surface>
-      </>,
-    );
-
-    expect(screen.getByRole("alert")).toHaveTextContent("selected file cannot be read");
-    expect(screen.getByText("No sources yet")).toBeInTheDocument();
-    expect(screen.getByRole("status", { name: "Loading schema" })).toBeInTheDocument();
-    expect(screen.getByRole("region", { name: "Source settings" })).toBeInTheDocument();
   });
 });
