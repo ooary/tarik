@@ -115,6 +115,7 @@ jobs:
         shell: pwsh
         run: Remove-SmbShare -Name "TarikCi$env:GITHUB_RUN_ID" -Force -ErrorAction SilentlyContinue
       - name: Build and verify Windows portable ZIP
+        id: portable_package
         run: npm run release:windows
       - name: Verify extracted portable runtime
         run: npm run verify:windows-runtime
@@ -126,6 +127,7 @@ jobs:
           path: target/windows-runtime-evidence/runtime-report.json
           if-no-files-found: warn
       - name: Upload unsigned Windows portable candidate
+        if: always() && steps.portable_package.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: Tarik-windows-x64-portable-unsigned
