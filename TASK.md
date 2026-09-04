@@ -1482,7 +1482,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
     - Security review removes generic invoke mutators that bypass ownership, uses non-null CSP and action-specific plugin permissions, and proves native-dialog/owned-root boundaries with adversarial paths and identifiers.
     - E11 ships Linux artifacts only; Windows remains E12. The ship verdict remains REVIEW while deferred E6/E7/E10 manual gates are unsigned.
 
-- [ ] **E11-T1 Add end-to-end golden workflows**
+- [x] **E11-T1 Add end-to-end golden workflows**
   - Depends on: E4, E5, E6, E7, E8, E9 core tasks
   - Owns: E2E tests and fixtures
   - Deliverables:
@@ -1491,6 +1491,10 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: workflows pass from a clean application data directory.
   - Tests: automated E2E suite on supported CI environment.
   - Commit: `test(e2e): cover core tarik workflows`
+  - Notes:
+    - Added one isolated real-composition golden test using production ProjectManager, QueryCoordinator, ResultStore, Plan capture, ExportCoordinator, metadata repositories, the actual DuckDB sidecar, and deterministic CSV/Parquet fixtures.
+    - The workflow creates a managed project, imports orders, links markets, executes/paginates a grouped join, captures Explain and Actual Flow, saves SQL, exports exact one-row parts, cancels long query/export work, proves session reuse, persists a draft, closes every service, creates fresh service objects, reopens the project, detects and repairs a missing link, and verifies catalog/session/saved/history/export continuity.
+    - CI now formats, Clippy-checks, and tests the whole Rust workspace, explicitly builds/checks the real sidecar before tests, and caches the workspace root rather than only `src-tauri`.
 
 - [~] **E11-T2 Establish performance and memory budgets** — build-loop optimization foundation in progress
   - Depends on: E6-T5, E9-T3

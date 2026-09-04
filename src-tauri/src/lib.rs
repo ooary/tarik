@@ -1,5 +1,7 @@
 mod engine_manager;
 mod export;
+#[cfg(test)]
+mod golden_tests;
 mod metadata;
 mod observability;
 mod paths;
