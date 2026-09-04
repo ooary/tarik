@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { validateQuery, type SqlDiagnostic } from "../../lib/commands";
 
-export type SqlValidationState =
+type SqlValidationState =
   | { status: "idle" | "editing" | "checking"; diagnostics: SqlDiagnostic[]; message: null }
   | { status: "clean"; diagnostics: []; message: null }
   | { status: "problems"; diagnostics: SqlDiagnostic[]; message: null }

@@ -26,13 +26,13 @@ export const defaultWorkbenchPreferences: WorkbenchPreferences = {
   bottomPanelOpen: true,
 };
 
-export interface WorkbenchPreferencesRepository {
+interface WorkbenchPreferencesRepository {
   load(): Promise<WorkbenchPreferences>;
   save(preferences: WorkbenchPreferences): Promise<void>;
 }
 
-export type WorkbenchPreferencesLoader = () => Promise<WorkbenchPreferences | null>;
-export type WorkbenchPreferencesSaver = (preferences: WorkbenchPreferences) => Promise<void>;
+type WorkbenchPreferencesLoader = () => Promise<WorkbenchPreferences | null>;
+type WorkbenchPreferencesSaver = (preferences: WorkbenchPreferences) => Promise<void>;
 
 export function createWorkbenchPreferencesRepository(
   loadPreferences: WorkbenchPreferencesLoader,

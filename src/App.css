@@ -614,11 +614,6 @@ button:disabled {
   font-weight: 680;
 }
 
-.add-button {
-  color: var(--accent-text);
-  font-size: 19px;
-}
-
 .source-tree {
   overflow: auto;
   padding: 13px 8px 16px;
@@ -1047,11 +1042,6 @@ body:has(.query-analysis-workspace) {
 .subtle-button {
   min-height: 26px;
   font-size: 11px;
-}
-
-.result-scroll {
-  min-height: 0;
-  overflow: auto;
 }
 
 table {

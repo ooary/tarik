@@ -20,7 +20,7 @@ const MAX_COLUMN_WIDTH = 640;
 const COLUMN_RESIZE_STEP = 16;
 const PAGE_ROWS = 500;
 
-export interface ResultColumn {
+interface ResultColumn {
   name: string;
   logicalType: string;
   nativeType: string;
@@ -28,7 +28,7 @@ export interface ResultColumn {
 }
 
 /** Extract typed column metadata from a page response. */
-export function parseColumns(raw: unknown): ResultColumn[] {
+function parseColumns(raw: unknown): ResultColumn[] {
   if (!Array.isArray(raw)) return [];
   return raw.flatMap((column) => {
     if (typeof column !== "object" || column === null) return [];
@@ -45,7 +45,7 @@ export function parseColumns(raw: unknown): ResultColumn[] {
 }
 
 /** Cell text: nulls become NULL markers; everything else is its text form. */
-export function formatValue(value: unknown): string {
+function formatValue(value: unknown): string {
   if (value === null || value === undefined) return "NULL";
   return String(value);
 }

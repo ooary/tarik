@@ -1,7 +1,7 @@
-export type EstimateAccuracyLevel = "good" | "warning" | "poor";
-export type EstimateDirection = "high" | "low" | "exact";
+type EstimateAccuracyLevel = "good" | "warning" | "poor";
+type EstimateDirection = "high" | "low" | "exact";
 
-export interface EstimateAccuracy {
+interface EstimateAccuracy {
   factor: number;
   level: EstimateAccuracyLevel;
   direction: EstimateDirection;

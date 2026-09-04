@@ -8,7 +8,7 @@ import {
   type CreateTableDefinition,
 } from "../../lib/commands";
 
-export const CREATE_TABLE_TYPES: CreateTableColumnType[] = [
+const CREATE_TABLE_TYPES: CreateTableColumnType[] = [
   "VARCHAR",
   "BIGINT",
   "INTEGER",

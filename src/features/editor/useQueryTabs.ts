@@ -6,7 +6,7 @@ import {
   type QueryTabSnapshot,
 } from "../../lib/commands";
 
-export interface WorkbenchTab {
+interface WorkbenchTab {
   id: string;
   title: string;
   sql: string;

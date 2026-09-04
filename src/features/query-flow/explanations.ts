@@ -1,6 +1,6 @@
 import type { PlanNode } from "../../lib/commands";
 
-export interface OperatorExplanation {
+interface OperatorExplanation {
   title: string;
   summary: string;
   inputLabel: string;
