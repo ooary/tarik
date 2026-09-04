@@ -66,7 +66,7 @@ Review [`../security/E11-BOUNDARY-REVIEW.md`](../security/E11-BOUNDARY-REVIEW.md
 
 1. Confirm `src-tauri/capabilities/default.json` has only `core:default` and `dialog:allow-open`; there is no broad opener permission.
 2. Confirm the non-null CSP allows local application/IPC/assets and inline geometry styles but no remote/inline scripts or arbitrary network origins.
-3. Confirm all 55 registered handlers have a typed frontend counterpart and no unregistered invoke exists (E11.5 adds the reviewed `create_table` pair).
+3. Confirm all 54 registered handlers have a typed frontend counterpart and no unregistered invoke exists (E11.5 added `create_table`; E12-T0 removed the unused `get_app_directories` pair).
 4. In Settings, **Reveal logs** opens only Tarik's resolved log file; no path crosses WebView IPC.
 5. **Reveal output** works for a completed tracked export. Forge export ID/part number in DevTools and confirm Rust rejects it; no arbitrary path parameter exists.
 6. Re-run managed/external project deletion and cleanup outside-sentinel/symlink cases. User-owned files must survive.

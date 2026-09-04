@@ -8,7 +8,7 @@ Tarik opens one metadata database at the platform application data directory:
 <Tarik app data>/tarik.sqlite
 ```
 
-On Linux this normally resolves below the user data directory. The exact path is available through the existing `get_app_directories` Tauri command.
+On Linux this normally resolves below the user data directory. Application paths are resolved and owned by the Rust backend; the unused WebView path-disclosure command was removed in E12-T0.
 
 ## Schema version
 

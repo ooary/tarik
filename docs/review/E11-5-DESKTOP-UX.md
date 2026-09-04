@@ -31,7 +31,7 @@
 - `npm run test:ui`: 151 tests across 25 files
 - `npm run build`
 
-Invoke parity is now 55/55 handlers/frontend commands; the intentional `create_table` addition is reflected in `docs/review/E11-RELEASE.md`.
+Invoke parity at E11.5 review was 55/55 handlers/frontend commands with the intentional `create_table` addition. E12-T0 later removed the runtime-unreferenced `get_app_directories` pair, leaving exact 54/54 parity reflected in `docs/review/E11-RELEASE.md`.
 
 ## Manual sign-off
 

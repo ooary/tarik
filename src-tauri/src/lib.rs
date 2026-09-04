@@ -66,13 +66,6 @@ fn get_runtime_info() -> RuntimeInfo {
     runtime_info()
 }
 
-#[tauri::command]
-fn get_app_directories<R: tauri::Runtime>(
-    app: tauri::AppHandle<R>,
-) -> Result<paths::AppDirectories, String> {
-    paths::resolve_directories(&app).map_err(|error| error.to_string())
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -188,7 +181,6 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             get_runtime_info,
-            get_app_directories,
             observability::get_log_info,
             observability::reveal_log_directory,
             observability::get_last_support_incident,

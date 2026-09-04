@@ -326,9 +326,8 @@ test("session snapshots use typed metadata commands", async () => {
   assert.equal(calls[1].command, "load_query_session");
 });
 
-test("app paths, logs, and incidents use typed commands", async () => {
+test("logs, incidents, cleanup, and shutdown use typed commands", async () => {
   const {
-    getAppDirectories,
     getLogInfo,
     reportFrontendIncident,
     getLastSupportIncident,
@@ -338,11 +337,6 @@ test("app paths, logs, and incidents use typed commands", async () => {
     revealLogDirectory,
     revealExportPart,
   } = await loadCommandsModule();
-  const expected = {
-    dataDir: "/tmp/tarik/data",
-    cacheDir: "/tmp/tarik/cache",
-    logDir: "/tmp/tarik/logs",
-  };
   const logInfo = {
     directory: "/tmp/tarik/logs",
     activeFile: "/tmp/tarik/logs/tarik.log",
@@ -364,13 +358,11 @@ test("app paths, logs, and incidents use typed commands", async () => {
   const calls = [];
   const invoke = async (command, args) => {
     calls.push({ command, args });
-    if (command === "get_app_directories") return expected;
     if (command === "get_log_info") return logInfo;
     if (command === "clear_cache") return { artifactsRemoved: 0, warnings: [] };
     if (command === "complete_shutdown") return { phase: "complete" };
     return incident;
   };
-  const result = await getAppDirectories(invoke);
   assert.deepEqual(await getLogInfo(invoke), logInfo);
   assert.deepEqual(await reportFrontendIncident(input, invoke), incident);
   assert.deepEqual(await getLastSupportIncident(invoke), incident);
@@ -383,7 +375,6 @@ test("app paths, logs, and incidents use typed commands", async () => {
   assert.equal(
     JSON.stringify(calls),
     JSON.stringify([
-      { command: "get_app_directories", args: undefined },
       { command: "get_log_info", args: undefined },
       { command: "report_frontend_incident", args: { input } },
       { command: "get_last_support_incident", args: undefined },
@@ -394,5 +385,4 @@ test("app paths, logs, and incidents use typed commands", async () => {
       { command: "reveal_export_part", args: { exportId: "export-1", partNumber: 2 } },
     ]),
   );
-  assert.deepEqual(result, expected);
 });

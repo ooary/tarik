@@ -1,10 +1,8 @@
 use std::path::PathBuf;
 
-use serde::Serialize;
 use tauri::{AppHandle, Manager, Runtime};
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AppDirectories {
     pub data_dir: PathBuf,
     pub cache_dir: PathBuf,
@@ -42,23 +40,4 @@ pub fn resolve_directories<R: Runtime>(app: &AppHandle<R>) -> Result<AppDirector
     }
 
     Ok(directories)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn directory_value_is_serializable() {
-        let directories = AppDirectories {
-            data_dir: PathBuf::from("/tmp/tarik/data"),
-            cache_dir: PathBuf::from("/tmp/tarik/cache"),
-            log_dir: PathBuf::from("/tmp/tarik/logs"),
-        };
-
-        let json = serde_json::to_string(&directories).expect("directory paths should serialize");
-        assert!(json.contains("dataDir"));
-        assert!(json.contains("cacheDir"));
-        assert!(json.contains("logDir"));
-    }
 }
