@@ -429,7 +429,6 @@ impl QueriesRepository {
             remaining: 0,
         })
     }
-
 }
 
 fn normalize_saved_draft(draft: &SavedQueryDraft) -> Result<SavedQueryDraft, MetadataError> {

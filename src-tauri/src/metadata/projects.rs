@@ -219,7 +219,11 @@ mod tests {
         let projects = repository.list().unwrap();
         assert_eq!(projects[0].id, second.id);
         let reopened = repository
-            .upsert("First", Path::new("/data/first.duckdb"), ProjectOwnership::External)
+            .upsert(
+                "First",
+                Path::new("/data/first.duckdb"),
+                ProjectOwnership::External,
+            )
             .unwrap();
         assert_eq!(reopened.id, first.id);
     }
