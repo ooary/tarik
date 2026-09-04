@@ -191,30 +191,35 @@ function engineHandshake(executable) {
     });
     let output = "";
     let errors = "";
-    const timeout = setTimeout(() => finish(new Error("engine handshake timed out")), 10_000);
+    let response;
     let settled = false;
-    function finish(error, value) {
+    const timeout = setTimeout(() => finish(new Error("engine handshake timed out"), true), 10_000);
+
+    function finish(error, terminate = false) {
       if (settled) return;
       settled = true;
       clearTimeout(timeout);
-      child.kill();
+      if (terminate && child.exitCode === null) child.kill();
       if (error) reject(error);
-      else resolve(value);
+      else resolve(response);
     }
-    child.once("error", finish);
+
+    child.once("error", (error) => finish(error, true));
     child.stderr.on("data", (chunk) => (errors += chunk));
     child.stdout.on("data", (chunk) => {
       output += chunk;
       const newline = output.indexOf("\n");
-      if (newline < 0) return;
+      if (newline < 0 || response) return;
       try {
-        finish(null, JSON.parse(output.slice(0, newline)));
+        response = JSON.parse(output.slice(0, newline));
       } catch (error) {
-        finish(new Error(`invalid engine response: ${error.message}`));
+        finish(new Error(`invalid engine response: ${error.message}`), true);
       }
     });
     child.once("exit", (code) => {
-      if (!settled) finish(new Error(`engine exited with ${code}: ${errors}`));
+      if (code !== 0) finish(new Error(`engine exited with ${code}: ${errors}`));
+      else if (!response) finish(new Error("engine exited without a handshake response"));
+      else finish();
     });
     child.stdin.end('{"id":"release","method":"engine.handshake","params":{}}\n');
   });
