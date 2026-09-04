@@ -83,14 +83,32 @@ export const QueryWorkspace = forwardRef<QueryWorkspaceHandle, QueryWorkspacePro
       activeExecution?.state === "queued" || activeExecution?.state === "running";
     const validation = useSqlValidation(projectId, activeTab?.id, activeTab?.sql, catalog);
 
-    const runActiveTab = () => {
-      if (!projectId || !activeTab || executionActive) return;
-      const { id: tabId, sql } = activeTab;
+    const submitSql = (tabId: string, sql: string) => {
+      if (!projectId || executionActive) return;
+      if (
+        sql.trim().length > 0 &&
+        !isClearlyReadOnlySql(sql) &&
+        !window.confirm(
+          "Run query?\n\nThis SQL may modify your project. INSERT, UPDATE, DELETE, CREATE, ALTER, and DROP can change stored data or catalog objects.",
+        )
+      ) {
+        return;
+      }
       setRunError(null);
       if (!bottomOpen) onToggleBottom();
       run(tabId, sql).catch((error: unknown) => {
         setRunError(error instanceof Error ? error.message : String(error));
       });
+    };
+
+    const runActiveTab = () => {
+      if (!activeTab) return;
+      submitSql(activeTab.id, activeTab.sql);
+    };
+
+    const rerunExecution = (execution: TabExecution) => {
+      if (!activeTab) return;
+      submitSql(activeTab.id, execution.sql);
     };
 
     const runEstimate = () => {
@@ -357,7 +375,13 @@ export const QueryWorkspace = forwardRef<QueryWorkspaceHandle, QueryWorkspacePro
               </button>
             </div>
           </div>
-          {bottomOpen && <ResultPanel execution={activeExecution} runError={runError} />}
+          {bottomOpen && (
+            <ResultPanel
+              execution={activeExecution}
+              onRunAgain={rerunExecution}
+              runError={runError}
+            />
+          )}
         </div>
         {analysisMode && (
           <QueryAnalysisWorkspace
@@ -436,9 +460,11 @@ function formatSeconds(durationMs: number): string {
 
 function ResultPanel({
   execution,
+  onRunAgain,
   runError,
 }: {
   execution: TabExecution | undefined;
+  onRunAgain: (execution: TabExecution) => void;
   runError: string | null;
 }) {
   if (runError) {
@@ -500,6 +526,7 @@ function ResultPanel({
       if (execution.rowsProduced != null && execution.resultId) {
         return (
           <ResultGrid
+            onRunAgain={() => onRunAgain(execution)}
             resultId={execution.resultId}
             rowTotal={execution.rowTotal ?? execution.rowsProduced}
           />

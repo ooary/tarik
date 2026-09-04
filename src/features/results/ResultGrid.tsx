@@ -1,7 +1,16 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { CopyIcon } from "@phosphor-icons/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ContextMenu } from "../../components/ui";
 import { getResultPage, type ResultPageView } from "../../lib/commands";
+import {
+  cellKey,
+  emptySelection,
+  selectCell,
+  selectionToTsv,
+  type CellCoordinate,
+  type CellSelection,
+} from "./resultSelection";
 
 const ROW_HEIGHT = 34;
 const ROW_NUMBER_WIDTH = 68;
@@ -46,7 +55,15 @@ export function formatValue(value: unknown): string {
  * rows and columns exist in the DOM; page artifacts stay on disk in the
  * engine and a small decoded cache lives in the desktop process.
  */
-export function ResultGrid({ resultId, rowTotal }: { resultId: string; rowTotal: number }) {
+export function ResultGrid({
+  resultId,
+  rowTotal,
+  onRunAgain,
+}: {
+  resultId: string;
+  rowTotal: number;
+  onRunAgain?: () => void;
+}) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const resizeCleanupRef = useRef<(() => void) | null>(null);
   const [page, setPage] = useState<ResultPageView | null>(null);
@@ -54,6 +71,8 @@ export function ResultGrid({ resultId, rowTotal }: { resultId: string; rowTotal:
     status: "loading",
   });
   const [activeRow, setActiveRow] = useState(0);
+  const [selection, setSelection] = useState<CellSelection>(emptySelection);
+  const [clipboardError, setClipboardError] = useState<string | null>(null);
   const [columnWidths, setColumnWidths] = useState<number[]>([]);
 
   const columns = useMemo(() => parseColumns(page?.columns), [page]);
@@ -89,6 +108,7 @@ export function ResultGrid({ resultId, rowTotal }: { resultId: string; rowTotal:
       setLoad({ status: "loading" });
       setPage(null);
       setActiveRow(0);
+      setSelection(emptySelection());
       getResultPage(resultId, bounded)
         .then((next) => {
           setPage(next);
@@ -108,6 +128,8 @@ export function ResultGrid({ resultId, rowTotal }: { resultId: string; rowTotal:
     let cancelled = false;
     setLoad({ status: "loading" });
     setPage(null);
+    setSelection(emptySelection());
+    setClipboardError(null);
     setColumnWidths([]);
     getResultPage(resultId, 0)
       .then((next) => {
@@ -205,17 +227,49 @@ export function ResultGrid({ resultId, rowTotal }: { resultId: string; rowTotal:
     }
   }
 
+  function writeClipboard(text: string) {
+    setClipboardError(null);
+    navigator.clipboard.writeText(text).catch((error: unknown) => {
+      setClipboardError(`Copy failed: ${error instanceof Error ? error.message : String(error)}`);
+    });
+  }
+
   function copyPage() {
     if (!page) return;
     const header = columns.map((column) => column.name).join("\t");
     const body = rows.map((row) => row.map((cell) => formatValue(cell)).join("\t")).join("\n");
-    void navigator.clipboard.writeText(`${header}\n${body}`);
+    writeClipboard(`${header}\n${body}`);
   }
 
   function copyRow(rowIndex: number) {
     const row = rows[rowIndex];
     if (!row) return;
-    void navigator.clipboard.writeText(row.map((cell) => formatValue(cell)).join("\t"));
+    writeClipboard(row.map((cell) => formatValue(cell)).join("\t"));
+  }
+
+  function chooseCell(
+    cell: CellCoordinate,
+    modifiers: { shiftKey: boolean; ctrlKey: boolean; metaKey: boolean },
+  ) {
+    setActiveRow(cell.row);
+    setSelection((current) =>
+      selectCell(
+        current,
+        cell,
+        modifiers.shiftKey
+          ? "extend"
+          : modifiers.ctrlKey || modifiers.metaKey
+            ? "toggle"
+            : "replace",
+      ),
+    );
+  }
+
+  function prepareCellContext(cell: CellCoordinate) {
+    setActiveRow(cell.row);
+    setSelection((current) =>
+      current.cells.has(cellKey(cell)) ? current : selectCell(current, cell, "replace"),
+    );
   }
 
   const measuredRows = rowVirtualizer.getVirtualItems();
@@ -286,6 +340,11 @@ export function ResultGrid({ resultId, rowTotal }: { resultId: string; rowTotal:
           <CopyIcon aria-hidden="true" size={13} weight="bold" /> Copy page
         </button>
       </div>
+      {clipboardError && (
+        <span className="result-copy-error" role="alert">
+          {clipboardError}
+        </span>
+      )}
       {load.status === "error" ? (
         <div className="result-grid-error" role="alert">
           {load.message}
@@ -396,19 +455,49 @@ export function ResultGrid({ resultId, rowTotal }: { resultId: string; rowTotal:
                       ([cellRow, cellColumn]) =>
                         cellRow === rowIndex && cellColumn === virtualColumn.index - 1,
                     );
+                    const coordinate = { row: rowIndex, column: columnIndex };
+                    const selected = selection.cells.has(cellKey(coordinate));
                     return (
-                      <span
-                        className={`result-grid-cell ${row[columnIndex] === null ? "cell-null" : ""}`}
-                        key={`${column.name}-${columnIndex}`}
-                        style={{
-                          left: virtualColumn.start,
-                          position: "absolute",
-                          width: virtualColumn.size,
-                        }}
+                      <ContextMenu
+                        items={[
+                          {
+                            label: "Copy cell",
+                            onSelect: () => writeClipboard(formatValue(row[columnIndex])),
+                          },
+                          {
+                            disabled: selection.cells.size === 0,
+                            label: "Copy selected cells",
+                            onSelect: () => writeClipboard(selectionToTsv(selection, rows)),
+                          },
+                          { label: "Copy row", onSelect: () => copyRow(rowIndex) },
+                          { label: "Copy page with headers", onSelect: copyPage },
+                          {
+                            disabled: !onRunAgain,
+                            label: "Run query again",
+                            onSelect: () => onRunAgain?.(),
+                          },
+                        ]}
+                        label={`Result cell row ${rowIndex + 1}, ${column.name}`}
                       >
-                        {formatValue(row[columnIndex])}
-                        {isTruncated ? "..." : ""}
-                      </span>
+                        <span
+                          aria-selected={selected}
+                          className={`result-grid-cell result-data-cell ${selected ? "result-cell-selected" : ""} ${row[columnIndex] === null ? "cell-null" : ""}`}
+                          data-column={columnIndex}
+                          data-row={rowIndex}
+                          key={`${column.name}-${columnIndex}`}
+                          onClick={(event) => chooseCell(coordinate, event)}
+                          onContextMenu={() => prepareCellContext(coordinate)}
+                          role="gridcell"
+                          style={{
+                            left: virtualColumn.start,
+                            position: "absolute",
+                            width: virtualColumn.size,
+                          }}
+                        >
+                          {formatValue(row[columnIndex])}
+                          {isTruncated ? "..." : ""}
+                        </span>
+                      </ContextMenu>
                     );
                   })}
                 </div>

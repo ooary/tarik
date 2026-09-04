@@ -1658,7 +1658,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
     - A document-scoped lifecycle listener now suppresses the native WebView browser menu everywhere; Radix context triggers still receive and render only Tarik commands.
     - SQL editor right-click offers Run query plus editing actions and delegates Run to the same workspace callback. Explorer context menus remain only on recent project rows; table and linked-source operations moved to visible Phosphor overflow controls using the keyboard-accessible dropdown primitive.
 
-- [ ] **E11.5-T4 Add bounded spreadsheet-style result selection and context actions**
+- [x] **E11.5-T4 Add bounded spreadsheet-style result selection and context actions**
   - Depends on: E11.5-T3, E6 result paging
   - Owns: `src/features/results/ResultGrid.tsx`, result selection model/menu, query rerun integration, tests
   - Deliverables:
@@ -1671,6 +1671,9 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: Shift and Ctrl/Command selections copy exactly the visibly selected bounded data, work with row/column virtualization, and rerun cannot execute a different editor revision accidentally.
   - Tests: single/range/disjoint selection, right-click preservation, NULL/tab/newline clipboard escaping policy, page/result reset, offscreen virtualized cells, header suppression, resize regression, immutable SELECT/mutation rerun, clipboard failure feedback.
   - Commit: `feat(results): add scoped selection context actions`
+  - Notes:
+    - Result body cells now own coordinate-based single, Shift-rectangle, and Ctrl/Command-disjoint selection independent of virtual DOM nodes; page/result replacement clears selection and never fetches beyond the loaded page.
+    - Cell context actions copy cell/selection/row/page as stable TSV with explicit NULL and quoted tabs/newlines, report clipboard failures, and rerun the immutable SQL retained on the terminal execution through the shared mutation-confirmed query lifecycle. Column headers remain menu-free and resize behavior is unchanged.
 
 - [ ] **E11.5-T5 Correct explorer/header actions and DuckDB connection status**
   - Depends on: E11.5-T0

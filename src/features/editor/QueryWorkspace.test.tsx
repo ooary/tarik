@@ -57,6 +57,7 @@ const firstPage = {
 
 const runningView = {
   executionId: "exec-1",
+  sql: "",
   projectId: "p1",
   tabId: "",
   state: "running" as const,

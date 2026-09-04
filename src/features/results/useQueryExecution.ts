@@ -13,6 +13,7 @@ const POLL_INTERVAL_MS = 250;
 
 export interface TabExecution {
   executionId: string;
+  sql: string;
   state: ExecutionState;
   durationMs: number;
   rowsProduced: number | null;
@@ -44,10 +45,15 @@ export function useQueryExecution(
   const timers = useRef(new Map<string, number>());
   const stopped = useRef(false);
   const onSucceededRef = useRef(onSucceeded);
+  const executionsRef = useRef(executions);
 
   useEffect(() => {
     onSucceededRef.current = onSucceeded;
   }, [onSucceeded]);
+
+  useEffect(() => {
+    executionsRef.current = executions;
+  }, [executions]);
 
   useEffect(() => {
     stopped.current = false;
@@ -61,7 +67,11 @@ export function useQueryExecution(
   }, []);
 
   const patch = useCallback((tabId: string, next: TabExecution) => {
-    setExecutions((current) => ({ ...current, [tabId]: next }));
+    setExecutions((current) => {
+      const updated = { ...current, [tabId]: next };
+      executionsRef.current = updated;
+      return updated;
+    });
   }, []);
 
   const poll = useCallback(
@@ -74,6 +84,7 @@ export function useQueryExecution(
           if (status) {
             patch(tabId, {
               executionId,
+              sql: executionsRef.current[tabId]?.sql ?? "",
               state: status.state,
               durationMs: status.durationMs,
               rowsProduced: status.rowsProduced,
@@ -122,6 +133,7 @@ export function useQueryExecution(
       if (stopped.current) return;
       patch(tabId, {
         executionId: view.executionId,
+        sql,
         state: view.state,
         durationMs: view.durationMs,
         rowsProduced: view.rowsProduced,
