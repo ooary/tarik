@@ -11,6 +11,7 @@ struct Engine {
     child: Child,
     stdin: BufWriter<std::process::ChildStdin>,
     stdout: BufReader<std::process::ChildStdout>,
+    cache_dir: PathBuf,
 }
 
 #[cfg(unix)]
@@ -39,11 +40,19 @@ fn spawn_engine() -> Engine {
         child,
         stdin,
         stdout,
+        cache_dir: temp_path("results", ""),
     }
 }
 
 impl Engine {
-    fn request(&mut self, method: &str, params: Value) -> Value {
+    fn request(&mut self, method: &str, mut params: Value) -> Value {
+        if method == "query.execute" {
+            params
+                .as_object_mut()
+                .expect("request parameters are an object")
+                .entry("cacheDir")
+                .or_insert_with(|| json!(self.cache_dir));
+        }
         let request = json!({
             "id": method,
             "method": method,
@@ -73,6 +82,14 @@ impl Engine {
             response["error"]
         );
         response["result"].clone()
+    }
+}
+
+impl Drop for Engine {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+        let _ = std::fs::remove_dir_all(&self.cache_dir);
     }
 }
 
@@ -173,8 +190,7 @@ fn catalog_drop_object_deletes_tables_and_views_with_quoted_names() {
             "sessionId": "drop-session",
             "executionId": "drop-setup",
             "sql": "CREATE TABLE \"order items\" (id INTEGER); CREATE VIEW \"order view\" AS SELECT * FROM \"order items\";",
-            "cacheDir": CACHE_DIR,
-        }),
+                    }),
     );
     assert_eq!(
         poll_terminal(&mut engine, "drop-setup")["state"],
@@ -263,7 +279,7 @@ fn query_execute_reaches_terminal_state_and_persists_rows() {
     // Row-returning statement: execute returns queued, then status terminal.
     let enqueued = engine.assert_ok(
         "query.execute",
-        json!({ "sessionId": "qs", "executionId": "e1", "sql": "SELECT i FROM range(1, 11) t(i);", "cacheDir": CACHE_DIR }),
+        json!({ "sessionId": "qs", "executionId": "e1", "sql": "SELECT i FROM range(1, 11) t(i);" }),
     );
     assert_eq!(enqueued["state"], "queued");
 
@@ -274,7 +290,7 @@ fn query_execute_reaches_terminal_state_and_persists_rows() {
     // DML and DDL without a row set succeed with no produced rows.
     engine.assert_ok(
         "query.execute",
-        json!({ "sessionId": "qs", "executionId": "e2", "sql": "CREATE TABLE t (a INTEGER); INSERT INTO t VALUES (1), (2), (3);", "cacheDir": CACHE_DIR }),
+        json!({ "sessionId": "qs", "executionId": "e2", "sql": "CREATE TABLE t (a INTEGER); INSERT INTO t VALUES (1), (2), (3);" }),
     );
     let status = poll_terminal(&mut engine, "e2");
     assert_eq!(status["state"], "succeeded");
@@ -284,7 +300,7 @@ fn query_execute_reaches_terminal_state_and_persists_rows() {
     // Multi-statement snapshots execute sequentially; the last row set wins.
     engine.assert_ok(
         "query.execute",
-        json!({ "sessionId": "qs", "executionId": "e3", "sql": "CREATE TABLE t2 (a INTEGER); INSERT INTO t2 VALUES (1), (2), (3); SELECT count(*) AS n FROM t2;", "cacheDir": CACHE_DIR }),
+        json!({ "sessionId": "qs", "executionId": "e3", "sql": "CREATE TABLE t2 (a INTEGER); INSERT INTO t2 VALUES (1), (2), (3); SELECT count(*) AS n FROM t2;" }),
     );
     let status = poll_terminal(&mut engine, "e3");
     assert_eq!(status["state"], "succeeded");
@@ -312,8 +328,7 @@ fn query_validation_reports_parse_bind_errors_without_executing_mutations() {
             "sessionId": "vs",
             "executionId": "validate-setup",
             "sql": "CREATE TABLE sentinel(id INTEGER, amount INTEGER); INSERT INTO sentinel VALUES (1, 10);",
-            "cacheDir": CACHE_DIR,
-        }),
+                    }),
     );
     assert_eq!(
         poll_terminal(&mut engine, "validate-setup")["state"],
@@ -346,11 +361,10 @@ fn query_validation_reports_parse_bind_errors_without_executing_mutations() {
     engine.assert_ok(
         "query.execute",
         json!({
-            "sessionId": "vs",
-            "executionId": "validate-check",
-            "sql": "SELECT id, amount FROM sentinel ORDER BY id",
-            "cacheDir": CACHE_DIR,
-        }),
+        "sessionId": "vs",
+        "executionId": "validate-check",
+        "sql": "SELECT id, amount FROM sentinel ORDER BY id",
+                }),
     );
     let status = poll_terminal(&mut engine, "validate-check");
     assert_eq!(status["rowsProduced"], 1);
@@ -474,8 +488,6 @@ fn poll_terminal_with_timeout(engine: &mut Engine, execution_id: &str, attempts:
     panic!("execution {execution_id} did not reach a terminal state");
 }
 
-const CACHE_DIR: &str = "/tmp/tarik-engine-test-results";
-
 const LONG_QUERY: &str = "SELECT count(*) FROM range(1_000_000_000_000) t(i);";
 
 #[test]
@@ -493,14 +505,14 @@ fn cancel_covers_queued_active_and_session_reuse() {
     // 1. A long-running query occupies the session worker.
     let enqueued = engine.assert_ok(
         "query.execute",
-        json!({ "sessionId": "cs", "executionId": "c1", "sql": LONG_QUERY, "cacheDir": CACHE_DIR }),
+        json!({ "sessionId": "cs", "executionId": "c1", "sql": LONG_QUERY }),
     );
     assert_eq!(enqueued["state"], "queued");
 
     // 2. A second submission on the same session queues behind the first.
     engine.assert_ok(
         "query.execute",
-        json!({ "sessionId": "cs", "executionId": "c2", "sql": "SELECT 41 + 1 AS answer;", "cacheDir": CACHE_DIR }),
+        json!({ "sessionId": "cs", "executionId": "c2", "sql": "SELECT 41 + 1 AS answer;" }),
     );
     let queued_status =
         engine.request("query.status", json!({ "executionId": "c2" }))["result"].clone();
@@ -523,7 +535,7 @@ fn cancel_covers_queued_active_and_session_reuse() {
     // 5. The same session accepts and completes a later query.
     engine.assert_ok(
         "query.execute",
-        json!({ "sessionId": "cs", "executionId": "c3", "sql": "SELECT 6 * 7 AS answer;", "cacheDir": CACHE_DIR }),
+        json!({ "sessionId": "cs", "executionId": "c3", "sql": "SELECT 6 * 7 AS answer;" }),
     );
     let status = poll_terminal_with_timeout(&mut engine, "c3", 400);
     assert_eq!(status["state"], "succeeded");
@@ -547,7 +559,7 @@ fn repeat_cancel_on_terminal_job_is_idempotent() {
 
     engine.assert_ok(
         "query.execute",
-        json!({ "sessionId": "cs", "executionId": "k1", "sql": "SELECT 1;", "cacheDir": CACHE_DIR }),
+        json!({ "sessionId": "cs", "executionId": "k1", "sql": "SELECT 1;" }),
     );
     let status = poll_terminal(&mut engine, "k1");
     assert_eq!(status["state"], "succeeded");
