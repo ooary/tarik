@@ -1712,14 +1712,30 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
 
 **Status:** `BLOCKED` - E11.5 desktop corrections must be implemented and manually approved before Windows work begins.
 
-**Outcome:** Signed or checksummed Windows x64 portable ZIP that runs without an installer and keeps user data in normal Windows application-data directories.
+**Outcome:** Signed or checksummed Windows x64 portable ZIP that runs without an installer and keeps user data in normal Windows application-data directories. Before the first Windows compilation/package attempt, remove accumulated codebase crust only where production unreachability is proven.
 
 **Portable definition:** The user downloads a ZIP, extracts it, and launches `Tarik.exe` without administrator rights or an installer. Tarik operational metadata remains in Windows AppData by default. User DuckDB, CSV, Parquet, and export files remain where the user chooses. A fully self-contained mode that writes metadata beside the executable is explicitly out of scope unless requested later.
 
+- [ ] **E12-T0 Audit and remove production-safe codebase crust before Windows compilation**
+  - Depends on: E11.5 approval
+  - Blocks: E12-T1 and every Windows compile/package task
+  - Owns: production reachability inventory, frontend/Rust/sidecar dependency graph, dead-code removals, stale API cleanup, `docs/design/E12-CODEBASE-CLEANUP.md`
+  - Deliverables:
+    - Capture a green pre-cleanup baseline and map every production root: frontend entry and reachable workspaces/dialogs, Tauri `generate_handler!` commands, engine protocol methods, DuckDB sidecar entry, build scripts, capabilities, migrations, persisted compatibility fields, release overlays/assets, and packaging scripts.
+    - Inventory dead code, unlinked or unreachable pages/components, unused files/exports/types/hooks/styles/assets, stale typed commands/protocol methods, redundant dependencies/features, obsolete scripts/configuration, and tests or docs that describe removed behavior. Classify each candidate as **remove**, **retain with runtime reason**, or **defer because reachability is uncertain**.
+    - Use compiler/linter/reference evidence plus production entry-point tracing; static "unused" reports are leads, not deletion proof. Check dynamic imports, macro registration, serde/migration compatibility, CSS selectors, Tauri command strings, `build.rs`, `cfg`/feature/platform branches, sidecar/release manifests, and test-only consumers before deleting anything.
+    - Remove only artifacts proven unreachable from production and unnecessary for persisted-data or upgrade compatibility. Do not delete a public command, protocol variant, migration, persisted field, release asset, platform branch, or recovery path merely because the current UI has no direct textual import.
+    - Group removals into small atomic commits by boundary (frontend, desktop/commands, sidecar/protocol, dependencies/assets/tooling), with a direct relevant test after each group so a regression can be bisected or reverted without restoring unrelated crust.
+    - Re-run the complete Linux production behavior contract after cleanup: clean metadata migration/reopen, golden project/import/query/result/plan/export workflow, E11.5 interactions, shutdown/restart recovery, command parity, real sidecar handshake, memory/cache bounds, CSP/capabilities, and packaged Linux smoke.
+    - Record before/after source, dependency, binary, and package-size measurements as observations only; safety and behavior preservation take precedence over reducing line count or artifact size.
+  - Acceptance: every deletion has reviewable reachability evidence; no orphan production page/file/API remains among audited candidates; all retained exceptions state why runtime or compatibility needs them; the full direct gate and production smoke baseline remains green with no user-visible workflow removed or changed.
+  - Tests: `cargo fmt --all --check`; Clippy with `-D warnings`; all Rust workspace targets; frontend format/lint/typecheck/unit/component/build; docs; 55/55 invoke parity (or an explicitly reviewed lower exact pair after removing both ends); real sidecar; fresh and upgraded metadata; golden restart; release memory/cache checks; Linux DEB/AppImage/portable content and launch smoke.
+  - Commits: `docs(design): inventory pre-windows codebase reachability`, then atomic `refactor(cleanup): ...` commits per proven removal boundary, then `test(cleanup): verify production behavior after crust removal`
+
 - [ ] **E12-T1 Add Windows x64 compile and test CI**
-  - Depends on: E11.5 approval, E3
+  - Depends on: E12-T0, E3
   - Deliverables: `windows-latest` checks for frontend, Rust, bundled DuckDB, and Tauri build using `x86_64-pc-windows-msvc`.
-  - Acceptance: every pull request proves the current source compiles and tests on Windows.
+  - Acceptance: every pull request proves the cleaned current source compiles and tests on Windows.
   - Commit: `ci(windows): add native windows build checks`
 
 - [ ] **E12-T2 Make development and filesystem boundaries cross-platform**
