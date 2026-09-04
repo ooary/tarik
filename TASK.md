@@ -1768,11 +1768,15 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
     - The packager validates Windows PE headers, exact allow-listed contents, every internal checksum before and after ZIP extraction, and real sidecar handshakes before and after extraction. It emits an outer SHA-256 file and unsigned release manifest; Windows CI uploads only those three release outputs.
     - Pure packaging/tamper/off-host tests pass on Linux. T3 remains unchecked until `windows-latest` produces the ZIP and its extracted `Tarik.exe` is launched on a supported Windows machine.
 
-- [ ] **E12-T4 Verify WebView2, DPI, and clean-machine behavior**
+- [ ] **E12-T4 Verify WebView2, DPI, and clean-machine behavior** _(automation implemented; native and manual evidence pending)_
   - Depends on: E12-T3
   - Deliverables: Windows 10/11 smoke matrix, WebView2 prerequisite behavior, 100/125/150/200 percent DPI, mixed-monitor scaling, light/dark, keyboard focus, large-result memory, and long-running export checks.
   - Acceptance: missing WebView2 produces clear prerequisite guidance; normal supported systems launch the portable executable directly.
-  - Commit: `test(windows): verify portable runtime behavior`
+  - Commits: `39495a4 docs(windows): design portable runtime verification`; `f480499 test(windows): exercise extracted portable runtime`
+  - Notes:
+    - Native `windows-latest` now verifies the checksummed extracted candidate under freshly cleaned ephemeral-runner AppData, launches and gracefully closes `Tarik.exe` twice, observes a responding window/WebView2 descendants/startup metadata and logs, and samples the complete desktop process tree under a conservative 768 MiB ceiling.
+    - The extracted sidecar runs a bounded 100,000-row result/page/release scenario, a completed 250,000-row three-part CSV export, active cancellation of a one-billion-row requested export, zero-residue checks, sidecar memory under 512 MiB, and clean process exit. A schema-versioned report is uploaded even on a reached native failure.
+    - `docs/review/E12-WINDOWS-RUNTIME.md` is the acceptance matrix. Hosted automation does not satisfy physical Windows 10/11, missing-WebView2 VM, 100/125/150/200% DPI, mixed-monitor, light/dark/system, or keyboard-only review; T4 remains unchecked until native artifacts and every manual row are accepted.
 
 - [ ] **E12-T5 Add portable upgrade, signing, and release documentation**
   - Depends on: E12-T4
