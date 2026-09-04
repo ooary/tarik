@@ -22,4 +22,15 @@ export default tseslint.config(
     files: ["tests/**/*.mjs"],
     languageOptions: { globals: { console: "readonly", process: "readonly", URL: "readonly" } },
   },
+  {
+    files: ["scripts/**/*.mjs"],
+    languageOptions: {
+      globals: {
+        clearTimeout: "readonly",
+        console: "readonly",
+        process: "readonly",
+        setTimeout: "readonly",
+      },
+    },
+  },
 );
