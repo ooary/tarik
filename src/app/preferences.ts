@@ -1,4 +1,14 @@
 export type ThemePreference = "system" | "light" | "dark";
+export type EffectiveTheme = "light" | "dark";
+
+export function resolveEffectiveTheme(
+  preference: ThemePreference,
+  systemPrefersDark: boolean,
+): EffectiveTheme {
+  if (preference === "dark") return "dark";
+  if (preference === "light") return "light";
+  return systemPrefersDark ? "dark" : "light";
+}
 
 export interface WorkbenchPreferences {
   theme: ThemePreference;

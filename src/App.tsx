@@ -19,6 +19,7 @@ import {
   defaultWorkbenchPreferences,
   type WorkbenchPreferences,
 } from "./app/preferences";
+import { useEffectiveTheme } from "./app/useEffectiveTheme";
 import {
   cancelSourceOperation,
   clearCache,
@@ -105,6 +106,8 @@ function App() {
   const shutdownInFlight = useRef(false);
   const [preferences, setPreferences] = useState<WorkbenchPreferences>(defaultWorkbenchPreferences);
   const { bottomPanelOpen: bottomOpen, sidebarOpen } = preferences;
+  const selectedTheme = previewTheme() === "system" ? preferences.theme : previewTheme();
+  const effectiveTheme = useEffectiveTheme(selectedTheme);
 
   function updatePreferences(patch: Partial<WorkbenchPreferences>) {
     setPreferences((current) => ({ ...current, ...patch }));
@@ -470,7 +473,8 @@ function App() {
   return (
     <main
       className="app-shell"
-      data-theme={previewTheme() === "system" ? preferences.theme : previewTheme()}
+      data-effective-theme={effectiveTheme}
+      data-theme={selectedTheme}
     >
       <header className="app-header">
         <div className="brand-lockup">
@@ -761,6 +765,7 @@ function App() {
           onQuerySucceeded={() => (project ? refreshProjectData(project) : undefined)}
           onSetBottomHeight={(height) => updatePreferences({ bottomPanelHeight: height })}
           onToggleBottom={() => updatePreferences({ bottomPanelOpen: !bottomOpen })}
+          effectiveTheme={effectiveTheme}
           projectId={project?.id ?? ""}
           ref={queryWorkspaceActionsRef}
         />

@@ -3,9 +3,17 @@ import {
   createWorkbenchPreferencesRepository,
   defaultWorkbenchPreferences,
   normalizeWorkbenchPreferences,
+  resolveEffectiveTheme,
 } from "./preferences";
 
 describe("workbench preference boundary", () => {
+  it("resolves manual and system themes to one effective theme", () => {
+    expect(resolveEffectiveTheme("light", true)).toBe("light");
+    expect(resolveEffectiveTheme("dark", false)).toBe("dark");
+    expect(resolveEffectiveTheme("system", false)).toBe("light");
+    expect(resolveEffectiveTheme("system", true)).toBe("dark");
+  });
+
   it("returns safe defaults for missing values", () => {
     expect(normalizeWorkbenchPreferences(undefined)).toEqual(defaultWorkbenchPreferences);
   });

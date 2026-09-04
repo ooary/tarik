@@ -810,8 +810,6 @@ kbd {
 
 .sql-codemirror .cm-editor {
   height: 100%;
-  color: var(--code-text);
-  background: var(--surface-editor);
 }
 
 .sql-codemirror .cm-scroller {
@@ -819,7 +817,12 @@ kbd {
   line-height: 1.72;
 }
 
-.sql-codemirror .cm-gutters {
+.app-shell[data-effective-theme="light"] .sql-codemirror .cm-editor {
+  color: var(--code-text);
+  background: var(--surface-editor);
+}
+
+.app-shell[data-effective-theme="light"] .sql-codemirror .cm-gutters {
   color: var(--text-faint);
   background: var(--surface-gutter);
   border-right: 1px solid var(--border-subtle);
@@ -1018,6 +1021,7 @@ tbody tr:hover {
 .result-grid-cell {
   display: inline-flex;
   height: 100%;
+  color: var(--result-text);
   align-items: center;
   overflow: hidden;
   border-right: 1px solid var(--border-subtle);
@@ -1098,7 +1102,7 @@ tbody tr:hover {
 }
 
 .result-grid-cell.cell-null {
-  color: var(--text-faint);
+  color: var(--result-null);
   font-style: italic;
 }
 

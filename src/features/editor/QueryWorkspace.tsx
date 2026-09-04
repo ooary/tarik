@@ -8,6 +8,7 @@ import {
   XIcon,
 } from "@phosphor-icons/react";
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
+import type { EffectiveTheme } from "../../app/preferences";
 import { ContextMenu } from "../../components/ui";
 import type { ProjectCatalog } from "../../lib/commands";
 import { ExportDialog } from "../export/ExportDialog";
@@ -32,6 +33,7 @@ export interface QueryWorkspaceHandle {
 
 interface QueryWorkspaceProps {
   projectId: string;
+  effectiveTheme?: EffectiveTheme;
   catalog: ProjectCatalog;
   bottomOpen: boolean;
   bottomPanelHeight: number;
@@ -44,6 +46,7 @@ export const QueryWorkspace = forwardRef<QueryWorkspaceHandle, QueryWorkspacePro
   function QueryWorkspace(
     {
       projectId,
+      effectiveTheme = "light",
       catalog,
       bottomOpen,
       bottomPanelHeight,
@@ -311,6 +314,7 @@ export const QueryWorkspace = forwardRef<QueryWorkspaceHandle, QueryWorkspacePro
           activeTabId === tab.id ? (
             <SqlEditor
               diagnostics={validation.diagnostics}
+              effectiveTheme={effectiveTheme}
               key={tab.id}
               onChange={(sql) => editSql(tab.id, sql)}
               onRun={runActiveTab}

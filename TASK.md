@@ -1612,7 +1612,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
     - Added a Graph Protocol contract for effective theme and live CodeMirror reconfiguration, safe allow-listed table DDL, global native-menu suppression with target classification, current-page coordinate selection/TSV copying, immutable result SQL reruns, and handshake/session-owned connection state.
     - Current-code verdict explicitly records the six gaps this epic must close; listener, editor, selection, menu, clipboard, and DuckDB session resources all have structural scope.
 
-- [ ] **E11.5-T1 Make dark mode legible and theme CodeMirror with Dracula**
+- [x] **E11.5-T1 Make dark mode legible and theme CodeMirror with Dracula**
   - Depends on: E11.5-T0
   - Owns: effective theme resolver, `src/styles/tokens.css`, result styles, `src/features/editor/SqlEditor.tsx`, theme tests
   - Deliverables:
@@ -1623,6 +1623,9 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: manual Light, Dark, System-light, System-dark, and live OS theme changes keep Results and every SQL snapshot/editor readable; system dark produces the Dracula editor theme.
   - Tests: token contrast checks, effective-theme resolver tests, CodeMirror reconfiguration tests, result loading/error/selected states, both manual and mocked system media changes.
   - Commit: `fix(theme): align dark results and editor colors`
+  - Notes:
+    - Added one effective-theme resolver and scoped media-query listener; manual Light/Dark override the OS while System follows live `prefers-color-scheme` changes.
+    - CodeMirror reconfigures through a theme compartment using canonical Dracula background, foreground, selection, gutter, cursor, and syntax colors without remounting or losing focus/text. Result body values use dedicated near-white/null tokens in effective dark mode.
 
 - [ ] **E11.5-T2 Implement the New table workflow**
   - Depends on: E11.5-T0

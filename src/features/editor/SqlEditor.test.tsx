@@ -117,6 +117,22 @@ describe("SqlEditor", () => {
     expect(container.querySelector(".cm-lint-marker-error")).toBeNull();
   });
 
+  it("reconfigures Dracula from effective theme without replacing editor state", async () => {
+    const { container, rerender } = render(
+      <SqlEditor effectiveTheme="light" onChange={vi.fn()} value="SELECT 1;" />,
+    );
+    const content = container.querySelector<HTMLElement>(".cm-content")!;
+    content.focus();
+    const editor = container.querySelector<HTMLElement>(".cm-editor")!;
+    expect(editor).not.toHaveAttribute("data-theme", "dark");
+
+    rerender(<SqlEditor effectiveTheme="dark" onChange={vi.fn()} value="SELECT 1;" />);
+
+    await waitFor(() => expect(getComputedStyle(editor).backgroundColor).toBe("rgb(40, 42, 54)"));
+    expect(content).toHaveTextContent("SELECT 1;");
+    expect(document.activeElement).toBe(content);
+  });
+
   it("handles Ctrl+Enter through the run callback", () => {
     const onRun = vi.fn();
     const { container } = render(
