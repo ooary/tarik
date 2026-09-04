@@ -1716,7 +1716,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
 
 **Portable definition:** The user downloads a ZIP, extracts it, and launches `Tarik.exe` without administrator rights or an installer. Tarik operational metadata remains in Windows AppData by default. User DuckDB, CSV, Parquet, and export files remain where the user chooses. A fully self-contained mode that writes metadata beside the executable is explicitly out of scope unless requested later.
 
-- [ ] **E12-T0 Audit and remove production-safe codebase crust before Windows compilation**
+- [ ] **E12-T0 Audit and remove production-safe codebase crust before Windows compilation** _(inventory complete; removals in progress)_
   - Depends on: E11.5 approval
   - Blocks: E12-T1 and every Windows compile/package task
   - Owns: production reachability inventory, frontend/Rust/sidecar dependency graph, dead-code removals, stale API cleanup, `docs/design/E12-CODEBASE-CLEANUP.md`
