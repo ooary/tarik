@@ -337,6 +337,28 @@ button:active {
   font-weight: 590;
 }
 
+.project-new-button {
+  color: var(--accent-contrast);
+  border-color: var(--accent-solid);
+  background: var(--accent-solid);
+}
+
+.project-new-button:hover {
+  color: var(--accent-contrast);
+  background: var(--accent-solid-hover);
+}
+
+.project-close-button {
+  color: var(--status-error);
+  border-color: var(--status-error-border);
+  background: var(--status-error-surface);
+}
+
+.project-close-button:hover {
+  color: var(--status-error);
+  background: color-mix(in srgb, var(--status-error-surface) 72%, var(--status-error) 28%);
+}
+
 .theme-choices {
   display: grid;
   gap: 7px;
@@ -486,14 +508,43 @@ button:active {
 }
 
 .status-mark {
-  width: 6px;
-  height: 6px;
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border: 1px solid color-mix(in srgb, var(--text-primary) 28%, transparent);
   border-radius: 50%;
+  background: var(--text-faint);
+  box-shadow: inset 1px 1px 1px rgb(255 255 255 / 42%);
+  transition:
+    background-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.status-mark-connected {
+  border-color: color-mix(in srgb, var(--status-ready) 70%, var(--border-control));
   background: var(--status-ready);
+  box-shadow:
+    inset 2px 2px 2px rgb(255 255 255 / 50%),
+    0 0 0 2px color-mix(in srgb, var(--status-ready) 20%, transparent),
+    0 0 7px color-mix(in srgb, var(--status-ready) 50%, transparent);
+}
+
+.status-mark-connecting {
+  background: var(--status-warning);
+}
+
+.status-mark-failed {
+  background: var(--status-error);
 }
 
 .status-mark-idle {
   background: var(--text-faint);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .status-mark {
+    transition: none;
+  }
 }
 
 button:disabled {

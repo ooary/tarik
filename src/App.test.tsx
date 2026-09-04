@@ -233,12 +233,33 @@ describe("Tarik workbench shell", () => {
     expect(await screen.findByText("No DuckDB project open")).toBeInTheDocument();
   });
 
+  it("uses semantic project actions and a truthful connection indicator", async () => {
+    render(<App />);
+    expect(screen.getByRole("button", { name: "New project" })).toHaveClass("project-new-button");
+    expect(document.querySelector(".status-mark")).toHaveClass("status-mark-idle");
+    expect(screen.queryByRole("button", { name: "Refresh catalog" })).not.toBeInTheDocument();
+  });
+
+  it("does not show connected when the engine-backed project command fails", async () => {
+    vi.mocked(createProject).mockRejectedValue(new Error("engine handshake failed"));
+    vi.spyOn(window, "prompt").mockReturnValue("Broken");
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: "New project" }));
+    expect(await screen.findByText("DuckDB connection failed")).toBeInTheDocument();
+    expect(document.querySelector(".status-mark-failed")).toBeInTheDocument();
+    expect(screen.queryByText(/Connected to/)).not.toBeInTheDocument();
+  });
+
   it("creates and closes a real project through the typed commands", async () => {
     const prompt = vi.spyOn(window, "prompt").mockReturnValue("Local analysis");
     render(<App />);
 
     fireEvent.click(screen.getByRole("button", { name: "New project" }));
     expect(await screen.findByText("Connected to Local analysis")).toBeInTheDocument();
+    expect(document.querySelector(".status-mark-connected")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Close project" })).toHaveClass(
+      "project-close-button",
+    );
     expect(createProject).toHaveBeenCalledWith("Local analysis");
 
     fireEvent.click(screen.getByRole("button", { name: "Close project" }));

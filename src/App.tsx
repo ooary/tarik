@@ -70,6 +70,7 @@ type RuntimeState =
   | { kind: "unavailable" };
 
 type PreviewTheme = "system" | "light" | "dark";
+type EngineConnectionState = "idle" | "connecting" | "connected" | "failed";
 
 function SourceIcon({ kind }: { kind: "database" | "table" }) {
   const Icon = kind === "database" ? DatabaseIcon : TableIcon;
@@ -91,6 +92,7 @@ function App() {
   const queryWorkspaceActionsRef = useRef<QueryWorkspaceHandle>(null);
   const [runtime, setRuntime] = useState<RuntimeState>({ kind: "loading" });
   const [project, setProject] = useState<ActiveProject | null>(null);
+  const [engineState, setEngineState] = useState<EngineConnectionState>("idle");
   const [catalog, setCatalog] = useState<ProjectCatalog>({ objects: [], columns: [] });
   const [recentProjects, setRecentProjects] = useState<RecentProject[]>([]);
   const [sources, setSources] = useState<SourceRecord[]>([]);
@@ -160,6 +162,7 @@ function App() {
       .then((activeProject) => {
         if (!active || !activeProject) return;
         setProject(activeProject);
+        setEngineState("connected");
         return Promise.all([inspectProjectCatalog(), listSources(activeProject.id)]).then(
           ([projectCatalog, projectSources]) => {
             if (active) {
@@ -291,12 +294,15 @@ function App() {
     const name = window.prompt("Project name", "Local analysis")?.trim();
     if (!name) return;
     setProjectError(null);
+    setEngineState("connecting");
     try {
       const activeProject = await createProject(name);
       setProject(activeProject);
+      setEngineState("connected");
       await refreshProjectData(activeProject);
       setRecentProjects(await listRecentProjects());
     } catch (error) {
+      setEngineState("failed");
       setProjectError(String(error));
     }
   }
@@ -308,24 +314,30 @@ function App() {
     const name = window.prompt("Project name", defaultName)?.trim();
     if (!name) return;
     setProjectError(null);
+    setEngineState("connecting");
     try {
       const activeProject = await openProject(name, duckdbPath);
       setProject(activeProject);
+      setEngineState("connected");
       await refreshProjectData(activeProject);
       setRecentProjects(await listRecentProjects());
     } catch (error) {
+      setEngineState("failed");
       setProjectError(String(error));
     }
   }
 
   async function reopenLocalProject(recent: RecentProject) {
     setProjectError(null);
+    setEngineState("connecting");
     try {
       const activeProject = await reopenRecentProject(recent.id);
       setProject(activeProject);
+      setEngineState("connected");
       await refreshProjectData(activeProject);
       setRecentProjects(await listRecentProjects());
     } catch (error) {
+      setEngineState("failed");
       setProjectError(String(error));
     }
   }
@@ -336,6 +348,7 @@ function App() {
       await Promise.resolve(releaseAllResults()).catch(() => undefined);
       await closeProject();
       setProject(null);
+      setEngineState("idle");
       setCatalog({ objects: [], columns: [] });
       setSources([]);
       setRecentProjects(await listRecentProjects());
@@ -504,8 +517,14 @@ function App() {
 
         <div className="header-actions">
           <span className="engine-status">
-            <span aria-hidden="true" className={`status-mark ${project ? "" : "status-mark-idle"}`} />
-            {project ? "DuckDB ready" : "DuckDB idle"}
+            <span aria-hidden="true" className={`status-mark status-mark-${engineState}`} />
+            {engineState === "connected"
+              ? "DuckDB ready"
+              : engineState === "connecting"
+                ? "Connecting to DuckDB"
+                : engineState === "failed"
+                  ? "DuckDB unavailable"
+                  : "DuckDB idle"}
           </span>
           {project ? (
             <button className="text-button project-close-button" onClick={closeLocalProject} type="button">Close project</button>
@@ -824,7 +843,7 @@ function App() {
       )}
 
       <footer className="status-bar">
-        <span className="status-bar-left"><span className={`status-mark ${project ? "" : "status-mark-idle"}`} aria-hidden="true" /> {project ? `Connected to ${project.name}` : runtime.kind === "ready" ? "No DuckDB project open" : "Starting Tarik"}</span>
+        <span className="status-bar-left"><span className={`status-mark status-mark-${engineState}`} aria-hidden="true" /> {engineState === "connected" && project ? `Connected to ${project.name}` : engineState === "connecting" ? "Connecting to DuckDB" : engineState === "failed" ? "DuckDB connection failed" : runtime.kind === "ready" ? "No DuckDB project open" : "Starting Tarik"}</span>
         <span className="status-bar-right"><span>Memory limit: Balanced</span><span>2 threads</span><span>UTF-8</span></span>
       </footer>
     </main>

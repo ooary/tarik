@@ -1675,7 +1675,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
     - Result body cells now own coordinate-based single, Shift-rectangle, and Ctrl/Command-disjoint selection independent of virtual DOM nodes; page/result replacement clears selection and never fetches beyond the loaded page.
     - Cell context actions copy cell/selection/row/page as stable TSV with explicit NULL and quoted tabs/newlines, report clipboard failures, and rerun the immutable SQL retained on the terminal execution through the shared mutation-confirmed query lifecycle. Column headers remain menu-free and resize behavior is unchanged.
 
-- [ ] **E11.5-T5 Correct explorer/header actions and DuckDB connection status**
+- [x] **E11.5-T5 Correct explorer/header actions and DuckDB connection status**
   - Depends on: E11.5-T0
   - Owns: header/explorer controls, semantic action tokens, engine status indicator, accessibility and visual tests
   - Deliverables:
@@ -1687,6 +1687,9 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: no plus control appears in the explorer; action hierarchy and connection truth are obvious at minimum viewport in both themes and with reduced motion/high contrast.
   - Tests: button semantic states/contrast, no-project/connecting/connected/failed/closed engine states, handshake/session failure cannot show connected, reduced-motion styles, minimum viewport and keyboard focus.
   - Commit: `fix(shell): clarify project and engine states`
+  - Notes:
+    - Removed the Explorer `+`/mislabelled refresh control. New project is the restrained green primary action and Close project is a labelled red destructive action in both themes.
+    - The 10 px reflective orb renders idle/connecting/connected/failed states with adjacent text; only successful engine-backed create/open/reopen or restored active session sets connected, failures set failed, and close returns idle. Its finite color transition is disabled under reduced motion.
 
 - [ ] **E11.5-T6 Review the desktop correction pass**
   - Depends on: E11.5-T1, E11.5-T2, E11.5-T3, E11.5-T4, E11.5-T5
