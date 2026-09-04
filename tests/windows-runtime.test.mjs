@@ -6,7 +6,7 @@ import test from "node:test";
 import {
   assertRuntimeReport,
   assertWindowsRuntimeHost,
-  countStartupEvents,
+  countStructuredEvents,
   descendantProcessTree,
   directoryBytes,
   hiddenExportStages,
@@ -118,7 +118,8 @@ test("startup evidence counts only valid structured startup events", () => {
     JSON.stringify({ target: "storage", event: "startup_cleanup" }),
     JSON.stringify({ target: "app", event: "startup" }),
   ];
-  assert.equal(countStartupEvents(`${lines.join("\n")}\n`), 2);
+  assert.equal(countStructuredEvents(`${lines.join("\n")}\n`, "app", "startup"), 2);
+  assert.equal(countStructuredEvents(`${lines.join("\n")}\n`, "app", "graceful_shutdown"), 0);
 });
 
 function passingReport() {
@@ -131,6 +132,7 @@ function passingReport() {
         { windowObserved: true, responding: true, gracefulExit: true },
       ],
       startupEvents: 2,
+      gracefulShutdownEvents: 2,
       metadataCreated: true,
       peakProcessTreeRssBytes: 300 * 1024 * 1024,
     },

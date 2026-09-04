@@ -117,7 +117,7 @@ export async function hiddenExportStages(root) {
   }
 }
 
-export function countStartupEvents(logText) {
+export function countStructuredEvents(logText, target, eventName) {
   return logText
     .split(/\r?\n/)
     .filter(Boolean)
@@ -128,7 +128,7 @@ export function countStartupEvents(logText) {
         return null;
       }
     })
-    .filter((event) => event?.target === "app" && event?.event === "startup").length;
+    .filter((event) => event?.target === target && event?.event === eventName).length;
 }
 
 export function runtimeFailures(report, budgets = WINDOWS_RUNTIME_BUDGETS) {
@@ -146,6 +146,8 @@ export function runtimeFailures(report, budgets = WINDOWS_RUNTIME_BUDGETS) {
   }
   if ((report.desktop?.startupEvents ?? 0) < 2)
     failures.push("startup log did not record both launches");
+  if ((report.desktop?.gracefulShutdownEvents ?? 0) < 2)
+    failures.push("log did not record coordinated shutdown for both launches");
   if (!report.desktop?.metadataCreated) failures.push("fresh launch did not create metadata");
   if ((report.desktop?.peakProcessTreeRssBytes ?? 0) <= 0) {
     failures.push("desktop process-tree memory was not sampled");

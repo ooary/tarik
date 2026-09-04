@@ -9,7 +9,7 @@ import { assertPortableContents, sha256, verifyPortableChecksums } from "./windo
 import {
   assertRuntimeReport,
   assertWindowsRuntimeHost,
-  countStartupEvents,
+  countStructuredEvents,
   directoryBytes,
   hiddenExportStages,
   parseSingleChecksum,
@@ -65,6 +65,7 @@ try {
   const desktop = {
     launches: [],
     startupEvents: 0,
+    gracefulShutdownEvents: 0,
     metadataCreated: false,
     peakProcessTreeRssBytes: 0,
   };
@@ -74,7 +75,8 @@ try {
   console.log("==> Restart extracted Tarik.exe with the same AppData");
   desktop.launches.push(await launchDesktop(path.join(portableRoot, "Tarik.exe"), profile));
   const logText = await readFile(profile.logFile, "utf8");
-  desktop.startupEvents = countStartupEvents(logText);
+  desktop.startupEvents = countStructuredEvents(logText, "app", "startup");
+  desktop.gracefulShutdownEvents = countStructuredEvents(logText, "app", "graceful_shutdown");
   desktop.metadataCreated = (await stat(profile.metadata)).size > 0;
   desktop.peakProcessTreeRssBytes = Math.max(
     ...desktop.launches.map((launch) => launch.peakProcessTreeRssBytes),

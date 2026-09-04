@@ -47,8 +47,8 @@ The report must have `schemaVersion: 1` and `verdict.automatedPassed: true`. A m
 - [ ] Extracted package has the exact allow-listed files; executable/DLL files are Windows PE; internal checksums pass.
 - [ ] First launch starts extracted `Tarik.exe` from its package directory after Tarik's AppData roots were absent.
 - [ ] A responding main window, `tarik.sqlite`, and structured startup log appear within the fixed 60-second deadline.
-- [ ] Closing the native main window completes Tarik's frontend-coordinated graceful shutdown with exit code 0; force-kill is not counted as success.
-- [ ] Second launch uses the same profile, exposes a responding window, records a second startup event, and exits gracefully.
+- [ ] Closing the native main window completes Tarik's frontend-coordinated graceful shutdown with exit code 0 and a structured `app/graceful_shutdown` event; force-kill is not counted as success.
+- [ ] Second launch uses the same profile, exposes a responding window, records a second startup and coordinated-shutdown event, and exits gracefully.
 - [ ] Both desktop launches observe at least one descendant `msedgewebview2.exe`; its product version is recorded when Windows exposes the executable path.
 - [ ] Peak working set for the full Tarik/WebView2 descendant tree is sampled and remains at or below 768 MiB for the fixed idle launch/restart smoke. This is a conservative regression ceiling, not an idle-memory claim.
 - [ ] The extracted sidecar handshakes as DuckDB protocol 1 with its sibling `duckdb.dll`.
