@@ -1,6 +1,6 @@
 # E9.5 Beginner SQL intelligence review
 
-**Status:** REVIEW  
+**Status:** APPROVED (2026-09-04)  
 **Scope:** Specific grouped/aggregate/DISTINCT query flow, project catalog completion, alias-safe columns, identifier quoting, and non-executing pre-run DuckDB diagnostics.
 
 ## Build and launch
@@ -173,17 +173,17 @@ Use or create relations/columns with non-simple names where practical.
 
 ## Sign-off
 
-- [ ] Accepted query renders the exact five-step beginner flow
-- [ ] Group and Count are separate teaching concepts without duplicated physical metrics
-- [ ] Aggregate variants and multiple summaries are specific and truthful
-- [ ] DISTINCT labeling and conservative redundancy note approved
-- [ ] FROM/JOIN/schema table and view completion approved
-- [ ] Alias/unqualified column completion and ambiguity fallback approved
-- [ ] Safe identifier quoting and live catalog refresh approved
-- [ ] Syntax/table/column diagnostics appear before execution
-- [ ] Reliable ranges, message-only fallback, and keyboard accessibility approved
-- [ ] Debounce/immediate-clear/stale-response/catalog-revalidation behavior approved
-- [ ] UPDATE/DELETE no-WHERE warning approved
-- [ ] Validation proven non-executing and existing workflows remain intact
+- [x] Accepted query renders the exact five-step beginner flow
+- [x] Group and Count are separate teaching concepts without duplicated physical metrics
+- [x] Aggregate variants and multiple summaries are specific and truthful
+- [x] DISTINCT labeling and conservative redundancy note approved
+- [x] FROM/JOIN/schema table and view completion approved
+- [x] Alias/unqualified column completion and ambiguity fallback approved
+- [x] Safe identifier quoting and live catalog refresh approved
+- [x] Syntax/table/column diagnostics appear before execution
+- [x] Reliable ranges, message-only fallback, and keyboard accessibility approved
+- [x] Debounce/immediate-clear/stale-response/catalog-revalidation behavior approved
+- [x] UPDATE/DELETE no-WHERE warning approved
+- [x] Validation proven non-executing and existing workflows remain intact
 
-When all items pass, reply **“E9.5 approved”**. E10 remains blocked until approval.
+User sign-off received on 2026-09-04. E10 is unblocked and remains not started.

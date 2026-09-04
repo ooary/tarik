@@ -1232,7 +1232,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
 
 ## EPIC E9.5 — Beginner SQL intelligence
 
-**Status:** `REVIEW` - E9.5-T1 through E9.5-T4 implemented; full automated gates pass. Awaiting combined aggregate-flow, autocomplete, and non-executing diagnostic manual sign-off.
+**Status:** `APPROVED` (2026-09-04) - user accepted aggregate-specific beginner flow semantics, catalog/alias-aware completion, safe identifier quoting, and non-executing pre-run DuckDB diagnostics. E10 is ready but not started.
 
 **Outcome:** Make SQL construction and pre-run correction approachable for beginners while preserving DuckDB's physical truth.
 
@@ -1363,7 +1363,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
 
 ## EPIC E10 — Diagnostics, recovery, and cleanup
 
-**Status:** `BLOCKED` - E9.5 beginner SQL intelligence review is required first.
+**Status:** `READY` - E9.5 manual gate approved; implementation not started.
 
 **Outcome:** Diagnosable failures and bounded on-disk application state.
 
