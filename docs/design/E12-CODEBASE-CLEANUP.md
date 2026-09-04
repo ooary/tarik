@@ -66,7 +66,7 @@ SCOPE: Baseline artifacts acquire@capture_baseline → retain under `target/e12`
 
 TEST LAYERS: Static layer = TypeScript strict/no-unused, ESLint, Rust Clippy `-D warnings`, explicit import/command/method/dependency scans; component layer = Vitest with Tauri/clipboard/theme substitutions; desktop layer = repository/service tests with temporary SQLite/filesystem and fake engines; integration layer = rebuilt real DuckDB sidecar and golden restart workflow; release layer = clean-XDG portable/AppImage launch, DEB content, checksums, memory/cache harness. The production graph is unchanged; only repositories, process binaries, filesystem roots, and WebView APIs are substituted.
 
-VERDICT: The cleanup is valid only when every removed node has no path from any production, compatibility, or release root and all direct/full gates remain green. Failure handling is separated at candidate classification and gate joins: uncertain candidates are retained or deferred, never guessed away. E12-T1 must remain blocked until the implemented graph is re-extracted and matches this contract.
+VERDICT: MATCHES after cleanup. Every removed node had no path from any production, compatibility, or release root; all direct/full gates, release memory limits, and Linux package smokes remain green. Failure handling stayed separated at candidate classification and gate joins: uncertain candidates were retained, never guessed away. The cleanup gate is technically complete, but E12-T1 remains blocked until the separate E11.5 manual desktop review is approved.
 
 ## Baseline at cleanup start
 
@@ -143,3 +143,55 @@ There is no router and no hidden page registry. The import reconstruction found 
 4. **Dead sidecar methods:** remove only uncalled ping/health dispatch/function paths; preserve handshake/shutdown and desktop reopen health; run engine protocol, project missing-link/recovery, and golden restart tests.
 5. **Repository/tooling artifacts:** remove the stale nested lock only after proving both root and `src-tauri` Cargo commands use the root lock; audit styles/assets/scripts and retain/defer anything without equivalent proof.
 6. **Final contract:** rerun all E12-T0 direct gates, release memory/cache harness, and Linux packaging; record `cleanup-after.json` using the same measurement method and explain any package-size variance.
+
+## Completed cleanup ledger
+
+| Boundary commit | Proven removal                                                                                                          | Verification                                                                                       |
+| --------------- | ----------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `3b0611d`       | Unused frontend Radix Tabs and frontend opener packages                                                                 | All frontend, docs, and production build gates; Rust opener retained for backend-owned reveal      |
+| `f170ea2`       | Placeholder `arrow-page-format` workspace crate and `PageInfo` cursor shape                                             | Cargo metadata, full Clippy/workspace tests, real sidecar paging/golden tests                      |
+| `1952a69`       | Bypassed `EngineFrame`, `EngineManifest`, manifest checker, duplicate request builder, unused direct crate dependencies | Live handshake/protocol check and newline envelope tests; full sidecar/desktop suite               |
+| `3d0c7cc`       | Uncalled `engine.ping` and duplicate sidecar linked-health method                                                       | Real handshake, 44 sidecar tests, golden restart/missing-link recovery                             |
+| `255c0b6`       | Stale member `src-tauri/Cargo.lock` and unused engine `serde` declaration                                               | Cargo from `src-tauri` resolved root workspace/target without recreating the lock; full Rust gates |
+| `a93345b`       | Runtime-unreferenced `get_app_directories` frontend/Tauri pair and wire-only serialization                              | Exact 54/54 invoke parity; full Rust/frontend/docs suite                                           |
+| `7377da9`       | Two orphan CSS selectors and unnecessary public TypeScript exports                                                      | Full frontend suite; deliberate test seams retained; lint warnings reduced from six to three       |
+| `bb3cb3f`       | Three unlinked UI primitive files, their showcase-only test/styles, and Radix Tooltip                                   | Import graph plus full frontend suite; active inline feedback states retained                      |
+| `a2607fb`       | Two `cfg(test)` repository wrappers duplicating production APIs                                                         | Tests rewritten through `upsert` and `apply_history_retention`; focused metadata and golden tests  |
+| `7fca04f`       | Unreferenced Vite/Tauri starter SVGs copied verbatim into production `dist`                                             | Rebuilt `dist` contains only Tarik HTML and hashed app CSS/JS                                      |
+
+No unlinked production page remains. Tarik has no route registry: all workspaces/dialogs are reachable from `App` state, and every runtime frontend module is rooted through direct or UI-barrel imports. All remaining npm runtime dependencies have direct production imports. The 22 remaining sidecar methods are either called by the desktop/scripts or are structural lifecycle methods (`engine.handshake`, `engine.shutdown`).
+
+## Retained and deferred findings
+
+- Retained all seven forward-only SQLite migrations, persisted enum spellings/defaults, and compatibility fields. Historical migrations are required for fresh and upgraded metadata stores even when later code does not mention each column directly.
+- Retained Rust `tauri-plugin-opener`; backend-owned log/export reveal commands actively use it. Only the unused frontend npm package was removed.
+- Retained all Tauri icon variants, generated schemas, capability files, both `build.rs` files, `src/vite-env.d.ts`, and `src-tauri/binaries/.gitkeep` because Tauri/Vite/platform/release conventions consume them. Windows icon variants become active in E12.
+- Retained Linux `$ORIGIN`, Unix cleanup tests, AppImage/DEB scripts, Clang/mold development configuration, `bacon.toml`, and fast-build tooling because Linux remains a supported production/development platform.
+- Retained CodeMirror, XYFlow, history-status, estimate-accuracy, button-tone, and engine-state CSS selectors that scanners cannot associate through plain static text because libraries or template interpolation generate the class names.
+- Retained public Rust service/repository types used within the Tauri composition crate. `unreachable_pub` produced hundreds of expected false positives because the library exports only `run()` while Tauri macros and internal modules form the actual app; it was not used as deletion evidence.
+- Retained test-only pure-function seams and plan/source fixtures when they exercise production parsing, SQL safety, lifecycle, or compatibility. A test-only consumer is not crust when the test protects active behavior.
+
+## Final production evidence and size delta
+
+Machine-readable generated evidence: `target/e12/cleanup-before.json` and `target/e12/cleanup-after.json` (not tracked). The before revision is `b8ee52f`; after measurements were taken from production code at `7fca04f` before this evidence-only documentation commit.
+
+| Measure                         |                  Before |                   After |                 Delta |
+| ------------------------------- | ----------------------: | ----------------------: | --------------------: |
+| Tracked files                   |                     236 |                     229 |                    −7 |
+| Tracked bytes                   |               2,518,357 |               2,384,851 |              −133,506 |
+| Frontend TypeScript/TSX/CSS     | 73 files / 14,665 lines | 70 files / 14,457 lines | −3 files / −208 lines |
+| Rust source                     | 45 files / 16,940 lines | 44 files / 16,721 lines |  −1 file / −219 lines |
+| Direct npm runtime dependencies |                      21 |                      18 |                    −3 |
+| Cargo workspace packages        |                       5 |                       4 |                    −1 |
+| Release desktop binary          |            12,415,832 B |            12,410,072 B |              −5,760 B |
+| Release sidecar binary          |             6,223,320 B |             6,222,744 B |                −576 B |
+| Bundled `libduckdb.so`          |            70,529,912 B |            70,529,912 B |                   0 B |
+| Portable tar.gz                 |            30,804,329 B |            30,796,528 B |              −7,801 B |
+| DEB                             |            31,597,960 B |            31,590,804 B |              −7,156 B |
+| AppImage                        |           145,517,048 B |           145,517,048 B |                   0 B |
+
+The AppImage's unchanged byte count is expected: its NO_STRIP runtime/container payload and bundled DuckDB dominate these small source removals. Size is observational, not the acceptance criterion.
+
+Final release memory workload: 111,056 KiB (108.5 MiB) peak sidecar RSS/HWM, 3,540 KiB post-cycle growth, zero residual result-cache bytes, and zero hidden export stages; all existing budgets pass. Linux portable, DEB, and AppImage content/clean-XDG launch smokes and `sha256sum -c` pass.
+
+Final direct gates: Rust format; Clippy `-D warnings`; rebuilt real sidecar handshake; all workspace tests including 75 desktop and 44 sidecar tests; frontend format/docs/lint/typecheck; 12 typed-command tests; 150 UI tests across 25 files; production build; exact 54/54 Tauri invoke parity. Lint has zero errors and three reviewed warnings.

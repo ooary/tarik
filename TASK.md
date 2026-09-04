@@ -1716,7 +1716,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
 
 **Portable definition:** The user downloads a ZIP, extracts it, and launches `Tarik.exe` without administrator rights or an installer. Tarik operational metadata remains in Windows AppData by default. User DuckDB, CSV, Parquet, and export files remain where the user chooses. A fully self-contained mode that writes metadata beside the executable is explicitly out of scope unless requested later.
 
-- [ ] **E12-T0 Audit and remove production-safe codebase crust before Windows compilation** _(inventory complete; removals in progress)_
+- [x] **E12-T0 Audit and remove production-safe codebase crust before Windows compilation**
   - Depends on: E11.5 approval
   - Blocks: E12-T1 and every Windows compile/package task
   - Owns: production reachability inventory, frontend/Rust/sidecar dependency graph, dead-code removals, stale API cleanup, `docs/design/E12-CODEBASE-CLEANUP.md`
@@ -1731,6 +1731,11 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: every deletion has reviewable reachability evidence; no orphan production page/file/API remains among audited candidates; all retained exceptions state why runtime or compatibility needs them; the full direct gate and production smoke baseline remains green with no user-visible workflow removed or changed.
   - Tests: `cargo fmt --all --check`; Clippy with `-D warnings`; all Rust workspace targets; frontend format/lint/typecheck/unit/component/build; docs; exact invoke parity (54/54 after removing the unused `get_app_directories` pair); real sidecar; fresh and upgraded metadata; golden restart; release memory/cache checks; Linux DEB/AppImage/portable content and launch smoke.
   - Commits: `docs(design): inventory pre-windows codebase reachability`, then atomic `refactor(cleanup): ...` commits per proven removal boundary, then `test(cleanup): verify production behavior after crust removal`
+  - Notes:
+    - Reachability inventory `d72a43d`; removals `3b0611d`, `f170ea2`, `1952a69`, `3d0c7cc`, `255c0b6`, `a93345b`, `7377da9`, `bb3cb3f`, `a2607fb`, `7fca04f`. Removed three runtime npm dependencies, one placeholder Cargo package, uncalled protocol/sidecar/Tauri APIs, a stale member lock, three unlinked UI files, orphan styles/exports, test-only wrappers, and emitted starter assets.
+    - Production graph after cleanup: no unlinked runtime frontend page/module; exact 54/54 Tauri handler/frontend parity; 22 sidecar methods all caller-rooted or lifecycle-owned. Migrations, persisted compatibility, platform branches/icons/build scripts, release/recovery paths, generated declarations, and active dynamic CSS were explicitly retained.
+    - Before/after: tracked files 236 → 229; tracked bytes −133,506; frontend −208 lines; Rust −219 lines; desktop binary −5,760 B; sidecar −576 B; portable −7,801 B; DEB −7,156 B; AppImage unchanged because its runtime/container dominates.
+    - Full direct gates, 150 UI tests, real sidecar/golden restart, release memory (108.5 MiB peak, 3.5 MiB growth, zero residual cache/stages), and Linux portable/DEB/AppImage content/launch/checksums pass. Evidence: `docs/design/E12-CODEBASE-CLEANUP.md`.
 
 - [ ] **E12-T1 Add Windows x64 compile and test CI**
   - Depends on: E12-T0, E3
