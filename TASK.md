@@ -1758,11 +1758,15 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
     - Real sidecar coverage now opens a >260-character Unicode/space DuckDB path, imports a read-only Unicode CSV, pages a result, exports to a Unicode directory, and runs the same flow through a localhost UNC share on Windows CI. On-disk metadata reopens from a Unicode/space path.
     - Native Windows exclusive-handle tests require managed rename and export replacement to fail without changing project metadata or the original file. Unix read-only output coverage requires no final/hidden export artifact. Full Linux Rust/frontend/sidecar gates remain green.
 
-- [ ] **E12-T3 Configure portable Windows release artifact**
+- [ ] **E12-T3 Configure portable Windows release artifact** _(implementation complete; native artifact evidence pending)_
   - Depends on: E11-T3, E12-T2
   - Deliverables: release-mode `Tarik.exe`, required runtime files, licenses, README, and checksums packaged as `Tarik-<version>-windows-x64-portable.zip`.
   - Acceptance: archive runs after extraction on a clean supported Windows machine without installation or administrator access.
   - Commit: `chore(windows): package portable x64 release`
+  - Notes:
+    - `npm run release:windows` is native-Windows-only and fails closed elsewhere. It verifies x64 MSVC host and npm/Tauri/Cargo version parity, builds pinned DuckDB 1.5.5, compiles Tauri without an installer, and assembles exactly `Tarik.exe`, `tarik-engine-duckdb.exe`, `duckdb.dll`, Windows README/compatibility/license/notices, dependency inventories, and internal checksums.
+    - The packager validates Windows PE headers, exact allow-listed contents, every internal checksum before and after ZIP extraction, and real sidecar handshakes before and after extraction. It emits an outer SHA-256 file and unsigned release manifest; Windows CI uploads only those three release outputs.
+    - Pure packaging/tamper/off-host tests pass on Linux. T3 remains unchecked until `windows-latest` produces the ZIP and its extracted `Tarik.exe` is launched on a supported Windows machine.
 
 - [ ] **E12-T4 Verify WebView2, DPI, and clean-machine behavior**
   - Depends on: E12-T3

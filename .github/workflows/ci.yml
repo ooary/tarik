@@ -114,11 +114,14 @@ jobs:
         if: always()
         shell: pwsh
         run: Remove-SmbShare -Name "TarikCi$env:GITHUB_RUN_ID" -Force -ErrorAction SilentlyContinue
-      - name: Compile Tauri Windows application
-        run: npm run tauri build -- --target x86_64-pc-windows-msvc --no-bundle
-      - name: Verify Windows desktop output
-        shell: pwsh
-        run: |
-          if (-not (Test-Path "target/x86_64-pc-windows-msvc/release/tarik.exe")) {
-            throw "Tauri Windows executable was not produced"
-          }
+      - name: Build and verify Windows portable ZIP
+        run: npm run release:windows
+      - name: Upload unsigned Windows portable candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: Tarik-windows-x64-portable-unsigned
+          path: |
+            target/release-artifacts/windows/Tarik-*-windows-x64-portable.zip
+            target/release-artifacts/windows/SHA256SUMS
+            target/release-artifacts/windows/release-manifest.json
+          if-no-files-found: error
