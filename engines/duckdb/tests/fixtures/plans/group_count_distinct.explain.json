@@ -29,28 +29,19 @@
                                     "extra_info": {
                                       "Table": "fixture.main.data_2021",
                                       "Type": "Sequential Scan",
-                                      "Projections": [
-                                        "commodity",
-                                        "market"
-                                      ],
+                                      "Projections": ["commodity", "market"],
                                       "Estimated Cardinality": "4"
                                     }
                                   }
                                 ],
                                 "extra_info": {
-                                  "Projections": [
-                                    "__internal_compress_string_ubigint(#0)",
-                                    "#1"
-                                  ],
+                                  "Projections": ["__internal_compress_string_ubigint(#0)", "#1"],
                                   "Estimated Cardinality": "4"
                                 }
                               }
                             ],
                             "extra_info": {
-                              "Projections": [
-                                "commodity",
-                                "market"
-                              ],
+                              "Projections": ["commodity", "market"],
                               "Estimated Cardinality": "4"
                             }
                           }
@@ -63,47 +54,32 @@
                       }
                     ],
                     "extra_info": {
-                      "Projections": [
-                        "__internal_decompress_string(#0)",
-                        "#1"
-                      ],
+                      "Projections": ["__internal_decompress_string(#0)", "#1"],
                       "Estimated Cardinality": "1"
                     }
                   }
                 ],
                 "extra_info": {
-                  "Projections": [
-                    "__internal_compress_string_ubigint(#0)",
-                    "#1"
-                  ],
+                  "Projections": ["__internal_compress_string_ubigint(#0)", "#1"],
                   "Estimated Cardinality": "1"
                 }
               }
             ],
             "extra_info": {
-              "Projections": [
-                "commodity",
-                "count(market)"
-              ],
+              "Projections": ["commodity", "count(market)"],
               "Estimated Cardinality": "1"
             }
           }
         ],
         "extra_info": {
-          "Groups": [
-            "#0",
-            "#1"
-          ],
+          "Groups": ["#0", "#1"],
           "Aggregates": "",
           "Estimated Cardinality": "1"
         }
       }
     ],
     "extra_info": {
-      "Projections": [
-        "__internal_decompress_string(#0)",
-        "#1"
-      ],
+      "Projections": ["__internal_decompress_string(#0)", "#1"],
       "Estimated Cardinality": "0"
     }
   }
