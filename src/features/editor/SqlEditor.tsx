@@ -2,6 +2,13 @@ import { autocompletion, completionKeymap } from "@codemirror/autocomplete";
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
 import { keywordCompletionSource, sql, StandardSQL } from "@codemirror/lang-sql";
 import { bracketMatching, defaultHighlightStyle, syntaxHighlighting } from "@codemirror/language";
+import {
+  type Diagnostic as CodeMirrorDiagnostic,
+  lintGutter,
+  lintKeymap,
+  setDiagnostics,
+  setDiagnosticsEffect,
+} from "@codemirror/lint";
 import { searchKeymap } from "@codemirror/search";
 import { Compartment, EditorState } from "@codemirror/state";
 import {
@@ -12,6 +19,7 @@ import {
   placeholder as viewPlaceholder,
 } from "@codemirror/view";
 import { useEffect, useRef } from "react";
+import type { SqlDiagnostic } from "../../lib/commands";
 import { createCatalogCompletionSource, type SqlTable } from "./sqlCompletion";
 
 export function SqlEditor({
@@ -19,11 +27,13 @@ export function SqlEditor({
   onChange,
   tables = [],
   onRun,
+  diagnostics = [],
 }: {
   value: string;
   onChange: (value: string) => void;
   tables?: SqlTable[];
   onRun?: (sql: string) => void;
+  diagnostics?: SqlDiagnostic[];
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -45,6 +55,7 @@ export function SqlEditor({
         doc: value,
         extensions: [
           lineNumbers(),
+          lintGutter(),
           highlightActiveLine(),
           history(),
           bracketMatching(),
@@ -59,6 +70,7 @@ export function SqlEditor({
             },
             ...defaultKeymap,
             ...completionKeymap,
+            ...lintKeymap,
             ...historyKeymap,
             ...searchKeymap,
             indentWithTab,
@@ -74,6 +86,9 @@ export function SqlEditor({
           ),
           viewPlaceholder("SELECT * FROM ..."),
           EditorState.tabSize.of(2),
+          EditorState.transactionExtender.of((transaction) =>
+            transaction.docChanged ? { effects: setDiagnosticsEffect.of([]) } : null,
+          ),
           EditorView.updateListener.of((update) => {
             if (update.docChanged) onChangeRef.current(update.state.doc.toString());
           }),
@@ -103,6 +118,28 @@ export function SqlEditor({
       ),
     });
   }, [tables]);
+
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    const safe: CodeMirrorDiagnostic[] = diagnostics
+      .filter(
+        (diagnostic) =>
+          diagnostic.from != null &&
+          diagnostic.to != null &&
+          diagnostic.from >= 0 &&
+          diagnostic.to <= view.state.doc.length &&
+          diagnostic.from < diagnostic.to,
+      )
+      .map((diagnostic) => ({
+        from: diagnostic.from!,
+        to: diagnostic.to!,
+        severity: diagnostic.severity,
+        message: diagnostic.message,
+        source: "DuckDB",
+      }));
+    view.dispatch(setDiagnostics(view.state, safe));
+  }, [diagnostics]);
 
   useEffect(() => {
     const view = viewRef.current;

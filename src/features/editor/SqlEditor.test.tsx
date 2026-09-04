@@ -77,6 +77,46 @@ describe("SqlEditor", () => {
     );
   });
 
+  it("renders only reliable DuckDB diagnostic ranges as lint markers", async () => {
+    const sql = "SELECT * FROM missing";
+    const from = sql.indexOf("missing");
+    const { container, rerender } = render(
+      <SqlEditor
+        diagnostics={[
+          {
+            code: "sql.catalog",
+            message: "Table missing does not exist",
+            severity: "error",
+            from,
+            to: from + "missing".length,
+          },
+        ]}
+        onChange={vi.fn()}
+        value={sql}
+      />,
+    );
+    await waitFor(() => expect(container.querySelector(".cm-lintRange-error")).toBeInTheDocument());
+    expect(container.querySelector(".cm-lint-marker-error")).toBeInTheDocument();
+
+    rerender(
+      <SqlEditor
+        diagnostics={[
+          {
+            code: "sql.syntax",
+            message: "syntax error at end of input",
+            severity: "error",
+            from: null,
+            to: null,
+          },
+        ]}
+        onChange={vi.fn()}
+        value={sql}
+      />,
+    );
+    await waitFor(() => expect(container.querySelector(".cm-lintRange-error")).toBeNull());
+    expect(container.querySelector(".cm-lint-marker-error")).toBeNull();
+  });
+
   it("handles Ctrl+Enter through the run callback", () => {
     const onRun = vi.fn();
     const { container } = render(

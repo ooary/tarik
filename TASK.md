@@ -1324,7 +1324,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
     - Completion applies portable safe identifier quoting for spaces, reserved words, and embedded quotes. Catalog changes reconfigure only the completion compartment, preserving editor text, selection, history, and Ctrl+Enter behavior; typing after `.` or pressing Ctrl+Space opens contextual suggestions.
     - Direct CompletionContext tests cover FROM/JOIN, schema qualification, table/view distinction, aliases, ambiguity, unqualified columns, safe quoting, and empty catalogs. Mounted CodeMirror tests prove Ctrl+Space and live catalog refresh; a test-only Range geometry shim supports tooltip layout in jsdom.
 
-- [ ] **E9.5-T4 Add non-executing pre-run SQL diagnostics**
+- [x] **E9.5-T4 Add non-executing pre-run SQL diagnostics**
   - Depends on: E9.5-T1, E5.5-T2, E5-T1
   - Owns: engine validation protocol, `src-tauri/src/query/`, CodeMirror diagnostics
   - Deliverables:
@@ -1337,6 +1337,12 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: syntax, missing-table, and missing-column errors appear before Run without changing data; fixing SQL clears them; runtime-only failures remain documented as undetectable pre-run.
   - Tests: no-execution mutation sentinel, syntax/binder locations, no reliable range fallback, stale response race, debounce, project/catalog change, warning allowlist, keyboard/screen-reader semantics, and engine/session reuse.
   - Commit: `feat(editor): show safe pre-run SQL diagnostics`
+  - Notes:
+    - Added revision-tagged `SqlValidation/SqlDiagnostic` protocol shapes and synchronous sidecar `query.validate`. Each immutable statement is prepared as `EXPLAIN (FORMAT JSON) <statement>` without ANALYZE or query.execute; mutation-sentinel integration proves validation of CREATE/INSERT/UPDATE/DELETE changes neither catalog nor rows.
+    - DuckDB Parser/Binder/Catalog errors become structured codes and concise messages. A marker range is emitted only when an observed `LINE n` excerpt and caret map exactly back through the injected Explain prefix and statement source range; end-of-input, unicode, or mismatched excerpts remain message-only with no arbitrary underline.
+    - Added one high-confidence warning family after successful bind: top-level UPDATE/DELETE without a top-level WHERE. Strings, comments, nested expressions, and statements with WHERE are excluded. No speculative style warnings were added; redundant DISTINCT remains in the verified flow inspector.
+    - QueryWorkspace clears diagnostics immediately on edit, waits 650 ms, validates the immutable SQL/catalog revision, rejects stale or wrong-revision responses, revalidates on catalog change, and treats engine unavailability as non-blocking. Clean state says `No problems detected before execution` and explicitly allows runtime-only failure.
+    - Official `@codemirror/lint` supplies accessible gutter markers, hover messages, keyboard navigation, and error/warning wavy underlines for reliable ranges. Message-only diagnostics remain in the compact toolbar summary. Tests cover debounce, stale races, unmount cleanup, catalog revisions, mounted marker clearing, clean/unavailable states, multiline/offset caret mapping, warnings, project command shape, and no execution.
 
 - [ ] **E9.5-T5 Review beginner SQL intelligence together**
   - Depends on: E9.5-T2, E9.5-T3, E9.5-T4

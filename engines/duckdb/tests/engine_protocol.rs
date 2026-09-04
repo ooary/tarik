@@ -293,6 +293,95 @@ fn query_execute_reaches_terminal_state_and_persists_rows() {
 }
 
 #[test]
+fn query_validation_reports_parse_bind_errors_without_executing_mutations() {
+    let mut engine = spawn_engine();
+    let database = temp_path("validate", ".duckdb");
+    engine.assert_ok(
+        "session.open",
+        json!({
+            "sessionId": "vs",
+            "locator": { "engineId": "duckdb", "payload": { "path": database } }
+        }),
+    );
+    engine.assert_ok(
+        "query.execute",
+        json!({
+            "sessionId": "vs",
+            "executionId": "validate-setup",
+            "sql": "CREATE TABLE sentinel(id INTEGER, amount INTEGER); INSERT INTO sentinel VALUES (1, 10);",
+            "cacheDir": CACHE_DIR,
+        }),
+    );
+    assert_eq!(
+        poll_terminal(&mut engine, "validate-setup")["state"],
+        "succeeded"
+    );
+
+    let valid = engine.assert_ok(
+        "query.validate",
+        json!({
+            "sessionId": "vs",
+            "revision": 41,
+            "sql": "CREATE TABLE must_not_exist(i INTEGER); INSERT INTO sentinel VALUES (2, 20); UPDATE sentinel SET amount = 99; DELETE FROM sentinel;",
+        }),
+    );
+    assert_eq!(valid["revision"], 41);
+    let warnings = valid["diagnostics"].as_array().unwrap();
+    assert_eq!(warnings.len(), 2);
+    assert!(warnings
+        .iter()
+        .all(|diagnostic| diagnostic["severity"] == "warning"));
+    assert_eq!(warnings[0]["code"], "sql.mutation_without_where");
+    assert_eq!(warnings[1]["code"], "sql.mutation_without_where");
+
+    let catalog = engine.assert_ok("catalog.inspect", json!({ "sessionId": "vs" }));
+    assert!(!catalog["objects"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|object| object["name"] == "must_not_exist"));
+    engine.assert_ok(
+        "query.execute",
+        json!({
+            "sessionId": "vs",
+            "executionId": "validate-check",
+            "sql": "SELECT id, amount FROM sentinel ORDER BY id",
+            "cacheDir": CACHE_DIR,
+        }),
+    );
+    let status = poll_terminal(&mut engine, "validate-check");
+    assert_eq!(status["rowsProduced"], 1);
+    let page = engine.assert_ok(
+        "result.get_page",
+        json!({ "resultId": "validate-check", "offset": 0, "maxRows": 10 }),
+    );
+    assert_eq!(page["rows"], json!([[1, 10]]));
+
+    let invalid = engine.assert_ok(
+        "query.validate",
+        json!({
+            "sessionId": "vs",
+            "revision": 42,
+            "sql": "SELECT missing FROM sentinel; SELECT * FORM sentinel",
+        }),
+    );
+    assert_eq!(invalid["revision"], 42);
+    let diagnostics = invalid["diagnostics"].as_array().unwrap();
+    assert_eq!(diagnostics.len(), 2);
+    assert_eq!(diagnostics[0]["code"], "sql.bind");
+    assert_eq!(diagnostics[1]["code"], "sql.syntax");
+    assert!(diagnostics
+        .iter()
+        .all(|diagnostic| diagnostic["severity"] == "error"));
+    assert!(diagnostics
+        .iter()
+        .all(|diagnostic| diagnostic["from"].is_number()));
+
+    engine.child.kill().ok();
+    let _ = std::fs::remove_file(database);
+}
+
+#[test]
 fn query_execute_reports_structured_sql_errors() {
     let mut engine = spawn_engine();
     let database = temp_path("queryerr", ".duckdb");

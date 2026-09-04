@@ -140,6 +140,23 @@ test("source inspection, link, import, repair, and removal use typed commands", 
   );
 });
 
+test("query validation preserves project SQL and revision", async () => {
+  const { validateQuery } = await loadCommandsModule();
+  const calls = [];
+  const expected = { revision: 7, diagnostics: [] };
+  const result = await validateQuery("p1", "SELECT 1", 7, async (command, args) => {
+    calls.push({ command, args });
+    return expected;
+  });
+  assert.deepEqual(result, expected);
+  assert.equal(
+    JSON.stringify(calls),
+    JSON.stringify([
+      { command: "validate_query", args: { projectId: "p1", sql: "SELECT 1", revision: 7 } },
+    ]),
+  );
+});
+
 test("query plans use the typed project/sql/mode command", async () => {
   const { explainQueryPlan } = await loadCommandsModule();
   const calls = [];

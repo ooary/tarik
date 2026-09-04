@@ -586,6 +586,40 @@ button:disabled {
   white-space: nowrap;
 }
 
+.sql-validation-summary {
+  max-width: 300px;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sql-validation-problems {
+  color: var(--status-error);
+}
+
+.sql-validation-unavailable {
+  color: var(--status-warning);
+}
+
+.sql-codemirror .cm-lintRange-error,
+.sql-codemirror .cm-lintRange-warning {
+  background-image: none;
+  text-decoration-line: underline;
+  text-decoration-style: wavy;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
+.sql-codemirror .cm-lintRange-error {
+  text-decoration-color: var(--status-error);
+}
+
+.sql-codemirror .cm-lintRange-warning {
+  text-decoration-color: var(--status-warning);
+}
+
 .run-button {
   display: inline-flex;
   min-height: 30px;

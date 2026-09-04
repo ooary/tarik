@@ -162,6 +162,7 @@ pub fn run() {
             projects::commands::drop_catalog_object,
             projects::commands::remove_linked_source,
             plan::commands::explain_query_plan,
+            query::commands::validate_query,
             query::commands::execute_query,
             query::commands::get_query_status,
             query::commands::cancel_query,

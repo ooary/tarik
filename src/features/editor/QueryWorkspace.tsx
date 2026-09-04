@@ -20,6 +20,7 @@ import { SqlEditor } from "./SqlEditor";
 import type { SqlTable } from "./sqlCompletion";
 import { countSqlStatements, isClearlyReadOnlySql } from "./sqlText";
 import { useQueryTabs } from "./useQueryTabs";
+import { useSqlValidation } from "./useSqlValidation";
 
 type AnalysisMode = "explain" | "profile";
 
@@ -75,6 +76,7 @@ export const QueryWorkspace = forwardRef<QueryWorkspaceHandle, QueryWorkspacePro
       : undefined;
     const executionActive =
       activeExecution?.state === "queued" || activeExecution?.state === "running";
+    const validation = useSqlValidation(projectId, activeTab?.id, activeTab?.sql, catalog);
 
     const runActiveTab = () => {
       if (!projectId || !activeTab || executionActive) return;
@@ -290,6 +292,7 @@ export const QueryWorkspace = forwardRef<QueryWorkspaceHandle, QueryWorkspacePro
                 Query could not start
               </span>
             )}
+            <SqlValidationSummary state={validation} />
             <span className="selection-note">
               {activeTab ? `${countSqlStatements(activeTab.sql)} statement(s)` : "No query tab"}
             </span>
@@ -302,6 +305,7 @@ export const QueryWorkspace = forwardRef<QueryWorkspaceHandle, QueryWorkspacePro
         {tabs.map((tab) =>
           activeTabId === tab.id ? (
             <SqlEditor
+              diagnostics={validation.diagnostics}
               key={tab.id}
               onChange={(sql) => editSql(tab.id, sql)}
               onRun={runActiveTab}
@@ -360,6 +364,45 @@ export const QueryWorkspace = forwardRef<QueryWorkspaceHandle, QueryWorkspacePro
     );
   },
 );
+
+function SqlValidationSummary({ state }: { state: ReturnType<typeof useSqlValidation> }) {
+  switch (state.status) {
+    case "idle":
+    case "editing":
+      return null;
+    case "checking":
+      return (
+        <span className="sql-validation-summary" role="status">
+          Checking SQL
+        </span>
+      );
+    case "clean":
+      return (
+        <span className="sql-validation-summary" title="Runtime-only failures may still occur.">
+          No problems detected before execution
+        </span>
+      );
+    case "unavailable":
+      return (
+        <span className="sql-validation-summary sql-validation-unavailable" title={state.message}>
+          SQL check unavailable
+        </span>
+      );
+    case "problems": {
+      const first = state.diagnostics[0];
+      const count = state.diagnostics.length;
+      return (
+        <span
+          className="sql-validation-summary sql-validation-problems"
+          role="status"
+          title={`${first.code}: ${first.message}`}
+        >
+          {count.toLocaleString("en-US")} {count === 1 ? "problem" : "problems"}: {first.message}
+        </span>
+      );
+    }
+  }
+}
 
 function resultDuration(execution: TabExecution | undefined): string {
   if (!execution) return "";

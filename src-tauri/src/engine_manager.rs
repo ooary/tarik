@@ -7,7 +7,7 @@ use serde_json::Value;
 use tarik_engine_client::EngineProcess;
 use tarik_engine_protocol::{
     CatalogSnapshot, CsvOptions, ExportOptions, ExportStatus, ImportOptions, ProjectLocator,
-    SourceInspection, SourceRecord,
+    SourceInspection, SourceRecord, SqlValidation,
 };
 
 pub struct EngineManager {
@@ -247,6 +247,17 @@ impl EngineManager {
                 .request(method, params)
                 .map_err(|error| error.to_string())
         })
+    }
+
+    /// Parse and bind an immutable SQL revision with DuckDB EXPLAIN. The
+    /// sidecar never submits these statements to query execution.
+    pub fn validate_query(&self, sql: &str, revision: u64) -> Result<SqlValidation, String> {
+        let value = self.session_request(
+            "query.validate",
+            serde_json::json!({ "sql": sql, "revision": revision }),
+        )?;
+        serde_json::from_value(value)
+            .map_err(|error| format!("SQL validation decode failed: {error}"))
     }
 
     /// Submit an asynchronous query job for the active engine session. Returns

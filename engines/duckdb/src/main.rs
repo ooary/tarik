@@ -7,6 +7,7 @@ mod pages;
 mod session;
 mod sources;
 mod sql;
+mod validation;
 
 use std::io::{BufRead, Write};
 
@@ -180,6 +181,18 @@ fn dispatch(
             exports.cancel_session(&session_id);
             sessions.close(&session_id)?;
             Ok(Value::Null)
+        }
+        "query.validate" => {
+            let session_id = required_string(params, "sessionId")?;
+            let sql = required_string(params, "sql")?;
+            let revision = params
+                .get("revision")
+                .and_then(Value::as_u64)
+                .ok_or_else(|| EngineError::MissingField("revision".into()))?;
+            let connection = sessions.get(&session_id)?;
+            Ok(serde_json::to_value(validation::validate(
+                connection, &sql, revision,
+            ))?)
         }
         "query.execute" => {
             let session_id = required_string(params, "sessionId")?;

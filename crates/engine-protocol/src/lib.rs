@@ -585,6 +585,32 @@ pub struct ErrorEnvelope {
     pub details: serde_json::Map<String, serde_json::Value>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DiagnosticSeverity {
+    Error,
+    Warning,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SqlDiagnostic {
+    pub code: String,
+    pub message: String,
+    pub severity: DiagnosticSeverity,
+    /// UTF-16 document offsets for CodeMirror. Missing when DuckDB did not
+    /// provide a mechanically reliable source location.
+    pub from: Option<u32>,
+    pub to: Option<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SqlValidation {
+    pub revision: u64,
+    pub diagnostics: Vec<SqlDiagnostic>,
+}
+
 impl ErrorEnvelope {
     pub fn new(code: impl Into<String>, message: impl Into<String>) -> Self {
         Self {

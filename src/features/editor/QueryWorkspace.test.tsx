@@ -12,6 +12,7 @@ import {
   listSavedQueries,
   loadQuerySession,
   saveQuerySession,
+  validateQuery,
 } from "../../lib/commands";
 import { QueryWorkspace, type QueryWorkspaceHandle } from "./QueryWorkspace";
 
@@ -20,6 +21,7 @@ vi.mock("../../lib/commands", () => ({
   saveQuerySession: vi.fn(),
   executeQuery: vi.fn(),
   getQueryStatus: vi.fn(),
+  validateQuery: vi.fn(),
   explainQueryPlan: vi.fn(),
   listSavedQueries: vi.fn(),
   listQueryFolders: vi.fn(),
@@ -100,6 +102,10 @@ describe("QueryWorkspace", () => {
     vi.mocked(saveQuerySession).mockResolvedValue(undefined);
     vi.mocked(executeQuery).mockResolvedValue({ ...runningView, tabId: "t1" });
     vi.mocked(getQueryStatus).mockResolvedValue({ ...succeededView, tabId: "t1" });
+    vi.mocked(validateQuery).mockImplementation(async (_projectId, _sql, revision) => ({
+      revision,
+      diagnostics: [],
+    }));
     vi.mocked(cancelQuery).mockResolvedValue({ ...runningView, tabId: "t1" });
     vi.mocked(getResultPage).mockResolvedValue({ ...firstPage });
     vi.mocked(listSavedQueries).mockResolvedValue([]);
@@ -741,6 +747,63 @@ describe("QueryWorkspace", () => {
     expect(await screen.findByText("sql.parse")).toBeInTheDocument();
     expect(await screen.findByText(/syntax error at or near "FORM"/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Cancel" })).not.toBeInTheDocument();
+  });
+
+  it("shows current pre-run diagnostics and clears them immediately while editing", async () => {
+    vi.mocked(validateQuery).mockImplementation(async (_projectId, sql, revision) => ({
+      revision,
+      diagnostics: sql.includes("missing")
+        ? [
+            {
+              code: "sql.catalog",
+              message: 'Table with name "missing" does not exist',
+              severity: "error" as const,
+              from: sql.indexOf("missing"),
+              to: sql.indexOf("missing") + "missing".length,
+            },
+          ]
+        : [],
+    }));
+    const ref = createRef<QueryWorkspaceHandle>();
+    const executeCallsBefore = vi.mocked(executeQuery).mock.calls.length;
+    render(
+      <QueryWorkspace
+        bottomOpen
+        bottomPanelHeight={292}
+        catalog={catalog}
+        onSetBottomHeight={vi.fn()}
+        onToggleBottom={vi.fn()}
+        projectId="p1"
+        ref={ref}
+      />,
+    );
+    act(() => ref.current?.insertSql("SELECT * FROM missing"));
+    expect(await screen.findByText(/1 problem: Table with name/)).toBeInTheDocument();
+    expect(document.querySelector(".cm-lintRange-error")).toBeInTheDocument();
+    expect(vi.mocked(executeQuery).mock.calls).toHaveLength(executeCallsBefore);
+
+    act(() => ref.current?.insertSql(" fixed"));
+    expect(screen.queryByText(/1 problem:/)).not.toBeInTheDocument();
+    expect(document.querySelector(".cm-lintRange-error")).toBeNull();
+  });
+
+  it("reports a clean pre-run check without promising runtime success", async () => {
+    const ref = createRef<QueryWorkspaceHandle>();
+    render(
+      <QueryWorkspace
+        bottomOpen
+        bottomPanelHeight={292}
+        catalog={catalog}
+        onSetBottomHeight={vi.fn()}
+        onToggleBottom={vi.fn()}
+        projectId="p1"
+        ref={ref}
+      />,
+    );
+    act(() => ref.current?.insertSql("SELECT 1"));
+    const clean = await screen.findByText("No problems detected before execution");
+    expect(clean).toHaveAttribute("title", "Runtime-only failures may still occur.");
+    expect(screen.queryByText(/guaranteed/i)).not.toBeInTheDocument();
   });
 
   it("shows the completion message for statements without a row set", async () => {

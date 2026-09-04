@@ -5,7 +5,34 @@ use std::sync::Arc;
 use tauri::State;
 
 use super::QueryCoordinator;
-use crate::projects::ProjectManager;
+use crate::{engine_manager::EngineManager, projects::ProjectManager};
+
+#[tauri::command]
+pub fn validate_query(
+    project_id: String,
+    sql: String,
+    revision: u64,
+    engine: State<'_, Arc<EngineManager>>,
+    projects: State<'_, ProjectManager>,
+) -> Result<tarik_engine_protocol::SqlValidation, String> {
+    let active = projects
+        .active()
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| "validation.no_active_project".to_string())?;
+    if active.id != project_id {
+        return Err(format!(
+            "validation.project_mismatch: active project is {}, request was {}",
+            active.id, project_id
+        ));
+    }
+    if sql.trim().is_empty() {
+        return Ok(tarik_engine_protocol::SqlValidation {
+            revision,
+            diagnostics: Vec::new(),
+        });
+    }
+    engine.validate_query(&sql, revision)
+}
 
 #[tauri::command]
 pub fn execute_query(

@@ -365,6 +365,30 @@ export function explainQueryPlan(
   return invokeCommand<QueryPlan>("explain_query_plan", { projectId, sql, mode });
 }
 
+export type SqlDiagnosticSeverity = "error" | "warning";
+
+export interface SqlDiagnostic {
+  code: string;
+  message: string;
+  severity: SqlDiagnosticSeverity;
+  from: number | null;
+  to: number | null;
+}
+
+export interface SqlValidation {
+  revision: number;
+  diagnostics: SqlDiagnostic[];
+}
+
+export function validateQuery(
+  projectId: string,
+  sql: string,
+  revision: number,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<SqlValidation> {
+  return invokeCommand<SqlValidation>("validate_query", { projectId, sql, revision });
+}
+
 export function executeQuery(
   projectId: string,
   tabId: string,
