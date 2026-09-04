@@ -1525,7 +1525,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Commit: `fix(security): harden local trust boundaries`
   - Review: `docs/security/E11-BOUNDARY-REVIEW.md`
   - Notes:
-    - Invoke audit now has exact parity: 54 registered handlers and 54 typed frontend invoke names. Ten unused generic metadata mutators that bypassed project/query/export ownership were removed from the public handler and wrapper modules.
+    - Invoke audit now has exact parity at that review point: 54 registered handlers and 54 typed frontend invoke names; E11.5 adds the reviewed `create_table` pair for 55/55. Ten unused generic metadata mutators that bypassed project/query/export ownership were removed from the public handler and wrapper modules.
     - Removed broad `opener:default` WebView permission. Logs are revealed by a no-path backend command; export reveal sends only export ID/part number and Rust derives an existing canonical file from immutable validated options plus the coordinator's completed-part record.
     - Added a non-null local CSP allowing only self scripts/default content, Tauri IPC, local asset/data images, and inline styles required by CodeMirror/XYFlow geometry; remote scripts/frames/network origins are excluded.
     - Boundary review records active-project/kind checks, identifier/path escaping, external/managed ownership, export publication/reveal, bounded result paging, cleanup/manifest/symlink behavior, incident redaction, shutdown ownership, and intentional explicit-SQL capabilities with adversarial test evidence.
@@ -1582,7 +1582,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
 
 ## EPIC E11.5 — Desktop theme, table creation, and context interactions
 
-**Status:** `READY / NOT STARTED` - user-reported Linux review corrections are specified below. This is a blocking fix epic before any E12 Windows work; no application code has been changed for these items yet.
+**Status:** `REVIEW` - E11.5-T0 through E11.5-T6 implemented and automated gates pass. Awaiting the user's manual desktop correction review before E12 can begin.
 
 **Design read:** Focused correction pass for a calm, dense SQL workbench. Preserve the existing IDE structure and restrained green accent while making effective-theme behavior, command affordances, context menus, selection, and connection state explicit rather than browser-like.
 
@@ -1691,7 +1691,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
     - Removed the Explorer `+`/mislabelled refresh control. New project is the restrained green primary action and Close project is a labelled red destructive action in both themes.
     - The 10 px reflective orb renders idle/connecting/connected/failed states with adjacent text; only successful engine-backed create/open/reopen or restored active session sets connected, failures set failed, and close returns idle. Its finite color transition is disabled under reduced motion.
 
-- [ ] **E11.5-T6 Review the desktop correction pass**
+- [x] **E11.5-T6 Review the desktop correction pass**
   - Depends on: E11.5-T1, E11.5-T2, E11.5-T3, E11.5-T4, E11.5-T5
   - Owns: `docs/review/E11-5-DESKTOP-UX.md`
   - Deliverables:
@@ -1701,6 +1701,10 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: user manually approves all nine reported corrections before E12 becomes READY; deferred E6/E7/E10 and final-release blockers remain separately reopenable.
   - Tests: full direct Rust/workspace/frontend/docs/lint/typecheck/build gates plus packaged Linux smoke; no critical command piped through `tail` without preserving its exit status.
   - Commit: `docs(review): add E11.5 desktop correction checklist`
+  - Notes:
+    - Full direct gates against the implementation commits: Rust workspace formats, Clippy-clean, and green including the real sidecar; 151 UI tests across 25 files, 12 typed command tests, docs checker, TypeScript, and production build pass. Lint has zero errors and six pre-existing warnings.
+    - The invoke surface grew intentionally to 55/55 handler/frontend parity with the reviewed `create_table` pair; E11 release review is updated accordingly.
+    - Manual sign-off items and remaining regression gates are recorded in `docs/review/E11-5-DESKTOP-UX.md` and stay unchecked pending the user's desktop review.
 
 ---
 
