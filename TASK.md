@@ -1363,9 +1363,24 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
 
 ## EPIC E10 — Diagnostics, recovery, and cleanup
 
-**Status:** `READY` - E9.5 manual gate approved; implementation not started.
+**Status:** `IN PROGRESS` - E10 recovery and shutdown boundaries designed; E10-T1 structured logging is active.
 
 **Outcome:** Diagnosable failures and bounded on-disk application state.
+
+- [x] **E10-T0 Design diagnostics, cleanup, and shutdown boundaries**
+  - Depends on: E9.5 approval
+  - Owns: `docs/design/E10-DESIGN-GRAPH.md`
+  - Deliverables:
+    - Define typed/redacted log events and bounded size-based retention.
+    - Define exact cache/export ownership boundaries, crash manifests, and user-export preservation.
+    - Define draft-first, cancellation-bounded, idempotent shutdown order and failure escape hatches.
+  - Acceptance: graph covers success, failure, resource ownership, boundary parsing, behavior layers, and test substitutions before implementation.
+  - Tests: Graph Protocol completeness review and implementation mismatch inventory.
+  - Commit: `docs(design): define E10 recovery lifecycle`
+  - Notes:
+    - Logging is an orthogonal JSONL behavior layer: SQL text, parameters, previews, result rows, and exported payload data are excluded; IDs, durations, stable codes, and aggregate counters are allowed.
+    - Cleanup may recurse only below Tarik-owned cache roots. User-selected export directories require exact per-export crash manifests and exact hidden filenames; canonical completed export parts are never deleted.
+    - Shutdown policy is explicit: flush latest drafts/preferences, cancel queued/running query and export work, wait up to two seconds for terminal persistence, release ephemeral results, close DuckDB/sidecar, checkpoint SQLite, then flush logs and close.
 
 - [ ] **E10-T1 Add structured rolling file logging**
   - Depends on: E0-T4
