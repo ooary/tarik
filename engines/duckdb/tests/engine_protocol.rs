@@ -101,6 +101,115 @@ fn temp_path(name: &str, suffix: &str) -> PathBuf {
     std::env::temp_dir().join(format!("tarik-engine-{name}-{stamp}{suffix}"))
 }
 
+fn exercise_native_paths(root: &std::path::Path) {
+    let mut deep = root.to_path_buf();
+    for index in 0..6 {
+        deep.push(format!(
+            "long segment {index} with spaces and enough characters 0123456789"
+        ));
+    }
+    std::fs::create_dir_all(&deep).unwrap();
+    assert!(
+        deep.as_os_str().len() > 260,
+        "fixture must exercise a path beyond the legacy Windows limit"
+    );
+    let database = deep.join("analisis_日本語.duckdb");
+    let source = root.join("pesanan café read only.csv");
+    let output = root.join("hasil ekspor_日本語");
+    std::fs::create_dir_all(&output).unwrap();
+    std::fs::write(&source, "id,amount\n1,12.5\n2,30.0\n").unwrap();
+    let mut permissions = std::fs::metadata(&source).unwrap().permissions();
+    permissions.set_readonly(true);
+    std::fs::set_permissions(&source, permissions).unwrap();
+
+    let mut engine = spawn_engine();
+    engine.assert_ok(
+        "session.open",
+        json!({
+            "sessionId": "native-paths",
+            "locator": { "engineId": "duckdb", "payload": { "path": database } }
+        }),
+    );
+    engine.assert_ok(
+        "duckdb.source.import_table",
+        json!({
+            "sessionId": "native-paths",
+            "projectId": "native-project",
+            "path": source,
+            "options": {
+                "tableName": "pesanan_日本語",
+                "csv": { "delimiter": ",", "hasHeader": true, "nullValue": null, "allVarchar": false },
+                "columnOverrides": []
+            }
+        }),
+    );
+    engine.assert_ok(
+        "query.execute",
+        json!({
+            "sessionId": "native-paths",
+            "executionId": "native-path-query",
+            "sql": "SELECT sum(amount) AS total FROM \"pesanan_日本語\""
+        }),
+    );
+    let status = poll_terminal(&mut engine, "native-path-query");
+    assert_eq!(status["state"], "succeeded");
+    let page = engine.assert_ok(
+        "result.get_page",
+        json!({ "resultId": "native-path-query", "offset": 0, "maxRows": 10 }),
+    );
+    assert_eq!(page["rows"], json!([[42.5]]));
+
+    engine.assert_ok(
+        "export.execute",
+        json!({
+            "sessionId": "native-paths",
+            "exportId": "native-path-export",
+            "sql": "SELECT * FROM \"pesanan_日本語\" ORDER BY id",
+            "options": {
+                "format": "csv",
+                "outputDirectory": output,
+                "baseName": "orders",
+                "rowsPerPart": 10,
+                "overwrite": "fail_if_exists",
+                "csv": { "delimiter": ",", "includeHeader": true },
+                "parquet": null
+            }
+        }),
+    );
+    let exported = poll_export_terminal(&mut engine, "native-path-export", 400);
+    assert_eq!(exported["state"], "succeeded");
+    assert_eq!(exported["rowsWritten"], 2);
+    assert!(output.join("orders-part-00001.csv").is_file());
+    engine.assert_ok("session.close", json!({ "sessionId": "native-paths" }));
+    #[cfg(windows)]
+    {
+        let mut permissions = std::fs::metadata(&source).unwrap().permissions();
+        permissions.set_readonly(false);
+        std::fs::set_permissions(&source, permissions).unwrap();
+    }
+}
+
+#[test]
+fn spaces_unicode_long_paths_and_read_only_sources_round_trip() {
+    let root = temp_path("native paths 日本語", "");
+    std::fs::create_dir_all(&root).unwrap();
+    exercise_native_paths(&root);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[cfg(windows)]
+#[test]
+fn unc_project_source_and_export_paths_round_trip() {
+    let Some(root) = std::env::var_os("TARIK_TEST_UNC_ROOT") else {
+        eprintln!("TARIK_TEST_UNC_ROOT is not configured; skipping native UNC test");
+        return;
+    };
+    let root = PathBuf::from(root).join(format!("case-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&root).unwrap();
+    exercise_native_paths(&root);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
 #[test]
 fn handshake_reports_duckdb_capabilities() {
     let mut engine = spawn_engine();

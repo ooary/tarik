@@ -144,6 +144,41 @@ mod tests {
     }
 
     #[test]
+    fn on_disk_metadata_supports_spaces_unicode_and_reopen() {
+        let root = std::env::temp_dir().join(format!(
+            "tarik metadata café 日本語 {}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("operational data.sqlite");
+        {
+            let database = MetadataDb::open(&path).unwrap();
+            database
+                .connection()
+                .unwrap()
+                .execute(
+                    "INSERT INTO settings(key, value_json, updated_at) VALUES ('marker', '42', datetime('now'))",
+                    [],
+                )
+                .unwrap();
+            database.checkpoint().unwrap();
+        }
+        let reopened = MetadataDb::open(&path).unwrap();
+        let marker: String = reopened
+            .connection()
+            .unwrap()
+            .query_row(
+                "SELECT value_json FROM settings WHERE key = 'marker'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(marker, "42");
+        drop(reopened);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn reports_invalid_parent_path() {
         let error = MetadataDb::open("/definitely/missing/tarik.sqlite")
             .err()

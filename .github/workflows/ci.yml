@@ -101,8 +101,19 @@ jobs:
           if (-not $response.ok) { throw "Engine handshake failed: $($response.error.message)" }
           if ($response.result.engineId -ne "duckdb") { throw "Unexpected engine: $($response.result.engineId)" }
           if ($response.result.protocolVersion -ne 1) { throw "Unexpected protocol: $($response.result.protocolVersion)" }
+      - name: Create localhost UNC fixture
+        shell: pwsh
+        run: |
+          $uncStorage = Join-Path $env:RUNNER_TEMP "tarik-unc-storage"
+          New-Item -ItemType Directory -Force $uncStorage | Out-Null
+          New-SmbShare -Name "TarikCi$env:GITHUB_RUN_ID" -Path $uncStorage -FullAccess $env:USERNAME | Out-Null
+          "TARIK_TEST_UNC_ROOT=\\localhost\TarikCi$env:GITHUB_RUN_ID" | Out-File -FilePath $env:GITHUB_ENV -Append
       - name: Test Windows workspace with real sidecar
         run: cargo test --workspace --target x86_64-pc-windows-msvc --no-fail-fast
+      - name: Remove localhost UNC fixture
+        if: always()
+        shell: pwsh
+        run: Remove-SmbShare -Name "TarikCi$env:GITHUB_RUN_ID" -Force -ErrorAction SilentlyContinue
       - name: Compile Tauri Windows application
         run: npm run tauri build -- --target x86_64-pc-windows-msvc --no-bundle
       - name: Verify Windows desktop output

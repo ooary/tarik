@@ -609,6 +609,42 @@ mod tests {
         let _ = fs::remove_dir_all(root);
     }
 
+    #[cfg(windows)]
+    #[test]
+    fn managed_rename_reports_windows_lock_without_changing_metadata() {
+        use std::os::windows::fs::OpenOptionsExt;
+
+        let (manager, root, _) = fixture();
+        let directory = root.join("projects").join(Uuid::new_v4().to_string());
+        fs::create_dir_all(&directory).unwrap();
+        let old_path = directory.join("retail.duckdb");
+        fs::write(&old_path, b"locked").unwrap();
+        let project = ProjectsRepository::new(manager.metadata.clone())
+            .upsert("Retail", &old_path, ProjectOwnership::Managed)
+            .unwrap();
+        let locked = fs::OpenOptions::new()
+            .read(true)
+            .share_mode(0)
+            .open(&old_path)
+            .unwrap();
+
+        assert!(matches!(
+            manager.rename(&project.id, "Finance"),
+            Err(ProjectError::Rename { .. })
+        ));
+        let current = ProjectsRepository::new(manager.metadata.clone())
+            .find(&project.id)
+            .unwrap()
+            .unwrap();
+        assert_eq!(current.name, "Retail");
+        assert_eq!(current.duckdb_path, old_path.to_string_lossy());
+        assert!(old_path.is_file());
+        assert!(!directory.join("finance.duckdb").exists());
+
+        drop(locked);
+        fs::remove_dir_all(root).unwrap();
+    }
+
     #[test]
     fn managed_rename_rejects_filename_collision() {
         let (manager, root, _) = fixture();

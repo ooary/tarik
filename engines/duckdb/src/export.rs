@@ -672,6 +672,55 @@ mod tests {
         fs::remove_dir_all(directory).unwrap();
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn read_only_output_fails_without_publishing_or_leaking_stage() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let directory = output_dir("read-only");
+        let original_mode = fs::metadata(&directory).unwrap().permissions().mode();
+        fs::set_permissions(&directory, fs::Permissions::from_mode(0o555)).unwrap();
+        let result = execute_export(&connection(), "SELECT 42 AS i", csv_options(&directory, 10));
+        fs::set_permissions(&directory, fs::Permissions::from_mode(original_mode)).unwrap();
+
+        assert!(matches!(result, Err(EngineError::ExportIo { .. })));
+        assert_eq!(fs::read_dir(&directory).unwrap().count(), 0);
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn replace_reports_windows_lock_and_preserves_original() {
+        use std::os::windows::fs::OpenOptionsExt;
+
+        let directory = output_dir("locked-replace");
+        let target = directory.join("orders-part-00001.csv");
+        fs::write(&target, "original\n").unwrap();
+        let locked = fs::OpenOptions::new()
+            .read(true)
+            .share_mode(0)
+            .open(&target)
+            .unwrap();
+        let mut options = csv_options(&directory, 10);
+        options.overwrite = ExportOverwritePolicy::Replace;
+
+        assert!(matches!(
+            execute_export(&connection(), "SELECT 42 AS i", options),
+            Err(EngineError::ExportIo { .. })
+        ));
+        assert!(target.is_file());
+        assert!(!fs::read_dir(&directory).unwrap().flatten().any(|entry| {
+            entry
+                .file_name()
+                .to_string_lossy()
+                .starts_with(".tarik-export-")
+        }));
+
+        drop(locked);
+        assert_eq!(fs::read_to_string(&target).unwrap(), "original\n");
+        fs::remove_dir_all(directory).unwrap();
+    }
+
     #[test]
     fn replace_removes_stale_trailing_parts_only_after_success() {
         let directory = output_dir("replace-tail");
