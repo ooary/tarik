@@ -24,7 +24,8 @@
     "benchmark:memory": "python3 scripts/benchmark-memory.py",
     "docs:check": "python3 scripts/check-docs.py",
     "release:linux": "./scripts/release-linux.sh",
-    "release:windows": "node scripts/release-windows.mjs"
+    "release:windows": "node scripts/release-windows.mjs",
+    "verify:windows-runtime": "node scripts/verify-windows-runtime.mjs"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.3",
