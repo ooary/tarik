@@ -1582,7 +1582,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
 
 ## EPIC E11.5 — Desktop theme, table creation, and context interactions
 
-**Status:** `REVIEW` - E11.5-T0 through E11.5-T6 implemented and automated gates pass. Awaiting the user's manual desktop correction review before E12 can begin.
+**Status:** `APPROVED` (2026-09-04) - user accepted the complete desktop correction pass after Linux review; E12 is unblocked.
 
 **Design read:** Focused correction pass for a calm, dense SQL workbench. Preserve the existing IDE structure and restrained green accent while making effective-theme behavior, command affordances, context menus, selection, and connection state explicit rather than browser-like.
 
@@ -1710,7 +1710,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
 
 ## EPIC E12 — Windows portable application support
 
-**Status:** `BLOCKED` - E11.5 desktop corrections must be implemented and manually approved before Windows work begins.
+**Status:** `IN PROGRESS` - E11.5 was manually approved on 2026-09-04 and the production-safe E12-T0 cleanup is complete. E12-T1 Windows CI is next.
 
 **Outcome:** Signed or checksummed Windows x64 portable ZIP that runs without an installer and keeps user data in normal Windows application-data directories. Before the first Windows compilation/package attempt, remove accumulated codebase crust only where production unreachability is proven.
 

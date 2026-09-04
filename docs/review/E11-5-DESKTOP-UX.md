@@ -1,6 +1,7 @@
 # E11.5 desktop correction review
 
-**Status:** REVIEW - all nine reported corrections implemented; manual sign-off below is pending.  
+**Status:** APPROVED - user accepted all nine desktop corrections on 2026-09-04.
+
 **Scope:** Dark-theme legibility, Dracula SQL editors, working New table, scoped context menus, bounded result selection/copy/rerun, explorer cleanup, semantic project actions, and truthful DuckDB connection state.
 
 ## Implementation evidence
@@ -37,15 +38,15 @@ Invoke parity at E11.5 review was 55/55 handlers/frontend commands with the inte
 
 Complete each check in the running desktop (Light, Dark, System, minimum 680x520 viewport):
 
-- [ ] Dark theme: result values, NULL markers, active/selected rows, loading, and error states are readable; SQL editor is Dracula in manual Dark and System dark
-- [ ] OS theme change while running flips editor palette live without losing editor state
-- [ ] New table: create a table with spaces/reserved words, see it appear in Explorer and completion, then delete it
-- [ ] New table rejects empty/duplicate columns and an already-existing name with inline guidance
-- [ ] Right-click on header, headings, empty space, result headers, and unsupported explorer areas shows no browser or Tarik menu
-- [ ] Editor right-click Run query submits the current SQL with the same confirmation as toolbar Run
-- [ ] Result right-click: copy cell/selection/row/page, Shift-rectangle, Ctrl/Command disjoint, NULL/tab/newline fidelity in a spreadsheet paste
-- [ ] Run query again reruns the SQL snapshot that produced the result even after editing SQL, with mutation confirmation
-- [ ] Explorer `+` is gone; New project is green, Close project is red, both keyboard-focused correctly
-- [ ] Connection orb is larger, shiny only when genuinely connected, and text matches every state including engine failure
+- [x] Dark theme: result values, NULL markers, active/selected rows, loading, and error states are readable; SQL editor is Dracula in manual Dark and System dark
+- [x] OS theme change while running flips editor palette live without losing editor state
+- [x] New table: create a table with spaces/reserved words, see it appear in Explorer and completion, then delete it
+- [x] New table rejects empty/duplicate columns and an already-existing name with inline guidance
+- [x] Right-click on header, headings, empty space, result headers, and unsupported explorer areas shows no browser or Tarik menu
+- [x] Editor right-click Run query submits the current SQL with the same confirmation as toolbar Run
+- [x] Result right-click: copy cell/selection/row/page, Shift-rectangle, Ctrl/Command disjoint, NULL/tab/newline fidelity in a spreadsheet paste
+- [x] Run query again reruns the SQL snapshot that produced the result even after editing SQL, with mutation confirmation
+- [x] Explorer `+` is gone; New project is green, Close project is red, both keyboard-focused correctly
+- [x] Connection orb is larger, shiny only when genuinely connected, and text matches every state including engine failure
 
-Reply **"E11.5 reviewed"** after all items pass. E12 remains blocked until then; deferred E6/E7/E10 and final release gates are separate.
+Approval recorded from the user's explicit acceptance on 2026-09-04. E12 may proceed; deferred E6/E7/E10 and final release gates remain separate.
