@@ -320,8 +320,9 @@ test("session snapshots use typed metadata commands", async () => {
   assert.equal(calls[1].command, "load_query_session");
 });
 
-test("app paths and log metadata use typed commands", async () => {
-  const { getAppDirectories, getLogInfo } = await loadCommandsModule();
+test("app paths, logs, and incidents use typed commands", async () => {
+  const { getAppDirectories, getLogInfo, reportFrontendIncident, getLastSupportIncident } =
+    await loadCommandsModule();
   const expected = {
     dataDir: "/tmp/tarik/data",
     cacheDir: "/tmp/tarik/cache",
@@ -334,17 +335,34 @@ test("app paths and log metadata use typed commands", async () => {
     retainedFiles: 7,
     available: true,
   };
+  const incident = {
+    incidentId: "11111111-1111-4111-8111-111111111111",
+    summary: "The workbench interface stopped rendering.",
+    logDirectory: "/tmp/tarik/logs",
+    loggingSucceeded: true,
+  };
+  const input = {
+    incidentId: incident.incidentId,
+    kind: "frontend.render",
+    message: "Error: render failed",
+  };
   const calls = [];
   const invoke = async (command, args) => {
     calls.push({ command, args });
-    return command === "get_app_directories" ? expected : logInfo;
+    if (command === "get_app_directories") return expected;
+    if (command === "get_log_info") return logInfo;
+    return incident;
   };
   const result = await getAppDirectories(invoke);
   assert.deepEqual(await getLogInfo(invoke), logInfo);
+  assert.deepEqual(await reportFrontendIncident(input, invoke), incident);
+  assert.deepEqual(await getLastSupportIncident(invoke), incident);
 
   assert.deepEqual(calls, [
     { command: "get_app_directories", args: undefined },
     { command: "get_log_info", args: undefined },
+    { command: "report_frontend_incident", args: { input } },
+    { command: "get_last_support_incident", args: undefined },
   ]);
   assert.deepEqual(result, expected);
 });

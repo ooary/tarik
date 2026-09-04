@@ -10,6 +10,7 @@ import {
   createProject,
   dropCatalogObject,
   getActiveProject,
+  getLastSupportIncident,
   getRuntimeInfo,
   getLogInfo,
   getWorkbenchPreferences,
@@ -40,6 +41,7 @@ vi.mock("./lib/commands", () => ({
   createProject: vi.fn(),
   dropCatalogObject: vi.fn(),
   getActiveProject: vi.fn(),
+  getLastSupportIncident: vi.fn(),
   getRuntimeInfo: vi.fn(),
   getLogInfo: vi.fn(),
   getWorkbenchPreferences: vi.fn(),
@@ -82,6 +84,7 @@ describe("Tarik workbench shell", () => {
     vi.clearAllMocks();
     runtimeInfoMock.mockReset();
     vi.mocked(getWorkbenchPreferences).mockResolvedValue(null);
+    vi.mocked(getLastSupportIncident).mockResolvedValue(null);
     vi.mocked(getLogInfo).mockResolvedValue({
       directory: "/tmp/tarik/logs",
       activeFile: "/tmp/tarik/logs/tarik.log",

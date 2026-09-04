@@ -1398,7 +1398,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
     - Project create/open/close and query/export submission now emit paired operation spans with generated operation IDs and durations; app startup/shutdown are recorded without SQL or result data.
     - Settings shows the exact retention policy and reveals the Tauri-resolved log directory through the existing opener boundary.
 
-- [ ] **E10-T2 Add panic/error boundary and support diagnostics**
+- [x] **E10-T2 Add panic/error boundary and support diagnostics**
   - Depends on: E10-T1, E1-T1
   - Owns: Rust panic hook, frontend error boundary, diagnostics UI
   - Deliverables:
@@ -1407,6 +1407,10 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: simulated backend and frontend failures lead to recoverable diagnostics.
   - Tests: error boundary and panic-hook unit tests where practical.
   - Commit: `feat(diagnostics): add app failure recovery surfaces`
+  - Notes:
+    - Installed a backend panic hook that records a generated incident ID, writes a one-shot local incident marker, emits a support event when the WebView is available, prints a concise stderr fallback, and then chains to Rust's prior panic hook.
+    - Frontend render failures report one typed, bounded incident (`frontend.render`) and show a friendly recovery surface with a copyable incident ID, local log disclosure, Reveal logs, and Retry. Raw render details are neither the heading nor required user guidance.
+    - The workbench consumes backend panic incidents live and once after restart; the marker is removed after reading so old incidents do not recur forever. Reporting/clipboard/reveal failures keep visible fallback instructions.
 
 - [ ] **E10-T3 Clean stale caches and incomplete exports safely**
   - Depends on: E5.5-T2, E6-T3, E9-T3

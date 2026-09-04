@@ -78,6 +78,7 @@ pub fn run() {
             let directories = paths::resolve_directories(app.handle())
                 .map_err(|error| Box::new(error) as Box<dyn std::error::Error>)?;
             let logger = Arc::new(AppLogger::open(directories.log_dir.clone()));
+            observability::install_panic_hook(logger.clone(), app.handle().clone());
             logger.record(
                 LogLevel::Info,
                 "app",
@@ -146,6 +147,8 @@ pub fn run() {
             get_runtime_info,
             get_app_directories,
             observability::get_log_info,
+            observability::get_last_support_incident,
+            observability::report_frontend_incident,
             metadata::commands::get_workbench_preferences,
             metadata::commands::set_workbench_preferences,
             metadata::commands::upsert_recent_project,

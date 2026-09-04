@@ -23,6 +23,19 @@ export interface LogInfo {
   available: boolean;
 }
 
+export interface SupportIncident {
+  incidentId: string;
+  summary: string;
+  logDirectory: string;
+  loggingSucceeded: boolean;
+}
+
+export interface FrontendIncidentInput {
+  incidentId: string;
+  kind: string;
+  message: string;
+}
+
 export interface ActiveProject {
   id: string;
   name: string;
@@ -139,6 +152,19 @@ export function getLogInfo(invokeCommand: InvokeCommand = invoke): Promise<LogIn
 
 export function revealLogDirectory(directory: string): Promise<void> {
   return revealItemInDir(directory);
+}
+
+export function reportFrontendIncident(
+  input: FrontendIncidentInput,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<SupportIncident> {
+  return invokeCommand<SupportIncident>("report_frontend_incident", { input });
+}
+
+export function getLastSupportIncident(
+  invokeCommand: InvokeCommand = invoke,
+): Promise<SupportIncident | null> {
+  return invokeCommand<SupportIncident | null>("get_last_support_incident");
 }
 
 export function getWorkbenchPreferences(

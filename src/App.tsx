@@ -5,6 +5,7 @@ import {
   PlusIcon,
   TableIcon,
 } from "@phosphor-icons/react";
+import { listen } from "@tauri-apps/api/event";
 import { useEffect, useRef, useState } from "react";
 import "./App.css";
 import { ContextMenu, Dialog } from "./components/ui";
@@ -12,6 +13,7 @@ import { QueryWorkspace, type QueryWorkspaceHandle } from "./features/editor/Que
 import { previewTableSql, qualifiedSqlName } from "./features/editor/sqlText";
 import { formatCompactCount } from "./features/sources/format";
 import { ImportDialog, type SourceAction } from "./features/sources/ImportDialog";
+import { SupportIncidentNotice } from "./app/SupportIncidentNotice";
 import {
   createWorkbenchPreferencesRepository,
   defaultWorkbenchPreferences,
@@ -28,6 +30,7 @@ import {
   releaseAllResults,
   getActiveProject,
   getRuntimeInfo,
+  getLastSupportIncident,
   getLogInfo,
   getWorkbenchPreferences,
   importSourceTable,
@@ -53,6 +56,7 @@ import {
   type SourceRecord,
   type RuntimeInfo,
   type LogInfo,
+  type SupportIncident,
 } from "./lib/commands";
 
 type RuntimeState =
@@ -91,6 +95,7 @@ function App() {
   const [projectError, setProjectError] = useState<string | null>(null);
   const [preferencesReady, setPreferencesReady] = useState(false);
   const [logInfo, setLogInfo] = useState<LogInfo | null>(null);
+  const [supportIncident, setSupportIncident] = useState<SupportIncident | null>(null);
   const [preferences, setPreferences] = useState<WorkbenchPreferences>(defaultWorkbenchPreferences);
   const { bottomPanelOpen: bottomOpen, sidebarOpen } = preferences;
 
@@ -155,6 +160,12 @@ function App() {
       })
       .catch(() => undefined);
 
+    getLastSupportIncident()
+      .then((incident) => {
+        if (active && incident) setSupportIncident(incident);
+      })
+      .catch(() => undefined);
+
     getRuntimeInfo()
       .then((info) => {
         if (active) setRuntime({ kind: "ready", info });
@@ -165,6 +176,23 @@ function App() {
 
     return () => {
       active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let disposed = false;
+    let unlisten = () => undefined;
+    listen<SupportIncident>("support-incident", (event) => {
+      if (!disposed) setSupportIncident(event.payload);
+    })
+      .then((remove) => {
+        if (disposed) remove();
+        else unlisten = remove;
+      })
+      .catch(() => undefined);
+    return () => {
+      disposed = true;
+      unlisten();
     };
   }, []);
 
@@ -677,6 +705,15 @@ function App() {
           onInspectCsv={reinspectCsv}
           onSubmit={submitSource}
         />
+      )}
+
+      {supportIncident && (
+        <div className="support-incident-dock">
+          <SupportIncidentNotice
+            incident={supportIncident}
+            onDismiss={() => setSupportIncident(null)}
+          />
+        </div>
       )}
 
       <footer className="status-bar">

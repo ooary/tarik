@@ -94,6 +94,87 @@ button:active {
   color: var(--text-secondary);
 }
 
+.support-incident {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  width: min(760px, 100%);
+  border: 1px solid var(--status-error-border);
+  border-radius: var(--radius-control);
+  padding: 14px;
+  color: var(--text-primary);
+  background: var(--status-error-surface);
+  box-shadow: 0 12px 38px rgb(8 13 10 / 24%);
+}
+
+.support-incident-copy {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+.support-incident-copy > strong {
+  color: var(--status-error);
+  font-size: 14px;
+}
+
+.support-incident-copy p {
+  margin: 0;
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+
+.support-incident-id {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.support-incident-id span,
+.support-incident-note {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.support-incident-id code {
+  color: var(--code-text);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  user-select: all;
+}
+
+.support-incident-actions {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.support-incident-actions .text-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.support-incident-dock {
+  position: fixed;
+  z-index: 18;
+  right: 14px;
+  bottom: 38px;
+  left: 14px;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.support-incident-dock .support-incident {
+  pointer-events: auto;
+}
+
 .app-shell {
   display: grid;
   grid-template-rows: 48px minmax(0, 1fr) 26px;

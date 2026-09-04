@@ -12,7 +12,7 @@ use std::{
     time::Instant,
 };
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 const ACTIVE_LOG: &str = "tarik.log";
 const DEFAULT_MAX_BYTES: u64 = 2 * 1024 * 1024;
@@ -99,6 +99,25 @@ pub struct LogInfo {
     pub retained_files: usize,
     pub available: bool,
 }
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SupportIncident {
+    pub incident_id: String,
+    pub summary: String,
+    pub log_directory: PathBuf,
+    pub logging_succeeded: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FrontendIncidentInput {
+    pub incident_id: String,
+    pub kind: String,
+    pub message: String,
+}
+
+const LAST_INCIDENT_FILE: &str = "last-incident.json";
 
 impl AppLogger {
     pub fn open(directory: PathBuf) -> Self {
@@ -201,6 +220,43 @@ impl AppLogger {
             operation_id,
             started_at: Instant::now(),
             finished: false,
+        }
+    }
+
+    pub fn create_incident(
+        &self,
+        incident_id: Option<&str>,
+        kind: &str,
+        detail: &str,
+    ) -> SupportIncident {
+        let incident_id = incident_id
+            .filter(|value| uuid::Uuid::parse_str(value).is_ok())
+            .map(ToOwned::to_owned)
+            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+        let kind = sanitize_token(kind);
+        self.record(
+            LogLevel::Error,
+            "incident",
+            &kind,
+            EventFields {
+                incident_id: Some(&incident_id),
+                status: Some("captured"),
+                error_code: Some(&kind),
+                message: Some(detail),
+                ..EventFields::default()
+            },
+        );
+        let incident = SupportIncident {
+            incident_id,
+            summary: incident_summary(&kind).into(),
+            log_directory: self.directory.clone(),
+            logging_succeeded: self.info().available,
+        };
+        let marker_succeeded =
+            kind != "backend.panic" || write_incident_marker(&self.directory, &incident).is_ok();
+        SupportIncident {
+            logging_succeeded: incident.logging_succeeded && marker_succeeded,
+            ..incident
         }
     }
 
@@ -355,6 +411,78 @@ impl Drop for OperationSpan {
     }
 }
 
+pub fn install_panic_hook<R: tauri::Runtime>(logger: Arc<AppLogger>, app: tauri::AppHandle<R>) {
+    use tauri::Emitter;
+
+    let previous = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |panic| {
+        let detail = panic_detail(panic);
+        let incident = logger.create_incident(None, "backend.panic", &detail);
+        let _ = app.emit("support-incident", &incident);
+        eprintln!(
+            "Tarik backend incident {}. Support logs: {}",
+            incident.incident_id,
+            incident.log_directory.display()
+        );
+        previous(panic);
+    }));
+}
+
+fn panic_detail(panic: &std::panic::PanicHookInfo<'_>) -> String {
+    let payload = panic
+        .payload()
+        .downcast_ref::<String>()
+        .cloned()
+        .or_else(|| {
+            panic
+                .payload()
+                .downcast_ref::<&str>()
+                .map(|value| (*value).to_string())
+        })
+        .unwrap_or_else(|| "backend panic".into());
+    match panic.location() {
+        Some(location) => format!("{} at {}:{}", payload, location.file(), location.line()),
+        None => payload,
+    }
+}
+
+fn incident_summary(kind: &str) -> &'static str {
+    match kind {
+        "frontend.render" => "The workbench interface stopped rendering.",
+        "backend.panic" => "A background Tarik operation stopped unexpectedly.",
+        _ => "Tarik could not complete an application operation.",
+    }
+}
+
+fn write_incident_marker(directory: &Path, incident: &SupportIncident) -> std::io::Result<()> {
+    let stage = directory.join(format!(".{LAST_INCIDENT_FILE}.tmp"));
+    let final_path = directory.join(LAST_INCIDENT_FILE);
+    let bytes = serde_json::to_vec(incident).map_err(std::io::Error::other)?;
+    let mut file = OpenOptions::new()
+        .create(true)
+        .truncate(true)
+        .write(true)
+        .open(&stage)?;
+    file.write_all(&bytes)?;
+    file.sync_all()?;
+    fs::rename(stage, final_path)
+}
+
+fn take_incident_marker(directory: &Path) -> Option<SupportIncident> {
+    let path = directory.join(LAST_INCIDENT_FILE);
+    if fs::symlink_metadata(&path)
+        .ok()
+        .is_some_and(|metadata| metadata.file_type().is_symlink() || !metadata.is_file())
+    {
+        return None;
+    }
+    let bytes = fs::read(&path).ok()?;
+    let _ = fs::remove_file(path);
+    let incident: SupportIncident = serde_json::from_slice(&bytes).ok()?;
+    uuid::Uuid::parse_str(&incident.incident_id).ok()?;
+    (incident.log_directory == directory).then_some(incident)
+}
+
 fn open_active(directory: &Path) -> std::io::Result<(BufWriter<File>, u64)> {
     fs::create_dir_all(directory)?;
     let path = directory.join(ACTIVE_LOG);
@@ -435,6 +563,21 @@ pub fn get_log_info(logger: tauri::State<'_, Arc<AppLogger>>) -> LogInfo {
     logger.info()
 }
 
+#[tauri::command]
+pub fn report_frontend_incident(
+    input: FrontendIncidentInput,
+    logger: tauri::State<'_, Arc<AppLogger>>,
+) -> SupportIncident {
+    logger.create_incident(Some(&input.incident_id), &input.kind, &input.message)
+}
+
+#[tauri::command]
+pub fn get_last_support_incident(
+    logger: tauri::State<'_, Arc<AppLogger>>,
+) -> Option<SupportIncident> {
+    take_incident_marker(&logger.directory)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -508,6 +651,28 @@ mod tests {
         assert!(!directory.join("tarik.log.3").exists());
         assert!(!directory.join("tarik.log.9").exists());
         assert_eq!(fs::read_dir(&directory).unwrap().count(), 3);
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn incident_marker_round_trips_once_and_rejects_caller_ids() {
+        let directory = temp_dir("incident");
+        let logger = AppLogger::open(directory.clone());
+        let incident = logger.create_incident(
+            Some("not-a-uuid"),
+            "frontend.render",
+            "Error: render failed",
+        );
+        assert!(uuid::Uuid::parse_str(&incident.incident_id).is_ok());
+        assert_eq!(
+            incident.summary,
+            "The workbench interface stopped rendering."
+        );
+        assert_eq!(take_incident_marker(&directory), None);
+
+        let backend = logger.create_incident(None, "backend.panic", "worker stopped");
+        assert_eq!(take_incident_marker(&directory), Some(backend));
+        assert_eq!(take_incident_marker(&directory), None);
         fs::remove_dir_all(directory).unwrap();
     }
 
