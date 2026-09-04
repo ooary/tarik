@@ -1466,6 +1466,22 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
 
 **Outcome:** Repeatable, measured MVP release with documented limits.
 
+- [x] **E11-T0 Design the release evidence pipeline**
+  - Depends on: E10 implementation and provisional progression
+  - Owns: `docs/design/E11-DESIGN-GRAPH.md`
+  - Deliverables:
+    - Define real-sidecar golden workflow and restart evidence boundaries.
+    - Define fixed-scenario RSS/disk measurements and version-controlled budget verdicts.
+    - Define invoke/filesystem audit, Linux packaging/checksum/smoke, compatibility docs, and deferred-gate release verdict.
+  - Acceptance: graph covers success/failure/resource/test paths and inventories current release gaps before implementation.
+  - Tests: Graph Protocol completeness review and implementation mismatch inventory.
+  - Commit: `docs(design): define E11 release evidence`
+  - Notes:
+    - Golden tests use production managers/coordinators, real SQLite migrations, the real DuckDB sidecar, deterministic fixtures, bounded polling, and a structurally removed isolated root; browser pixel behavior remains in component tests.
+    - Memory budgets measure the sidecar separately because DuckDB/Arrow live there, require machine/dataset metadata in every report, and may change bounded defaults only with recorded evidence.
+    - Security review removes generic invoke mutators that bypass ownership, uses non-null CSP and action-specific plugin permissions, and proves native-dialog/owned-root boundaries with adversarial paths and identifiers.
+    - E11 ships Linux artifacts only; Windows remains E12. The ship verdict remains REVIEW while deferred E6/E7/E10 manual gates are unsigned.
+
 - [ ] **E11-T1 Add end-to-end golden workflows**
   - Depends on: E4, E5, E6, E7, E8, E9 core tasks
   - Owns: E2E tests and fixtures
