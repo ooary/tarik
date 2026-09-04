@@ -15,16 +15,18 @@ No external service, account, or credential store is required. SQL and analytica
 
 ## Development
 
-Requirements: Node from `.node-version`, Rust 1.91.0, Linux Tauri/WebKitGTK development libraries, Clang/mold, and Python 3 for release tooling.
+Requirements: Node from `.node-version` and Rust 1.91.0. Linux additionally needs the Tauri/WebKitGTK development libraries and Clang/mold; Python 3 is used by release tooling. Windows uses the native MSVC Rust toolchain and the WebView2 runtime included with supported Windows 10/11 systems.
 
 ```bash
 npm ci
-./scripts/build-engine.sh
-./scripts/check-engine.sh
+npm run engine:build
+npm run engine:check
 npm run tauri dev
 ```
 
-The desktop does not link DuckDB or Arrow. All analytical work runs in the long-lived `tarik-engine-duckdb` sidecar, which links the pinned DuckDB 1.5.5 `libduckdb.so`. Build the sidecar before desktop development and after removing `target/debug`.
+These npm commands run natively on Linux and Windows without Git Bash or WSL. The existing shell wrappers delegate to the same Node tooling for Linux documentation and release compatibility.
+
+The desktop does not link DuckDB or Arrow. All analytical work runs in the long-lived `tarik-engine-duckdb` sidecar, which links pinned DuckDB 1.5.5 (`libduckdb.so` on Linux, `duckdb.dll` on Windows). Build the sidecar before desktop development and after removing `target/debug`.
 
 If another development process owns port 1420:
 
@@ -39,8 +41,8 @@ Do not use `cargo clean` as a routine blank-screen fix. See [`docs/development/F
 ```bash
 cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
-./scripts/build-engine.sh
-./scripts/check-engine.sh
+npm run engine:build
+npm run engine:check
 cargo test --workspace --no-fail-fast
 npm run format:check
 npm run lint

@@ -1747,11 +1747,16 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
     - Windows engine discovery now uses `tarik-engine-duckdb.exe`; the sidecar emits `$ORIGIN` only for Linux, and integration tests set `LD_LIBRARY_PATH` only on Unix. Full Linux regression remains green.
     - This local checkout has no Git remote, so a hosted runner could not be triggered here. The workflow is fail-closed and becomes authoritative on its first push/PR; local MSVC-target checking reached native SQLite/zstd build scripts before stopping because Linux has no MSVC C linker.
 
-- [ ] **E12-T2 Make development and filesystem boundaries cross-platform**
+- [x] **E12-T2 Make development and filesystem boundaries cross-platform**
   - Depends on: E12-T1
   - Deliverables: replace Bash-only reset workflow with cross-platform tooling; test drive-letter, spaces, Unicode, long paths, UNC paths, read-only files, and file-lock errors.
   - Acceptance: Windows development and all local file workflows require no Unix compatibility layer.
-  - Commit: `fix(platform): support windows paths and development`
+  - Commits: `00444e4 fix(platform): add native cross-platform dev tooling`; `3e99dc3 test(engine): isolate sidecar result caches`; `19ba067 test(platform): cover native windows filesystem boundaries`
+  - Notes:
+    - `npm run engine:build`, `engine:check`, `dev:reset`, `tauri:dev:clean`, and `dev:webview-reset` now use Node 24/native OS APIs. Windows process discovery uses CIM and termination uses `taskkill`; Linux wrappers delegate to the same implementation. No Git Bash/WSL is required.
+    - Engine staging is constrained to the active Rust host triple and pinned DuckDB 1.5.5. Sidecar protocol tests own isolated native result roots rather than racing over a shared `/tmp` path.
+    - Real sidecar coverage now opens a >260-character Unicode/space DuckDB path, imports a read-only Unicode CSV, pages a result, exports to a Unicode directory, and runs the same flow through a localhost UNC share on Windows CI. On-disk metadata reopens from a Unicode/space path.
+    - Native Windows exclusive-handle tests require managed rename and export replacement to fail without changing project metadata or the original file. Unix read-only output coverage requires no final/hidden export artifact. Full Linux Rust/frontend/sidecar gates remain green.
 
 - [ ] **E12-T3 Configure portable Windows release artifact**
   - Depends on: E11-T3, E12-T2
