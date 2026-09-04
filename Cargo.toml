@@ -3,7 +3,6 @@ resolver = "2"
 members = [
   "src-tauri",
   "crates/engine-protocol",
-  "crates/arrow-page-format",
   "crates/engine-client",
   "engines/duckdb",
 ]
@@ -13,7 +12,6 @@ members = [
 default-members = [
   "src-tauri",
   "crates/engine-protocol",
-  "crates/arrow-page-format",
   "crates/engine-client",
 ]
 

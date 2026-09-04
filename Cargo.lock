@@ -4144,7 +4144,6 @@ dependencies = [
  "rusqlite",
  "serde",
  "serde_json",
- "tarik-arrow-page-format",
  "tarik-engine-client",
  "tarik-engine-protocol",
  "tauri",
@@ -4153,16 +4152,6 @@ dependencies = [
  "tauri-plugin-opener",
  "thiserror 2.0.20",
  "uuid",
-]
-
-[[package]]
-name = "tarik-arrow-page-format"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
- "tarik-engine-protocol",
- "thiserror 2.0.20",
 ]
 
 [[package]]
@@ -4187,7 +4176,6 @@ dependencies = [
  "parquet",
  "serde",
  "serde_json",
- "tarik-arrow-page-format",
  "tarik-engine-protocol",
  "thiserror 2.0.20",
  "uuid",

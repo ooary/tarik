@@ -862,7 +862,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
 
 - [x] **E5.5-T2 Define result-page and export interchange format** — owner: lead-agent
   - Depends on: E5.5-T1
-  - Owns: `crates/arrow-page-format/`, engine result writer, bounded page reader
+  - Historical ownership: result-page model, engine result writer, bounded page reader. The placeholder `crates/arrow-page-format/` was superseded by E6's concrete DuckDB page writer and desktop bounded reader, then removed with production-unreachability proof in E12-T0.
   - Deliverables:
     - Result metadata plus bounded pages; full datasets never cross Tauri IPC.
     - Arrow IPC or Parquet artifacts written by the engine and read in bounded pages.
@@ -1815,7 +1815,7 @@ For chunk size `1,000,000`, verify outputs for:
 # Open decisions — resolve before affected task starts
 
 - [x] **D1:** Linux remains the development platform; Windows 10/11 x64 portable ZIP is the first additional release target. No Windows installer is required.
-- [x] **D2:** Pin `duckdb` Rust binding `1.10505.0`. Normal development no longer uses `bundled`; the DuckDB adapter links a pinned prebuilt dynamic library. Binary Arrow transport is resolved as `crates/arrow-page-format` in E5.5-T2 instead of a separate measurement task.
+- [x] **D2:** Pin `duckdb` Rust binding `1.10505.0`. Normal development no longer uses `bundled`; the DuckDB adapter links a pinned prebuilt dynamic library. Bounded Arrow transport is implemented by the DuckDB adapter page writer and desktop bounded reader; E12-T0 removed the earlier unreferenced `crates/arrow-page-format` placeholder.
 - [ ] **D3:** Choose the Arrow batch transport strategy across Tauri IPC after measuring JSON vs binary transfer overhead.
 - [ ] **D4:** Define default result page size, cache size, and worker count from E11-T2 measurements rather than guesses.
 - [ ] **D5:** Define whether “empty export” creates no files or one schema-only file; document consistently.

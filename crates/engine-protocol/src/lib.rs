@@ -420,15 +420,6 @@ pub struct ResultInfo {
     pub page_dir: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PageInfo {
-    pub offset: u64,
-    pub rows: u64,
-    /// Path to an Arrow IPC or Parquet page artifact.
-    pub artifact: String,
-}
-
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CatalogObject {

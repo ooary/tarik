@@ -9,7 +9,6 @@ The Tarik desktop app no longer depends on DuckDB or Arrow crates. All DuckDB wo
 ```text
 Cargo.toml                    # workspace; default-members = desktop + protocol/client
 crates/engine-protocol/       # versioned request/response, capabilities, errors
-crates/arrow-page-format/     # bounded result page model (T2)
 crates/engine-client/         # EngineProcess spawn + framing + typed requests
 engines/duckdb/               # DuckDB adapter binary (built separately)
 src-tauri/                    # desktop: no duckdb/arrow dependencies
@@ -68,6 +67,6 @@ The desktop resolves the engine binary as a sibling of the current executable, f
 ## Remaining E5.5 follow-ups
 
 - `duckdb.session.configure` for resource profiles (memory/threads) in a later task.
-- Wire `engine.plan.explain`/`query.execute` once E6 starts; `crates/arrow-page-format` is ready for bounded result pages.
+- E6 later implemented bounded Arrow page artifacts directly in the DuckDB adapter with a bounded decoded-page LRU in the desktop. The unused placeholder `crates/arrow-page-format` abstraction was removed in E12-T0.
 - Deterministic runtime library discovery and packaging for Windows portable (E12).
 - Engine crash detection/restart policy.
