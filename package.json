@@ -20,6 +20,7 @@
     "dev:webview-reset": "rm -rf ~/.local/share/com.tarik.desktop",
     "sweep": "cargo sweep --time 30 --manifest-path src-tauri/Cargo.toml",
     "benchmark:memory": "python3 scripts/benchmark-memory.py",
+    "docs:check": "python3 scripts/check-docs.py",
     "release:linux": "./scripts/release-linux.sh"
   },
   "dependencies": {

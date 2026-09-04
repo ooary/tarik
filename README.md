@@ -1,42 +1,85 @@
 # Tarik
 
-A local-first desktop SQL workbench for beginner data engineers.
+Tarik is a local-first desktop SQL workbench for beginner data engineers. It opens local DuckDB projects, imports CSV/Parquet into tables, links Parquet as views, runs cancellable SQL with bounded result browsing, explains estimated and actual query flows, saves SQL, keeps local history, and streams exact-row CSV/Parquet export parts.
 
-## Current status
+No external service, account, or credential store is required. SQL and analytical data remain local to files you choose; operational metadata is stored in local SQLite.
 
-The repository is in the E0 foundation phase. The authoritative delivery tracker is [`TASK.md`](./TASK.md).
+> **Release status:** E11 is in progress. Linux x86_64 artifacts can be built and smoke-tested, but final release acceptance remains blocked by deferred E6, E7, and E10 manual reviews. Windows portable support is E12.
 
-## Telegram agent status polling
+## Start here
 
-A separate Telegram agent can periodically read the current development status over SSH:
-
-```bash
-ssh <host> /home/ooary/Projects/Tarik/.tarik-agent/read-status
-```
-
-The command writes nothing, returns one JSON document, and only reads the repository-owned `.tarik-agent/status.json`. It refuses to follow a symlinked status file.
-
-Status changes are represented by `state` values such as `working`, `completed`, `blocked`, `waiting_for_user_review`, and `unknown`. Polling agents should notify only when the state, task, commit, or `needsUserReview` value changes.
-
-The status file is operational state and is intentionally ignored by Git. Do not place secrets, full SQL results, or full logs in it.
+- Beginner setup and full workflow: [`docs/user/USER-GUIDE.md`](docs/user/USER-GUIDE.md)
+- Upgrade and backup contract: [`docs/release/COMPATIBILITY.md`](docs/release/COMPATIBILITY.md)
+- Release checklist: [`docs/release/SHIP-CHECKLIST.md`](docs/release/SHIP-CHECKLIST.md)
+- Delivery status and manual gates: [`TASK.md`](TASK.md)
 
 ## Development
 
+Requirements: Node from `.node-version`, Rust 1.91.0, Linux Tauri/WebKitGTK development libraries, Clang/mold, and Python 3 for release tooling.
+
 ```bash
-npm install
-
-# Build the DuckDB engine sidecar first. It links the official prebuilt
-# libduckdb (DUCKDB_DOWNLOAD_LIB=1 in .cargo/config.toml), so no bundled
-# C++ compilation happens.
-cargo build -p tarik-engine-duckdb   # or: ./scripts/build-engine.sh (also places libduckdb beside the binary)
-
-npm run dev
+npm ci
+./scripts/build-engine.sh
+./scripts/check-engine.sh
 npm run tauri dev
+```
 
-# If an older development process still owns port 1420:
+The desktop does not link DuckDB or Arrow. All analytical work runs in the long-lived `tarik-engine-duckdb` sidecar, which links the pinned DuckDB 1.5.5 `libduckdb.so`. Build the sidecar before desktop development and after removing `target/debug`.
+
+If another development process owns port 1420:
+
+```bash
 npm run tauri:dev:clean
 ```
 
-The desktop app does not compile DuckDB or Arrow. All DuckDB work runs in the `tarik-engine-duckdb` sidecar process; build it before `tauri dev`.
+Do not use `cargo clean` as a routine blank-screen fix. See [`docs/development/FAST-RUST-BUILDS.md`](docs/development/FAST-RUST-BUILDS.md).
 
-See `TASK.md` for the full architecture, task dependencies, manual EPIC review gates, and required atomic Git workflow.
+## Verification
+
+```bash
+cargo fmt --all --check
+cargo clippy --workspace --all-targets -- -D warnings
+./scripts/build-engine.sh
+./scripts/check-engine.sh
+cargo test --workspace --no-fail-fast
+npm run format:check
+npm run lint
+npm run typecheck
+npm test
+npm run test:ui
+npm run build
+```
+
+The Rust workspace includes a real-sidecar golden workflow covering project creation, CSV import, Parquet link, joined result paging, Estimate/Actual Flow, saved SQL, export, cancellation, full service restart, missing-link recovery, and session/history restore.
+
+## Memory evidence
+
+```bash
+CARGO_BUILD_PROFILE=release ./scripts/build-engine.sh
+npm run benchmark:memory -- --record
+```
+
+See [`docs/performance/E11-MEMORY.md`](docs/performance/E11-MEMORY.md) for fixed workloads, machine metadata, recorded release measurements, bounded defaults, and regression budgets.
+
+## Linux release artifacts
+
+```bash
+npm run release:linux
+```
+
+This builds and verifies Linux x86_64 DEB, AppImage, and portable tar artifacts under `target/release-artifacts/`, including the desktop, DuckDB sidecar, `libduckdb.so`, MIT/third-party notices, compatibility guidance, SHA-256 checksums, and a release manifest. Artifacts are currently unsigned. Windows packaging is not part of E11.
+
+## Local data locations (Linux)
+
+```text
+~/.local/share/com.tarik.desktop/tarik.sqlite   operational metadata and editor drafts
+~/.local/share/com.tarik.desktop/projects/      Tarik-managed DuckDB projects
+~/.local/share/com.tarik.desktop/logs/          bounded diagnostic JSONL logs
+~/.cache/com.tarik.desktop/                     ephemeral results and recovery manifests
+```
+
+External DuckDB, CSV, Parquet, and completed export files remain where you choose. Tarik does not move or delete an external DuckDB file when you forget its project registration.
+
+## License
+
+Tarik is available under the [MIT License](LICENSE). See [third-party notices](THIRD_PARTY_NOTICES.md).

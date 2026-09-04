@@ -1546,7 +1546,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
     - Built artifacts: 139 MiB AppImage, 30 MiB DEB, and 29 MiB portable tarball in `target/release-artifacts`; all checksums pass. Artifacts are explicitly unsigned and the manifest retains deferred E6/E7/E10 release gates.
     - AppImage uses `NO_STRIP=true` because rolling-distribution symbols can break linuxdeploy's strip tool; Cargo's release profile already strips Rust binaries. Windows packaging remains E12 and is not implied.
 
-- [ ] **E11-T5 Write user documentation and ship checklist**
+- [x] **E11-T5 Write user documentation and ship checklist**
   - Depends on: E11-T4
   - Owns: README/user docs/release checklist
   - Deliverables:
@@ -1555,6 +1555,13 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: a new user can complete the golden workflow without developer help.
   - Tests: manual documentation walkthrough.
   - Commit: `docs(app): add mvp user guide`
+  - Guide: `docs/user/USER-GUIDE.md`
+  - Ship gate: `docs/release/SHIP-CHECKLIST.md`
+  - Notes:
+    - Replaced the stale foundation README with exact setup, verification, memory, Linux packaging, data-location, license, and pre-release/deferred-gate guidance.
+    - Added a beginner walkthrough for project ownership, CSV/Parquet import/link tradeoffs, table/view semantics, completion/diagnostics, bounded result browsing, Estimate versus Actual Flow, saved queries/history, exact export/cancel/recovery behavior, logs/cache, backup/upgrades, removal, and known limitations using current visible labels.
+    - Added an evidence-based ship checklist covering versions, direct full gates, memory budgets, security boundaries, artifact content/checksums/smokes, documentation walkthrough, clean-machine package tests, and final publication. E6/E7/E10 remain explicit unchecked release blockers.
+    - Added `npm run docs:check` and CI enforcement for local Markdown links, documented npm commands, version parity, required beginner topics, and retained deferred gates.
 
 ---
 
