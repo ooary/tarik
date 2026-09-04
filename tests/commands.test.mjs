@@ -320,19 +320,31 @@ test("session snapshots use typed metadata commands", async () => {
   assert.equal(calls[1].command, "load_query_session");
 });
 
-test("getAppDirectories invokes the typed path command", async () => {
-  const { getAppDirectories } = await loadCommandsModule();
+test("app paths and log metadata use typed commands", async () => {
+  const { getAppDirectories, getLogInfo } = await loadCommandsModule();
   const expected = {
     dataDir: "/tmp/tarik/data",
     cacheDir: "/tmp/tarik/cache",
     logDir: "/tmp/tarik/logs",
   };
+  const logInfo = {
+    directory: "/tmp/tarik/logs",
+    activeFile: "/tmp/tarik/logs/tarik.log",
+    maxFileBytes: 2097152,
+    retainedFiles: 7,
+    available: true,
+  };
   const calls = [];
-  const result = await getAppDirectories(async (command, args) => {
+  const invoke = async (command, args) => {
     calls.push({ command, args });
-    return expected;
-  });
+    return command === "get_app_directories" ? expected : logInfo;
+  };
+  const result = await getAppDirectories(invoke);
+  assert.deepEqual(await getLogInfo(invoke), logInfo);
 
-  assert.deepEqual(calls, [{ command: "get_app_directories", args: undefined }]);
+  assert.deepEqual(calls, [
+    { command: "get_app_directories", args: undefined },
+    { command: "get_log_info", args: undefined },
+  ]);
   assert.deepEqual(result, expected);
 });

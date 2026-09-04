@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use serde::Serialize;
 use tarik_engine_protocol::{
     CatalogSnapshot, CsvOptions, ImportOptions, SourceInspection, SourceKind, SourceRecord,
@@ -5,9 +7,12 @@ use tarik_engine_protocol::{
 };
 use tauri::State;
 
-use crate::metadata::{
-    sources::{self, SourcesRepository},
-    MetadataDb,
+use crate::{
+    metadata::{
+        sources::{self, SourcesRepository},
+        MetadataDb,
+    },
+    observability::AppLogger,
 };
 
 use super::{ActiveProject, ProjectManager, ProjectRemoval};
@@ -78,9 +83,20 @@ pub struct SourceMutationResult {
 pub async fn create_project(
     name: String,
     manager: State<'_, ProjectManager>,
+    logger: State<'_, Arc<AppLogger>>,
 ) -> Result<ActiveProject, String> {
+    let span = logger.inner().operation("project", "create", None);
     let manager = manager.inner().clone();
-    blocking(move || manager.create(&name)).await
+    match blocking(move || manager.create(&name)).await {
+        Ok(project) => {
+            span.succeed();
+            Ok(project)
+        }
+        Err(error) => {
+            span.fail("project.create", &error);
+            Err(error)
+        }
+    }
 }
 
 #[tauri::command]
@@ -88,9 +104,20 @@ pub async fn open_project(
     name: String,
     duckdb_path: String,
     manager: State<'_, ProjectManager>,
+    logger: State<'_, Arc<AppLogger>>,
 ) -> Result<ActiveProject, String> {
+    let span = logger.inner().operation("project", "open", None);
     let manager = manager.inner().clone();
-    blocking(move || manager.open(&name, std::path::Path::new(&duckdb_path))).await
+    match blocking(move || manager.open(&name, std::path::Path::new(&duckdb_path))).await {
+        Ok(project) => {
+            span.succeed();
+            Ok(project)
+        }
+        Err(error) => {
+            span.fail("project.open", &error);
+            Err(error)
+        }
+    }
 }
 
 #[tauri::command]
@@ -122,9 +149,23 @@ pub async fn remove_project(
 }
 
 #[tauri::command]
-pub async fn close_project(manager: State<'_, ProjectManager>) -> Result<bool, String> {
+pub async fn close_project(
+    manager: State<'_, ProjectManager>,
+    logger: State<'_, Arc<AppLogger>>,
+) -> Result<bool, String> {
+    let project_id = manager.active().ok().flatten().map(|project| project.id);
+    let span = logger.inner().operation("project", "close", project_id);
     let manager = manager.inner().clone();
-    blocking(move || manager.close()).await
+    match blocking(move || manager.close()).await {
+        Ok(closed) => {
+            span.succeed();
+            Ok(closed)
+        }
+        Err(error) => {
+            span.fail("project.close", &error);
+            Err(error)
+        }
+    }
 }
 
 #[tauri::command]

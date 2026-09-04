@@ -4,7 +4,7 @@ use tarik_engine_protocol::ExportOptions;
 use tauri::State;
 
 use super::{ExportCoordinator, ExportView};
-use crate::projects::ProjectManager;
+use crate::{observability::AppLogger, projects::ProjectManager};
 
 #[tauri::command]
 pub fn execute_export(
@@ -13,6 +13,7 @@ pub fn execute_export(
     options: ExportOptions,
     coordinator: State<'_, Arc<ExportCoordinator>>,
     projects: State<'_, ProjectManager>,
+    logger: State<'_, Arc<AppLogger>>,
 ) -> Result<ExportView, String> {
     let active = projects
         .active()
@@ -24,7 +25,19 @@ pub fn execute_export(
             active.id, project_id
         ));
     }
-    coordinator.execute(&project_id, &sql, options)
+    let span = logger
+        .inner()
+        .operation("export", "submit", Some(project_id.clone()));
+    match coordinator.execute(&project_id, &sql, options) {
+        Ok(view) => {
+            span.succeed();
+            Ok(view)
+        }
+        Err(error) => {
+            span.fail("export.submit", &error);
+            Err(error)
+        }
+    }
 }
 
 #[tauri::command]

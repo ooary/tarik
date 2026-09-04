@@ -11,6 +11,7 @@ import {
   dropCatalogObject,
   getActiveProject,
   getRuntimeInfo,
+  getLogInfo,
   getWorkbenchPreferences,
   importSourceTable,
   inspectProjectCatalog,
@@ -25,6 +26,7 @@ import {
   repairLinkedSource,
   renameProject,
   reopenRecentProject,
+  revealLogDirectory,
   saveQuerySession,
   setWorkbenchPreferences,
 } from "./lib/commands";
@@ -39,6 +41,7 @@ vi.mock("./lib/commands", () => ({
   dropCatalogObject: vi.fn(),
   getActiveProject: vi.fn(),
   getRuntimeInfo: vi.fn(),
+  getLogInfo: vi.fn(),
   getWorkbenchPreferences: vi.fn(),
   importSourceTable: vi.fn(),
   inspectProjectCatalog: vi.fn(),
@@ -54,6 +57,7 @@ vi.mock("./lib/commands", () => ({
   renameProject: vi.fn(),
   reopenRecentProject: vi.fn(),
   releaseAllResults: vi.fn(),
+  revealLogDirectory: vi.fn(),
   saveQuerySession: vi.fn(),
   setWorkbenchPreferences: vi.fn(),
 }));
@@ -78,6 +82,13 @@ describe("Tarik workbench shell", () => {
     vi.clearAllMocks();
     runtimeInfoMock.mockReset();
     vi.mocked(getWorkbenchPreferences).mockResolvedValue(null);
+    vi.mocked(getLogInfo).mockResolvedValue({
+      directory: "/tmp/tarik/logs",
+      activeFile: "/tmp/tarik/logs/tarik.log",
+      maxFileBytes: 2 * 1024 * 1024,
+      retainedFiles: 7,
+      available: true,
+    });
     vi.mocked(setWorkbenchPreferences).mockResolvedValue(undefined);
     vi.mocked(getActiveProject).mockResolvedValue(null);
     vi.mocked(inspectProjectCatalog).mockResolvedValue({ objects: [], columns: [] });
@@ -583,6 +594,16 @@ describe("Tarik workbench shell", () => {
         expect.objectContaining({ theme: "dark" }),
       ),
     );
+  });
+
+  it("reveals the bounded support log directory from settings", async () => {
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    expect(await screen.findByText("7 files, up to 2 MiB each")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Reveal logs" }));
+
+    expect(revealLogDirectory).toHaveBeenCalledWith("/tmp/tarik/logs");
   });
 
   it("shows a browser-safe connection state when Tauri is unavailable", async () => {

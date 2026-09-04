@@ -1382,7 +1382,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
     - Cleanup may recurse only below Tarik-owned cache roots. User-selected export directories require exact per-export crash manifests and exact hidden filenames; canonical completed export parts are never deleted.
     - Shutdown policy is explicit: flush latest drafts/preferences, cancel queued/running query and export work, wait up to two seconds for terminal persistence, release ephemeral results, close DuckDB/sidecar, checkpoint SQLite, then flush logs and close.
 
-- [ ] **E10-T1 Add structured rolling file logging**
+- [x] **E10-T1 Add structured rolling file logging**
   - Depends on: E0-T4
   - Owns: `src-tauri/src/observability/`
   - Deliverables:
@@ -1392,6 +1392,11 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: user can reveal logs from settings; rotation bounds disk use.
   - Tests: rotation/retention and redaction tests.
   - Commit: `feat(logging): add rolling diagnostic logs`
+  - Notes:
+    - Added a closed-schema JSONL logger with 2 MiB active-file rotation and six archives (seven files total). It degrades to stderr on directory/write/rotation failure instead of failing user operations.
+    - Events accept only stable target/event names, operation/project/incident IDs, duration, status, error code, and one bounded operational message. SQL-like messages are redacted and there is no payload/result/arbitrary-map channel.
+    - Project create/open/close and query/export submission now emit paired operation spans with generated operation IDs and durations; app startup/shutdown are recorded without SQL or result data.
+    - Settings shows the exact retention policy and reveals the Tauri-resolved log directory through the existing opener boundary.
 
 - [ ] **E10-T2 Add panic/error boundary and support diagnostics**
   - Depends on: E10-T1, E1-T1

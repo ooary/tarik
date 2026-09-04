@@ -254,6 +254,38 @@ button:active {
   font-size: 11px;
 }
 
+.settings-diagnostics {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 16px;
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 14px;
+}
+
+.settings-diagnostics > div {
+  display: grid;
+  gap: 3px;
+}
+
+.settings-diagnostics strong {
+  font-size: 12px;
+}
+
+.settings-diagnostics span {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.settings-diagnostics .text-button {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
 .engine-status {
   display: inline-flex;
   align-items: center;

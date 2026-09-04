@@ -1,6 +1,7 @@
 mod engine_manager;
 mod export;
 mod metadata;
+mod observability;
 mod paths;
 mod plan;
 mod projects;
@@ -14,6 +15,8 @@ use std::{
 
 use serde::Serialize;
 use tauri::Manager;
+
+use observability::{AppLogger, EventFields, LogLevel};
 
 /// Locate the DuckDB engine adapter binary.
 ///
@@ -74,6 +77,16 @@ pub fn run() {
         .setup(|app| {
             let directories = paths::resolve_directories(app.handle())
                 .map_err(|error| Box::new(error) as Box<dyn std::error::Error>)?;
+            let logger = Arc::new(AppLogger::open(directories.log_dir.clone()));
+            logger.record(
+                LogLevel::Info,
+                "app",
+                "startup",
+                EventFields {
+                    status: Some("started"),
+                    ..EventFields::default()
+                },
+            );
             let database = metadata::MetadataDb::open(directories.data_dir.join("tarik.sqlite"))
                 .map_err(|error| Box::new(error) as Box<dyn std::error::Error>)?;
             let result_root = directories.cache_dir.join("results");
@@ -98,6 +111,7 @@ pub fn run() {
                 database.clone(),
             ));
             let results_store = Arc::new(results::ResultStore::new(engine.clone()));
+            app.manage(logger);
             app.manage(database);
             app.manage(engine);
             app.manage(project_manager);
@@ -114,11 +128,24 @@ pub fn run() {
                 {
                     engine.shutdown();
                 }
+                if let Some(logger) = window.app_handle().try_state::<Arc<AppLogger>>() {
+                    logger.record(
+                        LogLevel::Info,
+                        "app",
+                        "shutdown",
+                        EventFields {
+                            status: Some("destroyed"),
+                            ..EventFields::default()
+                        },
+                    );
+                    let _ = logger.flush();
+                }
             }
         })
         .invoke_handler(tauri::generate_handler![
             get_runtime_info,
             get_app_directories,
+            observability::get_log_info,
             metadata::commands::get_workbench_preferences,
             metadata::commands::set_workbench_preferences,
             metadata::commands::upsert_recent_project,

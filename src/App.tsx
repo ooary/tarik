@@ -1,4 +1,10 @@
-import { DatabaseIcon, ListIcon, PlusIcon, TableIcon } from "@phosphor-icons/react";
+import {
+  DatabaseIcon,
+  FolderOpenIcon,
+  ListIcon,
+  PlusIcon,
+  TableIcon,
+} from "@phosphor-icons/react";
 import { useEffect, useRef, useState } from "react";
 import "./App.css";
 import { ContextMenu, Dialog } from "./components/ui";
@@ -22,6 +28,7 @@ import {
   releaseAllResults,
   getActiveProject,
   getRuntimeInfo,
+  getLogInfo,
   getWorkbenchPreferences,
   importSourceTable,
   inspectProjectCatalog,
@@ -35,6 +42,7 @@ import {
   repairLinkedSource,
   renameProject,
   reopenRecentProject,
+  revealLogDirectory,
   setWorkbenchPreferences,
   type ActiveProject,
   type CsvOptions,
@@ -44,6 +52,7 @@ import {
   type SourceInspection,
   type SourceRecord,
   type RuntimeInfo,
+  type LogInfo,
 } from "./lib/commands";
 
 type RuntimeState =
@@ -81,6 +90,7 @@ function App() {
   const [sourceError, setSourceError] = useState<string | null>(null);
   const [projectError, setProjectError] = useState<string | null>(null);
   const [preferencesReady, setPreferencesReady] = useState(false);
+  const [logInfo, setLogInfo] = useState<LogInfo | null>(null);
   const [preferences, setPreferences] = useState<WorkbenchPreferences>(defaultWorkbenchPreferences);
   const { bottomPanelOpen: bottomOpen, sidebarOpen } = preferences;
 
@@ -136,6 +146,12 @@ function App() {
             }
           },
         );
+      })
+      .catch(() => undefined);
+
+    getLogInfo()
+      .then((info) => {
+        if (active) setLogInfo(info);
       })
       .catch(() => undefined);
 
@@ -423,6 +439,25 @@ function App() {
                 </button>
               ))}
             </div>
+            <section className="settings-diagnostics" aria-label="Support diagnostics">
+              <div>
+                <strong>Support logs</strong>
+                <span>
+                  {logInfo
+                    ? `${logInfo.retainedFiles} files, up to ${Math.round(logInfo.maxFileBytes / 1024 / 1024)} MiB each`
+                    : "Log location unavailable"}
+                </span>
+              </div>
+              <button
+                className="text-button"
+                disabled={!logInfo}
+                onClick={() => logInfo && void revealLogDirectory(logInfo.directory)}
+                type="button"
+              >
+                <FolderOpenIcon aria-hidden="true" size={14} />
+                Reveal logs
+              </button>
+            </section>
           </Dialog>
         </div>
       </header>

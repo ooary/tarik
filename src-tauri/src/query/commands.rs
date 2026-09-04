@@ -5,7 +5,7 @@ use std::sync::Arc;
 use tauri::State;
 
 use super::QueryCoordinator;
-use crate::{engine_manager::EngineManager, projects::ProjectManager};
+use crate::{engine_manager::EngineManager, observability::AppLogger, projects::ProjectManager};
 
 #[tauri::command]
 pub fn validate_query(
@@ -41,6 +41,7 @@ pub fn execute_query(
     sql: String,
     coordinator: State<'_, Arc<QueryCoordinator>>,
     projects: State<'_, ProjectManager>,
+    logger: State<'_, Arc<AppLogger>>,
 ) -> Result<super::ExecutionView, String> {
     let active = projects
         .active()
@@ -52,7 +53,19 @@ pub fn execute_query(
             active.id, project_id
         ));
     }
-    coordinator.execute(&active.id, &tab_id, &sql)
+    let span = logger
+        .inner()
+        .operation("query", "submit", Some(active.id.clone()));
+    match coordinator.execute(&active.id, &tab_id, &sql) {
+        Ok(view) => {
+            span.succeed();
+            Ok(view)
+        }
+        Err(error) => {
+            span.fail("query.submit", &error);
+            Err(error)
+        }
+    }
 }
 
 #[tauri::command]

@@ -15,6 +15,14 @@ export interface AppDirectories {
   logDir: string;
 }
 
+export interface LogInfo {
+  directory: string;
+  activeFile: string;
+  maxFileBytes: number;
+  retainedFiles: number;
+  available: boolean;
+}
+
 export interface ActiveProject {
   id: string;
   name: string;
@@ -123,6 +131,14 @@ export function getRuntimeInfo(invokeCommand: InvokeCommand = invoke): Promise<R
 
 export function getAppDirectories(invokeCommand: InvokeCommand = invoke): Promise<AppDirectories> {
   return invokeCommand<AppDirectories>("get_app_directories");
+}
+
+export function getLogInfo(invokeCommand: InvokeCommand = invoke): Promise<LogInfo> {
+  return invokeCommand<LogInfo>("get_log_info");
+}
+
+export function revealLogDirectory(directory: string): Promise<void> {
+  return revealItemInDir(directory);
 }
 
 export function getWorkbenchPreferences(
