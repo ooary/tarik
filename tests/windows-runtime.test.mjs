@@ -140,7 +140,12 @@ function passingReport() {
       handshake: { engineId: "duckdb", protocolVersion: 1 },
       largeResult: { rows: 100_000, firstPageRows: 500, lastPageRows: 500 },
       resultCacheBytesAfterRelease: 0,
-      completedExport: { state: "succeeded", rowsWritten: 250_000, filesWritten: 3 },
+      completedExport: {
+        state: "succeeded",
+        rowsWritten: 250_000,
+        filesWritten: 3,
+        parts: [{ rows: 100_000 }, { rows: 100_000 }, { rows: 50_000 }],
+      },
       cancelledExport: { state: "cancelled", hiddenStagesAfterCancel: [] },
       peakSidecarRssBytes: 120 * 1024 * 1024,
       cleanExit: true,

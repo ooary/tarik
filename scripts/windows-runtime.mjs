@@ -180,6 +180,10 @@ export function runtimeFailures(report, budgets = WINDOWS_RUNTIME_BUDGETS) {
     failures.push("completed export row count differed");
   if (report.engine?.completedExport?.filesWritten !== 3)
     failures.push("completed export part count differed");
+  const partRows = report.engine?.completedExport?.parts?.map((part) => part.rows);
+  if (JSON.stringify(partRows) !== JSON.stringify([100_000, 100_000, 50_000])) {
+    failures.push("completed export part boundaries differed");
+  }
   if (report.engine?.cancelledExport?.state !== "cancelled")
     failures.push("long export did not cancel");
   if (

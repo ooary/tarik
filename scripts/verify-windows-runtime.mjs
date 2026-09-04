@@ -385,6 +385,11 @@ async function runEngineWorkload(executable, workloadRoot) {
         state: completedExport.state,
         rowsWritten: completedExport.rowsWritten,
         filesWritten: completedExport.filesWritten,
+        parts: completedExport.completedParts.map(({ partNumber, rows, bytes }) => ({
+          partNumber,
+          rows,
+          bytes,
+        })),
         outputBytes: await directoryBytes(completeOutput),
       },
       cancelledExport: {

@@ -53,7 +53,7 @@ The report must have `schemaVersion: 1` and `verdict.automatedPassed: true`. A m
 - [ ] Peak working set for the full Tarik/WebView2 descendant tree is sampled and remains at or below 768 MiB for the fixed idle launch/restart smoke. This is a conservative regression ceiling, not an idle-memory claim.
 - [ ] The extracted sidecar handshakes as DuckDB protocol 1 with its sibling `duckdb.dll`.
 - [ ] A 100,000-row result publishes bounded pages; first and last 500-row pages are readable; result cache is zero bytes after release.
-- [ ] A 250,000-row CSV export succeeds as exactly three parts at 100,000 rows per part.
+- [ ] A 250,000-row CSV export succeeds with exact part rows `100,000 / 100,000 / 50,000`.
 - [ ] A one-billion-row requested export reaches running, is cancelled, and leaves no hidden `.tarik-export-*` stage.
 - [ ] Sidecar peak working set is sampled and remains at or below 512 MiB for the fixed workload.
 - [ ] The sidecar closes its session and exits cleanly after stdin closes.
