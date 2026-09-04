@@ -1363,7 +1363,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
 
 ## EPIC E10 — Diagnostics, recovery, and cleanup
 
-**Status:** `IN PROGRESS` - E10 recovery and shutdown boundaries designed; E10-T1 structured logging is active.
+**Status:** `REVIEW` - E10-T1 through E10-T4 implemented with full automated gates passing. Awaiting combined logging, incident, cleanup, and shutdown manual sign-off.
 
 **Outcome:** Diagnosable failures and bounded on-disk application state.
 
@@ -1443,6 +1443,20 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
     - Draft flush failure keeps the window open and presents Retry save or explicit Quit without latest changes; Tarik never claims an unsaved draft persisted.
     - Terminal shutdown cancels queued/running query and export work, waits at most two seconds for terminal history, releases all sidecar results, closes the DuckDB session and sidecar, truncates/checkpoints SQLite WAL, records a bounded shutdown event, flushes logs, then destroys the window.
     - If the frontend never registered, native close is not intercepted and the Destroyed fallback still stops the engine and flushes logs.
+
+- [x] **E10-T5 Review diagnostics and recovery together**
+  - Depends on: E10-T1, E10-T2, E10-T3, E10-T4
+  - Owns: `docs/review/E10-DIAGNOSTICS-RECOVERY.md`
+  - Deliverables:
+    - Combined manual checklist for logging, incidents, cleanup, recovery, and shutdown.
+    - Re-run E9.5 diagnostics and E9 export regression boundaries after storage and shutdown changes.
+  - Acceptance: a user can find logs, recover from crashes without data loss, clear temporary state safely, and reopen cleanly after forced shutdown.
+  - Tests: full Rust/TypeScript/lint/build gates and focused regression matrix.
+  - Commit: `docs(review): add diagnostics recovery checklist`
+  - Review: `docs/review/E10-DIAGNOSTICS-RECOVERY.md`
+  - Notes:
+    - Combined review covers the closed log schema and 2 MiB/seven-file retention, friendly frontend/backend incident surfaces with one-shot restart recovery, 24-hour/512 MiB owned-root startup cleanup, path-free explicit cache clearing, exact abandoned-export manifests, draft-first close interception, two-second bounded job cancellation, result release, DuckDB/SQLite close order, and the destroyed fallback.
+    - Regression checks re-verify E9.5 diagnostics, E9 export safety, saved-query reopen semantics, and retention isolation.
 
 ---
 
