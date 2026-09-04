@@ -226,6 +226,7 @@ pub fn run() {
             projects::commands::import_source_table,
             projects::commands::cancel_source_operation,
             projects::commands::repair_linked_source,
+            projects::commands::create_table,
             projects::commands::drop_catalog_object,
             projects::commands::remove_linked_source,
             plan::commands::explain_query_plan,

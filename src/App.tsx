@@ -13,6 +13,7 @@ import { QueryWorkspace, type QueryWorkspaceHandle } from "./features/editor/Que
 import { previewTableSql, qualifiedSqlName } from "./features/editor/sqlText";
 import { formatCompactCount } from "./features/sources/format";
 import { ImportDialog, type SourceAction } from "./features/sources/ImportDialog";
+import { NewTableDialog } from "./features/sources/NewTableDialog";
 import { SupportIncidentNotice } from "./app/SupportIncidentNotice";
 import {
   createWorkbenchPreferencesRepository,
@@ -752,7 +753,10 @@ function App() {
             <button className="footer-action" disabled={!project} onClick={beginSourceImport} type="button">
               Import file
             </button>
-            <button className="footer-action" disabled={!project} type="button">New table</button>
+            <NewTableDialog
+              onCreated={() => (project ? refreshProjectData(project) : undefined)}
+              projectId={project?.id ?? ""}
+            />
           </div>
         </aside>
 

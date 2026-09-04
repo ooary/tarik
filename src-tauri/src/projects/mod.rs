@@ -8,7 +8,8 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 use tarik_engine_protocol::{
-    CatalogSnapshot, CsvOptions, ImportOptions, SourceInspection, SourceRecord,
+    CatalogSnapshot, CreateTableDefinition, CsvOptions, ImportOptions, SourceInspection,
+    SourceRecord,
 };
 use uuid::Uuid;
 
@@ -254,6 +255,13 @@ impl ProjectManager {
     pub fn catalog(&self) -> Result<CatalogSnapshot, ProjectError> {
         self.require_active()?;
         self.engine.catalog().map_err(ProjectError::Engine)
+    }
+
+    pub fn create_table(&self, definition: CreateTableDefinition) -> Result<(), ProjectError> {
+        self.require_active()?;
+        self.engine
+            .create_table(&definition)
+            .map_err(ProjectError::Engine)
     }
 
     pub fn inspect_source(

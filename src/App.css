@@ -405,6 +405,77 @@ button:active {
   white-space: nowrap;
 }
 
+.new-table-dialog {
+  width: min(680px, calc(100vw - 32px));
+}
+
+.new-table-form {
+  display: grid;
+  gap: 16px;
+}
+
+.new-table-columns {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  border: 0;
+  padding: 0;
+}
+
+.new-table-columns legend {
+  margin-bottom: 7px;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.new-table-column {
+  display: grid;
+  grid-template-columns: minmax(130px, 1fr) 130px 100px 30px;
+  align-items: end;
+  gap: 8px;
+}
+
+.new-table-column > label {
+  display: grid;
+  gap: 5px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.new-table-column input:not([type="checkbox"]),
+.new-table-column select {
+  width: 100%;
+  min-height: 32px;
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-control);
+  padding: 0 8px;
+  color: var(--text-primary);
+  background: var(--surface-control);
+}
+
+.new-table-nullable {
+  display: flex !important;
+  min-height: 32px;
+  align-items: center;
+  gap: 6px !important;
+}
+
+.new-table-add-column {
+  display: inline-flex;
+  width: max-content;
+  align-items: center;
+  gap: 5px;
+  border-color: var(--border-control);
+}
+
+.new-table-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 7px;
+}
+
 .engine-status {
   display: inline-flex;
   align-items: center;

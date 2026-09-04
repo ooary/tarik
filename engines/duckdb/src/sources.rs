@@ -2,8 +2,8 @@ use std::path::{Path, PathBuf};
 
 use duckdb::{types::ValueRef, Connection};
 use tarik_engine_protocol::{
-    CsvOptions, ImportOptions, SourceColumn, SourceInspection, SourceKind, SourceRecord,
-    SourceState,
+    CreateTableDefinition, CsvOptions, ImportOptions, SourceColumn, SourceInspection, SourceKind,
+    SourceRecord, SourceState,
 };
 use uuid::Uuid;
 
@@ -122,6 +122,35 @@ pub fn link_parquet(
         Some(path.to_path_buf()),
         serde_json::json!({ "mode": "link", "columns": columns }),
     ))
+}
+
+pub fn create_table(
+    connection: &Connection,
+    definition: &CreateTableDefinition,
+) -> Result<(), EngineError> {
+    let table = quote_identifier(&definition.name)?;
+    if definition.columns.is_empty() {
+        return Err(EngineError::InvalidOptions(
+            "a table requires at least one column",
+        ));
+    }
+    let mut observed = std::collections::HashSet::new();
+    let mut columns = Vec::with_capacity(definition.columns.len());
+    for column in &definition.columns {
+        let name = column.name.trim();
+        let folded = name.to_lowercase();
+        if !observed.insert(folded) {
+            return Err(EngineError::InvalidOptions("column names must be unique"));
+        }
+        let identifier = quote_identifier(name)?;
+        let data_type = validate_simple_type(&column.data_type)?;
+        columns.push(format!(
+            "{identifier} {data_type}{}",
+            if column.nullable { "" } else { " NOT NULL" }
+        ));
+    }
+    connection.execute_batch(&format!("CREATE TABLE {table} ({})", columns.join(", ")))?;
+    Ok(())
 }
 
 pub fn import_table(
@@ -437,6 +466,24 @@ fn validate_import_options(options: &ImportOptions) -> Result<(), EngineError> {
     Ok(())
 }
 
+fn validate_simple_type(data_type: &str) -> Result<&'static str, EngineError> {
+    let allowed = [
+        "BOOLEAN",
+        "INTEGER",
+        "BIGINT",
+        "DOUBLE",
+        "DECIMAL",
+        "VARCHAR",
+        "DATE",
+        "TIMESTAMP",
+    ];
+    let upper = data_type.trim().to_ascii_uppercase();
+    allowed
+        .into_iter()
+        .find(|candidate| *candidate == upper)
+        .ok_or_else(|| EngineError::InvalidDataType(data_type.to_owned()))
+}
+
 fn validate_type(data_type: &str) -> Result<(), EngineError> {
     let allowed = [
         "BOOLEAN",
@@ -464,6 +511,79 @@ fn validate_type(data_type: &str) -> Result<(), EngineError> {
         Ok(())
     } else {
         Err(EngineError::InvalidDataType(data_type.to_owned()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tarik_engine_protocol::{CreateTableColumn, CreateTableDefinition};
+
+    fn definition(name: &str, columns: Vec<(&str, &str, bool)>) -> CreateTableDefinition {
+        CreateTableDefinition {
+            name: name.into(),
+            columns: columns
+                .into_iter()
+                .map(|(name, data_type, nullable)| CreateTableColumn {
+                    name: name.into(),
+                    data_type: data_type.into(),
+                    nullable,
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn creates_safely_quoted_empty_table_with_nullability() {
+        let connection = Connection::open_in_memory().unwrap();
+        create_table(
+            &connection,
+            &definition(
+                "order summary",
+                vec![("select", "BIGINT", false), ("net value", "DOUBLE", true)],
+            ),
+        )
+        .unwrap();
+        let count: u64 = connection
+            .query_row("SELECT count(*) FROM \"order summary\"", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        let not_null: bool = connection
+            .query_row(
+                "SELECT \"notnull\" FROM pragma_table_info('order summary') WHERE name = 'select'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 0);
+        assert!(not_null);
+    }
+
+    #[test]
+    fn rejects_duplicate_columns_and_unlisted_type_without_creating_table() {
+        let connection = Connection::open_in_memory().unwrap();
+        assert!(create_table(
+            &connection,
+            &definition(
+                "unsafe",
+                vec![("id", "BIGINT", true), ("ID", "VARCHAR", true)]
+            ),
+        )
+        .is_err());
+        assert!(create_table(
+            &connection,
+            &definition("unsafe", vec![("payload", "VARCHAR); DROP TABLE x;", true)]),
+        )
+        .is_err());
+        let count: u64 = connection
+            .query_row(
+                "SELECT count(*) FROM information_schema.tables WHERE table_name = 'unsafe'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 0);
     }
 }
 

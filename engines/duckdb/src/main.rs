@@ -81,6 +81,18 @@ fn dispatch(
             let connection = sessions.get(&session_id)?;
             Ok(serde_json::to_value(catalog::inspect(connection)?)?)
         }
+        "catalog.create_table" => {
+            let session_id = required_string(params, "sessionId")?;
+            let definition: tarik_engine_protocol::CreateTableDefinition = serde_json::from_value(
+                params
+                    .get("definition")
+                    .cloned()
+                    .ok_or_else(|| EngineError::MissingField("definition".into()))?,
+            )?;
+            let connection = sessions.get(&session_id)?;
+            sources::create_table(connection, &definition)?;
+            Ok(Value::Null)
+        }
         "catalog.drop_object" => {
             let session_id = required_string(params, "sessionId")?;
             let database = required_string(params, "database")?;

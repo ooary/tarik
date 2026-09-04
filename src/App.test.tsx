@@ -10,6 +10,7 @@ import {
   closeProject,
   completeShutdown,
   createProject,
+  createTable,
   dropCatalogObject,
   getActiveProject,
   getLastSupportIncident,
@@ -52,6 +53,7 @@ vi.mock("./lib/commands", () => ({
   closeProject: vi.fn(),
   completeShutdown: vi.fn(),
   createProject: vi.fn(),
+  createTable: vi.fn(),
   dropCatalogObject: vi.fn(),
   getActiveProject: vi.fn(),
   getLastSupportIncident: vi.fn(),
@@ -204,6 +206,7 @@ describe("Tarik workbench shell", () => {
       duckdbPath: "/data/existing.duckdb",
     });
     vi.mocked(closeProject).mockResolvedValue(true);
+    vi.mocked(createTable).mockResolvedValue(true);
     vi.mocked(dropCatalogObject).mockResolvedValue(true);
     runtimeInfoMock.mockResolvedValue({
       appName: "Tarik",

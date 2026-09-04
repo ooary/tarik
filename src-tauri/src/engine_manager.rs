@@ -6,8 +6,8 @@ use std::{
 use serde_json::Value;
 use tarik_engine_client::EngineProcess;
 use tarik_engine_protocol::{
-    CatalogSnapshot, CsvOptions, ExportOptions, ExportStatus, ImportOptions, ProjectLocator,
-    SourceInspection, SourceRecord, SqlValidation,
+    CatalogSnapshot, CreateTableDefinition, CsvOptions, ExportOptions, ExportStatus, ImportOptions,
+    ProjectLocator, SourceInspection, SourceRecord, SqlValidation,
 };
 
 pub struct EngineManager {
@@ -137,6 +137,14 @@ impl EngineManager {
     pub fn catalog(&self) -> Result<CatalogSnapshot, String> {
         let value = self.session_request("catalog.inspect", serde_json::json!({}))?;
         serde_json::from_value(value).map_err(|error| format!("catalog decode failed: {error}"))
+    }
+
+    pub fn create_table(&self, definition: &CreateTableDefinition) -> Result<(), String> {
+        self.session_request(
+            "catalog.create_table",
+            serde_json::json!({ "definition": definition }),
+        )
+        .map(|_| ())
     }
 
     pub fn drop_catalog_object(

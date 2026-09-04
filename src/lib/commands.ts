@@ -92,6 +92,20 @@ export interface ProjectCatalog {
   columns: CatalogColumn[];
 }
 
+export type CreateTableColumnType =
+  "BOOLEAN" | "INTEGER" | "BIGINT" | "DOUBLE" | "DECIMAL" | "VARCHAR" | "DATE" | "TIMESTAMP";
+
+export interface CreateTableColumn {
+  name: string;
+  dataType: CreateTableColumnType;
+  nullable: boolean;
+}
+
+export interface CreateTableDefinition {
+  name: string;
+  columns: CreateTableColumn[];
+}
+
 export type SourceFormat = "csv" | "parquet";
 export type SourceKind = "duckdb_table" | "linked_parquet" | "linked_csv";
 export type SourceState = "ready" | "missing" | "invalid_schema";
@@ -251,6 +265,14 @@ export function removeProject(
   invokeCommand: InvokeCommand = invoke,
 ): Promise<ProjectRemoval> {
   return invokeCommand<ProjectRemoval>("remove_project", { projectId });
+}
+
+export function createTable(
+  projectId: string,
+  definition: CreateTableDefinition,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<boolean> {
+  return invokeCommand<boolean>("create_table", { projectId, definition });
 }
 
 export function chooseSourceFile(): Promise<string | null> {

@@ -69,6 +69,7 @@ test("project lifecycle and catalog use typed commands", async () => {
     closeProject,
     getActiveProject,
     inspectProjectCatalog,
+    createTable,
   } = await loadCommandsModule();
   const calls = [];
   const project = { id: "p1", name: "Retail", duckdbPath: "/data/retail.duckdb" };
@@ -88,12 +89,18 @@ test("project lifecycle and catalog use typed commands", async () => {
   assert.equal(await closeProject(invoke), true);
   assert.deepEqual(await getActiveProject(invoke), project);
   assert.deepEqual(await inspectProjectCatalog(invoke), { objects: [], columns: [] });
+  await createTable(
+    "p1",
+    { name: "orders", columns: [{ name: "id", dataType: "BIGINT", nullable: false }] },
+    invoke,
+  );
   assert.equal(calls[0].command, "create_project");
   assert.equal(calls[1].command, "open_project");
   assert.equal(calls[2].command, "reopen_recent_project");
   assert.equal(calls[4].command, "rename_project");
   assert.equal(calls[5].command, "remove_project");
   assert.equal(calls[8].command, "inspect_project_catalog");
+  assert.equal(calls[9].command, "create_table");
 });
 
 test("source inspection, link, import, repair, and removal use typed commands", async () => {

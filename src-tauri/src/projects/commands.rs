@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use serde::Serialize;
 use tarik_engine_protocol::{
-    CatalogSnapshot, CsvOptions, ImportOptions, SourceInspection, SourceKind, SourceRecord,
-    SourceState,
+    CatalogSnapshot, CreateTableDefinition, CsvOptions, ImportOptions, SourceInspection,
+    SourceKind, SourceRecord, SourceState,
 };
 use tauri::State;
 
@@ -248,6 +248,24 @@ pub async fn repair_linked_source(
         source,
         inspection: None,
     })
+}
+
+#[tauri::command]
+pub async fn create_table(
+    project_id: String,
+    definition: CreateTableDefinition,
+    manager: State<'_, ProjectManager>,
+) -> Result<bool, String> {
+    let active = manager
+        .active()
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| "no DuckDB project is open".to_string())?;
+    if active.id != project_id {
+        return Err("table does not belong to the active project".to_string());
+    }
+    let manager = manager.inner().clone();
+    blocking(move || manager.create_table(definition)).await?;
+    Ok(true)
 }
 
 #[tauri::command]

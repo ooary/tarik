@@ -1627,7 +1627,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
     - Added one effective-theme resolver and scoped media-query listener; manual Light/Dark override the OS while System follows live `prefers-color-scheme` changes.
     - CodeMirror reconfigures through a theme compartment using canonical Dracula background, foreground, selection, gutter, cursor, and syntax colors without remounting or losing focus/text. Result body values use dedicated near-white/null tokens in effective dark mode.
 
-- [ ] **E11.5-T2 Implement the New table workflow**
+- [x] **E11.5-T2 Implement the New table workflow**
   - Depends on: E11.5-T0
   - Owns: explorer New table action, accessible dialog/form, typed Tauri command/service, DuckDB DDL boundary, catalog refresh
   - Deliverables:
@@ -1638,6 +1638,9 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: a beginner can create, discover, insert into, query, and later delete an empty table; quoted/reserved-word names are either safely supported or rejected with exact guidance.
   - Tests: no-project disabled state, keyboard/focus cycle, empty/duplicate/quoted/malicious names, duplicate columns, supported types/nullability, engine failure, exactly one CREATE execution, catalog/completion refresh.
   - Commit: `feat(sources): add safe new table workflow`
+  - Notes:
+    - Added a project-scoped Radix dialog for table name and dynamic name/type/nullability columns with inline validation, retry-preserving engine errors, and catalog/completion refresh only after success.
+    - The typed desktop/sidecar protocol accepts eight exact DuckDB types, validates active-project ownership, quotes every identifier centrally, rejects case-insensitive duplicate columns, and creates no SQLite source metadata for an empty user table.
 
 - [ ] **E11.5-T3 Replace browser context menus with scoped Tarik menus**
   - Depends on: E11.5-T0
