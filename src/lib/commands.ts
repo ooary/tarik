@@ -324,6 +324,14 @@ export interface PlanNode {
   id: string;
   operator: string;
   nativeName: string;
+  semantic?: {
+    title: string;
+    summary: string;
+    inputLabel: string;
+    outputLabel: string;
+    sqlRange: { from: number; to: number } | null;
+    conceptOnly: boolean;
+  };
   source: string | null;
   estimatedRows: number | null;
   actualRows: number | null;

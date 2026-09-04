@@ -22,6 +22,15 @@ export function NodeInspector({ node, mode }: { node: PlanNode | null; mode: Pla
         <code>{node.nativeName}</code>
       </header>
       <p>{explanation.summary}</p>
+      {node.semantic?.conceptOnly && (
+        <div className="flow-estimate-note" role="note">
+          <strong>Teaching step, not extra work</strong>
+          <span>
+            This concept shares one DuckDB operation with the following calculation. Rows and
+            operator time are shown once on the physical calculation step.
+          </span>
+        </div>
+      )}
       {node.presentationNote && (
         <div className="flow-interpretation-note" role="note">
           <strong>Beginner presentation</strong>
@@ -76,6 +85,12 @@ export function NodeInspector({ node, mode }: { node: PlanNode | null; mode: Pla
         </div>
       </dl>
       <dl className="flow-inspector-metrics">
+        {node.semantic?.conceptOnly === false && (
+          <div>
+            <dt>Physical metrics</dt>
+            <dd>Owned by this DuckDB operation</dd>
+          </div>
+        )}
         {node.source && (
           <div>
             <dt>Source</dt>

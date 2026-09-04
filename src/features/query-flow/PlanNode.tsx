@@ -30,7 +30,7 @@ export function PlanNodeCard({ data, selected }: NodeProps & { data: PlanNodeDat
     >
       <Handle aria-label="Input" position={Position.Left} type="target" />
       <div className="flow-node-heading">
-        <strong>{displayOperator(node.operator, node.nativeName)}</strong>
+        <strong>{node.semantic?.title ?? displayOperator(node.operator, node.nativeName)}</strong>
         <span>{node.nativeName}</span>
       </div>
       {node.source && (
@@ -64,6 +64,14 @@ function displayOperator(operator: string, nativeName: string): string {
     scan: "Read data",
     join: "Join",
     aggregate: "Group & summarize",
+    group: "Group rows",
+    count: "Count values",
+    sum: "Sum values",
+    average: "Calculate average",
+    minimum: "Find minimum",
+    maximum: "Find maximum",
+    summaries: "Calculate summaries",
+    distinct: "Remove duplicate result rows",
     filter: "Filter rows",
     projection: "Return columns",
     sort: "Sort",

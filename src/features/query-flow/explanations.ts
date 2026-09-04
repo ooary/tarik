@@ -39,6 +39,54 @@ const explanations: Record<string, Omit<OperatorExplanation, "known">> = {
     inputLabel: "Detailed rows",
     outputLabel: "One summary row per group",
   },
+  group: {
+    title: "Group rows",
+    summary: "Rows with the same grouping values are treated as one group.",
+    inputLabel: "Detailed rows",
+    outputLabel: "Groups used by the following calculations",
+  },
+  count: {
+    title: "Count values",
+    summary: "DuckDB counts rows or non-null values for the requested scope.",
+    inputLabel: "Input rows",
+    outputLabel: "One count value",
+  },
+  sum: {
+    title: "Sum values",
+    summary: "DuckDB adds the non-null values for the requested scope.",
+    inputLabel: "Input values",
+    outputLabel: "One total value",
+  },
+  average: {
+    title: "Calculate average",
+    summary: "DuckDB calculates the average of the non-null input values.",
+    inputLabel: "Input values",
+    outputLabel: "One average value",
+  },
+  minimum: {
+    title: "Find minimum",
+    summary: "DuckDB finds the smallest non-null value in the requested scope.",
+    inputLabel: "Input values",
+    outputLabel: "One minimum value",
+  },
+  maximum: {
+    title: "Find maximum",
+    summary: "DuckDB finds the largest non-null value in the requested scope.",
+    inputLabel: "Input values",
+    outputLabel: "One maximum value",
+  },
+  summaries: {
+    title: "Calculate summaries",
+    summary: "DuckDB calculates several summary values together in one aggregate operation.",
+    inputLabel: "Input rows or groups",
+    outputLabel: "Summary values calculated together",
+  },
+  distinct: {
+    title: "Remove duplicate result rows",
+    summary: "DISTINCT removes repeated combinations from the selected result.",
+    inputLabel: "Selected result rows",
+    outputLabel: "Unique result rows",
+  },
   sort: {
     title: "Sort",
     summary: "Rows are ordered by one or more expressions.",
@@ -72,6 +120,15 @@ const explanations: Record<string, Omit<OperatorExplanation, "known">> = {
 };
 
 export function explainOperator(node: PlanNode): OperatorExplanation {
+  if (node.semantic) {
+    return {
+      title: node.semantic.title,
+      summary: node.semantic.summary,
+      inputLabel: node.semantic.inputLabel,
+      outputLabel: node.semantic.outputLabel,
+      known: true,
+    };
+  }
   const known = explanations[node.operator];
   if (known) return { ...known, known: true };
   return {

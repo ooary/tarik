@@ -1251,7 +1251,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
     - Semantic concept nodes must have exactly one physical metric owner; Group and Count can be separate teaching steps backed by one native aggregate, while multiple calculations remain one non-sequential `Calculate summaries` node. Ambiguous semantics preserve the generic native operator and raw plan.
     - Completion is catalog-revision scoped and conservative for aliases/unqualified columns. Diagnostics use per-statement `EXPLAIN (FORMAT JSON)` without ANALYZE, carry SQL revisions, accept only reliably mapped ranges, clear on edit, and require mutation-sentinel tests proving no user statement executes.
 
-- [ ] **E9.5-T2 Show specific grouping and aggregate calculations**
+- [x] **E9.5-T2 Show specific grouping and aggregate calculations**
   - Depends on: E9.5-T1, E7-T2, E7-T3, E7-T4
   - Owns: `src-tauri/src/plan/`, `src/features/query-flow/`
   - Deliverables:
@@ -1299,6 +1299,12 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: the agreed example renders exactly in the order above while the raw plan and native aggregate details remain inspectable.
   - Tests: stable Explain/Profile fixtures for count variants, sum/average/min/max, multiple aggregates, grouped/ungrouped aggregate, DISTINCT, redundant DISTINCT, ambiguous expressions, and metric non-duplication.
   - Commit: `feat(flow): explain aggregate calculations explicitly`
+  - Notes:
+    - Plan capture now passes the immutable SQL snapshot into a conservative ASCII top-level SELECT semantic parser. Typed `PlanSemantic` metadata carries verified title/summary/input/output, exact UTF-16 SQL range, and concept-only ownership; unsupported nested/unicode/ambiguous shapes preserve the native graph and raw plan without guesses.
+    - SQL calculation kinds must match DuckDB aggregate detail kinds and counts exactly. One calculation becomes a specific Count/Sum/Average/Minimum/Maximum node; several calculations stay one `Calculate summaries` node with an ordered list, never a false sequential chain. Ungrouped calculations describe the whole input.
+    - Grouping is inserted as a concept-only teaching node before the physical calculation and owns no estimated/actual rows, timing, or rows scanned. Verified aggregate plumbing projections collapse only when connected to an aggregate; other projections remain. Native metrics stay on exactly one physical node.
+    - Aggregate-free DISTINCT grouping becomes `Remove duplicate result rows`. Redundancy is stated only when selected non-aggregate keys exactly cover all grouping keys and the projection is a verified simple group/aggregate shape.
+    - Added sanitized real DuckDB Explain/Profile fixtures for the accepted query. Both render exactly `Read data_2021 → Group rows by commodity → Count non-null market values per group → Remove duplicate result rows → Query result`; semantic node selection highlights GROUP BY, count(market), or DISTINCT, and the inspector discloses shared physical work.
 
 - [ ] **E9.5-T3 Complete catalog-aware SQL autocomplete**
   - Depends on: E9.5-T1, E4-T3, E5-T1

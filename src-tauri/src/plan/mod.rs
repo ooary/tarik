@@ -1,4 +1,5 @@
 pub mod commands;
+mod semantics;
 
 use std::{collections::BTreeMap, time::Duration};
 
@@ -24,6 +25,8 @@ pub struct PlanNode {
     pub id: String,
     pub operator: String,
     pub native_name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub semantic: Option<PlanSemantic>,
     pub source: Option<String>,
     pub estimated_rows: Option<u64>,
     pub actual_rows: Option<u64>,
@@ -32,6 +35,25 @@ pub struct PlanNode {
     pub details: BTreeMap<String, Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub presentation_note: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlanSemantic {
+    pub title: String,
+    pub summary: String,
+    pub input_label: String,
+    pub output_label: String,
+    pub sql_range: Option<SqlTextRange>,
+    pub concept_only: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SqlTextRange {
+    /// UTF-16 offsets, matching JavaScript and CodeMirror document positions.
+    pub from: u32,
+    pub to: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -127,10 +149,19 @@ pub fn capture_and_normalize(
     // The Explain/Profile result is only an interchange envelope. Release it
     // on both decode success and failure; QueryPlan owns the raw payload.
     let _ = engine.release_result(&execution_id);
-    Ok(normalize_plan(mode, &decoded?))
+    Ok(normalize_plan_with_sql(mode, &decoded?, sql))
 }
 
+#[cfg(test)]
 pub fn normalize_plan(mode: PlanMode, raw_plan: &str) -> QueryPlan {
+    normalize_plan_input(mode, raw_plan, None)
+}
+
+pub fn normalize_plan_with_sql(mode: PlanMode, raw_plan: &str, sql: &str) -> QueryPlan {
+    normalize_plan_input(mode, raw_plan, Some(sql))
+}
+
+fn normalize_plan_input(mode: PlanMode, raw_plan: &str, sql: Option<&str>) -> QueryPlan {
     let parsed: Value = match serde_json::from_str(raw_plan) {
         Ok(parsed) => parsed,
         Err(error) => {
@@ -147,7 +178,7 @@ pub fn normalize_plan(mode: PlanMode, raw_plan: &str) -> QueryPlan {
         PlanMode::Profile => builder.parse_profile_root(&parsed),
     };
     match result {
-        Ok(()) if !builder.plan.nodes.is_empty() => beginner_plan(builder.plan),
+        Ok(()) if !builder.plan.nodes.is_empty() => beginner_plan(builder.plan, sql),
         Ok(()) => QueryPlan::fallback(mode, raw_plan.to_string(), "plan contained no operators"),
         Err(reason) => QueryPlan::fallback(mode, raw_plan.to_string(), reason),
     }
@@ -200,6 +231,7 @@ impl PlanBuilder {
             id: id.clone(),
             operator: normalize_operator(native),
             native_name: native.to_string(),
+            semantic: None,
             source: detail_string(&details, "Table"),
             estimated_rows: detail_u64(&details, "Estimated Cardinality"),
             actual_rows: None,
@@ -240,6 +272,7 @@ impl PlanBuilder {
             id: id.clone(),
             operator: normalize_operator(native),
             native_name: native.to_string(),
+            semantic: None,
             source: detail_string(&details, "Table"),
             estimated_rows: detail_u64(&details, "Estimated Cardinality"),
             actual_rows: value_u64(object.get("operator_cardinality"))
@@ -277,7 +310,7 @@ impl PlanBuilder {
 /// inventing behavior. Administrative Profile wrappers collapse into one
 /// result boundary, while a filter explicitly reported inside a scan is
 /// expanded so its post-filter cardinality is not mislabeled as rows read.
-fn beginner_plan(plan: QueryPlan) -> QueryPlan {
+fn beginner_plan(plan: QueryPlan, sql: Option<&str>) -> QueryPlan {
     let mut nodes = Vec::new();
     let mut source_endpoint = BTreeMap::new();
     let mut target_endpoint = BTreeMap::new();
@@ -308,6 +341,7 @@ fn beginner_plan(plan: QueryPlan) -> QueryPlan {
                 id: filter_id.clone(),
                 operator: "filter".to_string(),
                 native_name: "PUSHED_DOWN_FILTER".to_string(),
+                semantic: None,
                 source: None,
                 estimated_rows: node.estimated_rows,
                 actual_rows: node.actual_rows,
@@ -383,6 +417,7 @@ fn beginner_plan(plan: QueryPlan) -> QueryPlan {
         id: result_id.clone(),
         operator: "result".to_string(),
         native_name: "QUERY_RESULT".to_string(),
+        semantic: None,
         source: None,
         estimated_rows: None,
         actual_rows: has_final_actual.then_some(final_actual),
@@ -396,6 +431,9 @@ fn beginner_plan(plan: QueryPlan) -> QueryPlan {
     });
     for root in physical_roots {
         edges.push((root, result_id.clone()));
+    }
+    if let Some(sql) = sql {
+        semantics::apply(&mut nodes, &mut edges, sql);
     }
 
     let ids: BTreeMap<_, _> = nodes
@@ -722,6 +760,173 @@ mod tests {
         assert!(join.actual_rows.is_some());
         assert!(join.timing_ms.is_some());
         assert!(join.details.contains_key("Join Type"));
+    }
+
+    fn flow_order(plan: &QueryPlan) -> Vec<String> {
+        let mut current = plan
+            .nodes
+            .iter()
+            .find(|node| node.operator == "scan")
+            .expect("flow needs a scan")
+            .id
+            .clone();
+        let mut order = Vec::new();
+        loop {
+            let node = plan.nodes.iter().find(|node| node.id == current).unwrap();
+            order.push(
+                node.semantic
+                    .as_ref()
+                    .map(|semantic| semantic.title.clone())
+                    .unwrap_or_else(|| node.operator.clone()),
+            );
+            let Some(edge) = plan.edges.iter().find(|edge| edge.source == current) else {
+                break;
+            };
+            current = edge.target.clone();
+        }
+        order
+    }
+
+    #[test]
+    fn accepted_grouped_count_distinct_query_has_exact_beginner_flow() {
+        let sql = "SELECT DISTINCT commodity, count(market)\nFROM \"main\".\"data_2021\"\nGROUP BY commodity";
+        for (mode, fixture_name) in [
+            (PlanMode::Explain, "group_count_distinct.explain.json"),
+            (PlanMode::Profile, "group_count_distinct.profile.json"),
+        ] {
+            let plan = normalize_plan_with_sql(mode, &fixture(fixture_name), sql);
+            assert_connected(&plan);
+            assert_eq!(
+                flow_order(&plan),
+                [
+                    "Read data_2021",
+                    "Group rows by commodity",
+                    "Count non-null market values per group",
+                    "Remove duplicate result rows",
+                    "Query result",
+                ],
+                "unexpected {mode:?} flow"
+            );
+            let group = plan
+                .nodes
+                .iter()
+                .find(|node| node.operator == "group")
+                .unwrap();
+            assert!(group.semantic.as_ref().unwrap().concept_only);
+            assert_eq!(
+                (group.estimated_rows, group.actual_rows, group.timing_ms),
+                (None, None, None)
+            );
+            let count = plan
+                .nodes
+                .iter()
+                .find(|node| node.operator == "count")
+                .unwrap();
+            assert!(!count.semantic.as_ref().unwrap().concept_only);
+            assert_eq!(
+                &sql[count.semantic.as_ref().unwrap().sql_range.unwrap().from as usize
+                    ..count.semantic.as_ref().unwrap().sql_range.unwrap().to as usize],
+                "count(market)"
+            );
+            let distinct = plan
+                .nodes
+                .iter()
+                .find(|node| node.operator == "distinct")
+                .unwrap();
+            assert!(distinct
+                .presentation_note
+                .as_deref()
+                .unwrap()
+                .contains("redundant"));
+            assert_eq!(plan.raw_plan, fixture(fixture_name));
+        }
+    }
+
+    #[test]
+    fn multiple_aggregates_remain_one_non_sequential_summary_node() {
+        let raw = r##"[{"name":"HASH_GROUP_BY","children":[{"name":"SEQ_SCAN","children":[],"extra_info":{"Table":"fixture.main.orders","Estimated Cardinality":"10"}}],"extra_info":{"Groups":"#0","Aggregates":["count_star()","sum(#1)","avg(#1)"],"Estimated Cardinality":"2"}}]"##;
+        let sql =
+            "SELECT category, count(*), sum(amount), avg(amount) FROM orders GROUP BY category";
+        let plan = normalize_plan_with_sql(PlanMode::Explain, raw, sql);
+        assert_eq!(
+            plan.nodes
+                .iter()
+                .filter(|node| node.operator == "summaries")
+                .count(),
+            1
+        );
+        assert!(!plan
+            .nodes
+            .iter()
+            .any(|node| { matches!(node.operator.as_str(), "count" | "sum" | "average") }));
+        let summary = plan
+            .nodes
+            .iter()
+            .find(|node| node.operator == "summaries")
+            .unwrap();
+        assert_eq!(summary.details["Calculations"].as_array().unwrap().len(), 3);
+    }
+
+    #[test]
+    fn ambiguous_aggregate_count_keeps_generic_native_operator() {
+        let raw = r##"[{"name":"UNGROUPED_AGGREGATE","children":[{"name":"SEQ_SCAN","children":[],"extra_info":{"Table":"fixture.main.orders"}}],"extra_info":{"Aggregates":["sum(#0)","count_star()"]}}]"##;
+        let plan =
+            normalize_plan_with_sql(PlanMode::Explain, raw, "SELECT sum(amount) FROM orders");
+        assert!(plan.nodes.iter().any(|node| node.operator == "aggregate"));
+        assert!(!plan.nodes.iter().any(|node| node.operator == "sum"));
+    }
+
+    #[test]
+    fn ungrouped_sum_is_specific_without_a_group_concept() {
+        let raw = r##"[{"name":"UNGROUPED_AGGREGATE","children":[{"name":"SEQ_SCAN","children":[],"extra_info":{"Table":"fixture.main.orders"}}],"extra_info":{"Aggregates":"sum(#0)"}}]"##;
+        let plan =
+            normalize_plan_with_sql(PlanMode::Explain, raw, "SELECT sum(amount) FROM orders");
+        assert!(plan.nodes.iter().any(|node| node
+            .semantic
+            .as_ref()
+            .is_some_and(|semantic| semantic.title == "Sum amount for the whole input")));
+        assert!(!plan.nodes.iter().any(|node| node.operator == "group"));
+    }
+
+    #[test]
+    fn sql_and_native_function_mismatch_keeps_generic_aggregate() {
+        let raw = r##"[{"name":"UNGROUPED_AGGREGATE","children":[{"name":"SEQ_SCAN","children":[],"extra_info":{"Table":"fixture.main.orders"}}],"extra_info":{"Aggregates":"count(#0)"}}]"##;
+        let plan =
+            normalize_plan_with_sql(PlanMode::Explain, raw, "SELECT sum(amount) FROM orders");
+        assert!(plan.nodes.iter().any(|node| node.operator == "aggregate"));
+        assert!(!plan.nodes.iter().any(|node| node.operator == "sum"));
+    }
+
+    #[test]
+    fn nested_or_unicode_sql_keeps_native_plan_without_guessed_semantics() {
+        let raw = r##"[{"name":"UNGROUPED_AGGREGATE","children":[{"name":"SEQ_SCAN","children":[],"extra_info":{"Table":"fixture.main.orders"}}],"extra_info":{"Aggregates":"sum(#0)"}}]"##;
+        for sql in [
+            "SELECT (SELECT sum(amount) FROM orders) FROM orders",
+            "SELECT sum(amount) AS café FROM orders",
+        ] {
+            let plan = normalize_plan_with_sql(PlanMode::Explain, raw, sql);
+            assert!(plan.nodes.iter().all(|node| node.semantic.is_none()));
+        }
+    }
+
+    #[test]
+    fn plain_distinct_is_named_without_a_redundancy_claim() {
+        let raw = r##"[{"name":"HASH_GROUP_BY","children":[{"name":"SEQ_SCAN","children":[],"extra_info":{"Table":"fixture.main.orders"}}],"extra_info":{"Groups":"#0","Aggregates":""}}]"##;
+        let plan = normalize_plan_with_sql(
+            PlanMode::Explain,
+            raw,
+            "SELECT DISTINCT category FROM orders",
+        );
+        let distinct = plan
+            .nodes
+            .iter()
+            .find(|node| node.operator == "distinct")
+            .unwrap();
+        assert_eq!(
+            distinct.semantic.as_ref().unwrap().title,
+            "Remove duplicate result rows"
+        );
+        assert!(distinct.presentation_note.is_none());
     }
 
     #[test]

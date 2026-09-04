@@ -69,6 +69,30 @@ describe("PlanNodeCard row labels", () => {
     );
   });
 
+  it("shows a specific verified aggregate title instead of the generic native label", () => {
+    renderNode({
+      id: "n0",
+      operator: "count",
+      nativeName: "HASH_GROUP_BY",
+      semantic: {
+        title: "Count non-null market values per group",
+        summary: "COUNT(market) counts non-null values for each group.",
+        inputLabel: "Rows in each group",
+        outputLabel: "One count per group",
+        sqlRange: { from: 27, to: 40 },
+        conceptOnly: false,
+      },
+      source: null,
+      estimatedRows: 2,
+      actualRows: null,
+      timingMs: null,
+      rowsScanned: null,
+      details: { Aggregates: "count(#1)" },
+    });
+    expect(screen.getByText("Count non-null market values per group")).toBeInTheDocument();
+    expect(screen.getByText("HASH_GROUP_BY")).toBeInTheDocument();
+  });
+
   it("shows actual output alone when DuckDB provides no estimate", () => {
     renderNode({
       id: "n0",

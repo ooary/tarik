@@ -5,6 +5,8 @@
     "aggregate.explain.json",
     "cte.explain.json",
     "filter_projection.explain.json",
+    "group_count_distinct.explain.json",
+    "group_count_distinct.profile.json",
     "join.explain.json",
     "join_aggregate_sort_limit.profile.json",
     "scan.explain.json",

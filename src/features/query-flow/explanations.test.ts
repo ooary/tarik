@@ -22,6 +22,14 @@ describe("flow explanations", () => {
       "projection",
       "join",
       "aggregate",
+      "group",
+      "count",
+      "sum",
+      "average",
+      "minimum",
+      "maximum",
+      "summaries",
+      "distinct",
       "sort",
       "limit",
       "union",
@@ -34,6 +42,22 @@ describe("flow explanations", () => {
       expect(explanation.inputLabel).not.toBe("");
       expect(explanation.outputLabel).not.toBe("");
     }
+  });
+
+  it("uses verified semantic copy before generic operator copy", () => {
+    const explanation = explainOperator({
+      ...node("count", "HASH_GROUP_BY"),
+      semantic: {
+        title: "Count non-null market values per group",
+        summary: "COUNT(market) counts only non-null values for each group.",
+        inputLabel: "Rows in each group",
+        outputLabel: "One count per group",
+        sqlRange: { from: 27, to: 40 },
+        conceptOnly: false,
+      },
+    });
+    expect(explanation.title).toBe("Count non-null market values per group");
+    expect(explanation.summary).toContain("COUNT(market)");
   });
 
   it("keeps unknown operators truthful instead of inventing semantics", () => {

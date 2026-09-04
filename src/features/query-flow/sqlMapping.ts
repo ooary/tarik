@@ -16,6 +16,14 @@ interface Token extends SqlRange {
  * relevant construct occurs exactly once in the immutable SQL snapshot.
  */
 export function mapPlanNodeToSql(node: PlanNode, sql: string): SqlRange | null {
+  if (
+    node.semantic?.sqlRange &&
+    node.semantic.sqlRange.from >= 0 &&
+    node.semantic.sqlRange.to <= sql.length &&
+    node.semantic.sqlRange.from < node.semantic.sqlRange.to
+  ) {
+    return node.semantic.sqlRange;
+  }
   const tokens = tokenize(sql);
   if (node.operator === "scan" && node.source) {
     const sourceName = lastQualifiedPart(node.source);
@@ -34,6 +42,8 @@ export function mapPlanNodeToSql(node: PlanNode, sql: string): SqlRange | null {
     filter: ["WHERE"],
     join: ["JOIN"],
     aggregate: ["GROUP", "BY"],
+    group: ["GROUP", "BY"],
+    distinct: ["DISTINCT"],
     sort: ["ORDER", "BY"],
     limit: ["LIMIT"],
     union: ["UNION"],

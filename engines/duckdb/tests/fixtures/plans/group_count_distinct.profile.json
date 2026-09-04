@@ -1,0 +1,183 @@
+{
+  "total_bytes_written": 0,
+  "total_bytes_read": 0,
+  "rows_returned": 0,
+  "wal_replay_entry_count": 0,
+  "query_name": "EXPLAIN (ANALYZE, FORMAT JSON) SELECT DISTINCT commodity, count(market) FROM \"main\".\"data_2021\" GROUP BY commodity",
+  "waiting_to_attach_latency": 0.0,
+  "attach_load_storage_latency": 0.0,
+  "blocked_thread_time": 0.0,
+  "extra_info": {},
+  "total_memory_allocated": 2883584,
+  "checkpoint_latency": 0.0,
+  "cumulative_rows_scanned": 4,
+  "write_to_wal_latency": 0.0,
+  "attach_replay_wal_latency": 0.0,
+  "commit_local_storage_latency": 0.0,
+  "children": [
+    {
+      "operator_timing": 2.671e-06,
+      "operator_type": "EXPLAIN_ANALYZE",
+      "extra_info": {},
+      "cumulative_rows_scanned": 4,
+      "operator_cardinality": 0,
+      "operator_name": "EXPLAIN_ANALYZE",
+      "operator_rows_scanned": 0,
+      "children": [
+        {
+          "operator_timing": 2.0149e-05,
+          "operator_type": "PROJECTION",
+          "extra_info": {
+            "Projections": [
+              "__internal_decompress_string(#0)",
+              "#1"
+            ],
+            "Estimated Cardinality": "0"
+          },
+          "cumulative_rows_scanned": 4,
+          "operator_cardinality": 2,
+          "operator_name": "PROJECTION",
+          "operator_rows_scanned": 0,
+          "children": [
+            {
+              "operator_timing": 0.011277242,
+              "operator_type": "HASH_GROUP_BY",
+              "extra_info": {
+                "Groups": [
+                  "#0",
+                  "#1"
+                ],
+                "Aggregates": "",
+                "Estimated Cardinality": "1"
+              },
+              "cumulative_rows_scanned": 4,
+              "operator_cardinality": 2,
+              "operator_name": "HASH_GROUP_BY",
+              "operator_rows_scanned": 0,
+              "children": [
+                {
+                  "operator_timing": 9.989999999999999e-07,
+                  "operator_type": "PROJECTION",
+                  "extra_info": {
+                    "Projections": [
+                      "commodity",
+                      "count(market)"
+                    ],
+                    "Estimated Cardinality": "1"
+                  },
+                  "cumulative_rows_scanned": 4,
+                  "operator_cardinality": 2,
+                  "operator_name": "PROJECTION",
+                  "operator_rows_scanned": 0,
+                  "children": [
+                    {
+                      "operator_timing": 6.179e-06,
+                      "operator_type": "PROJECTION",
+                      "extra_info": {
+                        "Projections": [
+                          "__internal_compress_string_ubigint(#0)",
+                          "#1"
+                        ],
+                        "Estimated Cardinality": "1"
+                      },
+                      "cumulative_rows_scanned": 4,
+                      "operator_cardinality": 2,
+                      "operator_name": "PROJECTION",
+                      "operator_rows_scanned": 0,
+                      "children": [
+                        {
+                          "operator_timing": 1.8742e-05,
+                          "operator_type": "PROJECTION",
+                          "extra_info": {
+                            "Projections": [
+                              "__internal_decompress_string(#0)",
+                              "#1"
+                            ],
+                            "Estimated Cardinality": "1"
+                          },
+                          "cumulative_rows_scanned": 4,
+                          "operator_cardinality": 2,
+                          "operator_name": "PROJECTION",
+                          "operator_rows_scanned": 0,
+                          "children": [
+                            {
+                              "operator_timing": 0.0012954609999999997,
+                              "operator_type": "HASH_GROUP_BY",
+                              "extra_info": {
+                                "Groups": "#0",
+                                "Aggregates": "count(#1)",
+                                "Estimated Cardinality": "1"
+                              },
+                              "cumulative_rows_scanned": 4,
+                              "operator_cardinality": 2,
+                              "operator_name": "HASH_GROUP_BY",
+                              "operator_rows_scanned": 0,
+                              "children": [
+                                {
+                                  "operator_timing": 2.8e-07,
+                                  "operator_type": "PROJECTION",
+                                  "extra_info": {
+                                    "Projections": [
+                                      "commodity",
+                                      "market"
+                                    ],
+                                    "Estimated Cardinality": "4"
+                                  },
+                                  "cumulative_rows_scanned": 4,
+                                  "operator_cardinality": 4,
+                                  "operator_name": "PROJECTION",
+                                  "operator_rows_scanned": 0,
+                                  "children": [
+                                    {
+                                      "operator_timing": 9.712e-06,
+                                      "operator_type": "PROJECTION",
+                                      "extra_info": {
+                                        "Projections": [
+                                          "__internal_compress_string_ubigint(#0)",
+                                          "#1"
+                                        ],
+                                        "Estimated Cardinality": "4"
+                                      },
+                                      "cumulative_rows_scanned": 4,
+                                      "operator_cardinality": 4,
+                                      "operator_name": "PROJECTION",
+                                      "operator_rows_scanned": 0,
+                                      "children": [
+                                        {
+                                          "operator_timing": 4.4412e-05,
+                                          "operator_type": "TABLE_SCAN",
+                                          "extra_info": {
+                                            "Table": "fixture.main.data_2021",
+                                            "Type": "Sequential Scan",
+                                            "Projections": [
+                                              "commodity",
+                                              "market"
+                                            ],
+                                            "Estimated Cardinality": "4"
+                                          },
+                                          "cumulative_rows_scanned": 4,
+                                          "operator_cardinality": 4,
+                                          "operator_name": "SEQ_SCAN",
+                                          "operator_rows_scanned": 4,
+                                          "children": []
+                                        }
+                                      ]
+                                    }
+                                  ]
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
