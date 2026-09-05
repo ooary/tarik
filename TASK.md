@@ -1904,7 +1904,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
 
 ## EPIC E13.5 — Desktop interaction consistency, saved-query correctness, and engine resource controls
 
-**Status:** `PLANNED / READY` — user authorized adding this critical pre-E14 pass on September 5, 2026. Implementation has not started. Complete E13.5-T0 through T5 before final E13-T6 packaged/manual acceptance.
+**Status:** `IN PROGRESS` — E13.5-T0 design completed September 5, 2026. Implement T1 through T5 before final E13-T6 packaged/manual acceptance.
 
 **Outcome:** Tarik uses one accessible desktop interaction language instead of browser prompts/confirms, newly created query folders are immediately truthful even when empty, saving the active SQL is a direct toolbar workflow with an explicit name/folder modal, and the status bar reports verified DuckDB resource settings that users can safely customize.
 
@@ -1912,7 +1912,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
 
 **Truthfulness contract:** Current source contains no `window.alert`, but it contains five `window.prompt` and twelve `window.confirm` calls. All seventeen browser dialogs are in scope. Native operating-system file/folder pickers remain native. The current `Balanced / 2 threads` footer is hard-coded while the sidecar exposes no resource configuration/readback method; it must not claim a profile until DuckDB confirms effective values.
 
-- [ ] **E13.5-T0 Design modal, saved-query, and resource-setting graphs**
+- [x] **E13.5-T0 Design modal, saved-query, and resource-setting graphs**
   - Depends on: E13-T1, E13-T3, E8-T3, E8-T4
   - Owns: `docs/design/E13-5-DESIGN-GRAPH.md`, interaction inventory, resource semantics, and implementation boundaries
   - Deliverables:
@@ -1925,6 +1925,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: Graph Protocol sections cover success, cancellation, stale targets, duplicate submit, backend failure, project switch, active jobs, sidecar restart, persistence/readback mismatch, and focus/resource cleanup before implementation.
   - Tests: source dialog inventory, current folder reproduction, A/E/R/cardinality/boundary completeness, and fixed resource-profile matrix.
   - Commit: `docs(design): define desktop interaction and resource graph`
+  - Notes: Completed in `docs/design/E13-5-DESIGN-GRAPH.md`. The audit confirms 17 browser dialogs; identifies the empty-folder render branch; and requires sidecar-level active-job refusal plus DuckDB readback, so UI idleness cannot race queued Actual Flow/query/export work.
 
 - [ ] **E13.5-T1 Add controlled accessible prompt and confirmation foundations**
   - Depends on: E13.5-T0
