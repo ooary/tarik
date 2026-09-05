@@ -21,6 +21,7 @@ import { previewTableSql, qualifiedSqlName } from "./features/editor/sqlText";
 import { formatCompactCount } from "./features/sources/format";
 import { ImportDialog, type SourceAction } from "./features/sources/ImportDialog";
 import { NewTableDialog } from "./features/sources/NewTableDialog";
+import { EngineResourcesDialog } from "./features/settings/EngineResourcesDialog";
 import { SupportIncidentNotice } from "./app/SupportIncidentNotice";
 import {
   createWorkbenchPreferencesRepository,
@@ -152,6 +153,7 @@ function App() {
   const { bottomPanelOpen: bottomOpen, sidebarOpen } = preferences;
   const selectedTheme = previewTheme() === "system" ? preferences.theme : previewTheme();
   const effectiveTheme = useEffectiveTheme(selectedTheme);
+  const resourceStatusKey = `${engineState}:${project?.id ?? "none"}`;
 
   function updatePreferences(patch: Partial<WorkbenchPreferences>) {
     setPreferences((current) => ({ ...current, ...patch }));
@@ -994,7 +996,7 @@ function App() {
 
       <footer className="status-bar">
         <span className="status-bar-left"><span className={`status-mark status-mark-${engineState}`} aria-hidden="true" /> {engineState === "connected" && project ? `Connected to ${project.name}` : engineState === "connecting" ? "Connecting to DuckDB" : engineState === "standby" ? "DuckDB standby — no project session" : engineState === "recovering" ? "DuckDB stopped — reconnects on the next project operation" : engineState === "failed" ? "DuckDB connection failed" : runtime.kind === "ready" ? "No DuckDB project open" : "Starting Tarik"}</span>
-        <span className="status-bar-right"><span>Memory limit: Balanced</span><span>2 threads</span><span>UTF-8</span></span>
+        <span className="status-bar-right"><EngineResourcesDialog key={resourceStatusKey} statusKey={resourceStatusKey} /><span>UTF-8</span></span>
       </footer>
     </main>
   );

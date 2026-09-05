@@ -14,6 +14,7 @@ import {
   dropCatalogObject,
   getActiveProject,
   getEngineStatus,
+  getEngineResources,
   getLastSupportIncident,
   getRuntimeInfo,
   getTabExecution,
@@ -59,6 +60,8 @@ vi.mock("./lib/commands", () => ({
   dropCatalogObject: vi.fn(),
   getActiveProject: vi.fn(),
   getEngineStatus: vi.fn(),
+  getEngineResources: vi.fn(),
+  setEngineResources: vi.fn(),
   getLastSupportIncident: vi.fn(),
   getRuntimeInfo: vi.fn(),
   getTabExecution: vi.fn(),
@@ -115,6 +118,17 @@ describe("Tarik workbench shell", () => {
     vi.mocked(setWorkbenchPreferences).mockResolvedValue(undefined);
     vi.mocked(getActiveProject).mockResolvedValue(null);
     vi.mocked(getEngineStatus).mockResolvedValue({ state: "stopped", processId: null });
+    vi.mocked(getEngineResources).mockResolvedValue({
+      requested: { preset: "balanced", memoryLimitMib: 2048, threads: 2 },
+      effective: null,
+      state: "pending",
+      logicalCpuCount: 4,
+      physicalMemoryMib: 8192,
+      minimumMemoryMib: 128,
+      maximumMemoryMib: 262144,
+      minimumThreads: 1,
+      maximumThreads: 256,
+    });
     vi.mocked(getTabExecution).mockResolvedValue(null);
     vi.mocked(inspectProjectCatalog).mockResolvedValue({ objects: [], columns: [] });
     vi.mocked(loadQuerySession).mockResolvedValue(null);
