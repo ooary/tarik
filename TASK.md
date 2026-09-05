@@ -1927,7 +1927,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Commit: `docs(design): define desktop interaction and resource graph`
   - Notes: Completed in `docs/design/E13-5-DESIGN-GRAPH.md`. The audit confirms 17 browser dialogs; identifies the empty-folder render branch; and requires sidecar-level active-job refusal plus DuckDB readback, so UI idleness cannot race queued Actual Flow/query/export work.
 
-- [ ] **E13.5-T1 Add controlled accessible prompt and confirmation foundations**
+- [x] **E13.5-T1 Add controlled accessible prompt and confirmation foundations**
   - Depends on: E13.5-T0
   - Owns: shared Radix dialog primitives, form/confirmation contracts, accessibility behavior, and focused component tests
   - Deliverables:
@@ -1939,6 +1939,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: foundations support every inventoried interaction without browser APIs, nested focus traps, lost focus, accidental Enter submission, or modal dismissal during an active commit.
   - Tests: controlled open/close, initial focus, Tab containment, Enter/Escape, click outside, focus restoration, busy/error states, destructive cancel focus, stale target, themes, and minimum viewport.
   - Commit: `feat(ui): add controlled desktop dialog patterns`
+  - Notes: Controlled Radix foundations now provide explicit text-entry and confirmation contracts, feature-supplied return focus, valid-idle Enter submission, destructive Cancel focus, busy dismissal prevention, inline operation errors, and compact responsive styling. The full frontend suite passes with 158 tests.
 
 - [ ] **E13.5-T2 Replace every browser prompt and confirmation**
   - Depends on: E13.5-T1

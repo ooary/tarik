@@ -1,4 +1,4 @@
-import type { InputHTMLAttributes, ReactNode } from "react";
+import { forwardRef, type InputHTMLAttributes, type ReactNode } from "react";
 
 interface FieldProps extends InputHTMLAttributes<HTMLInputElement> {
   label: string;
@@ -7,7 +7,10 @@ interface FieldProps extends InputHTMLAttributes<HTMLInputElement> {
   trailing?: ReactNode;
 }
 
-export function Field({ label, hint, error, trailing, id, className = "", ...props }: FieldProps) {
+export const Field = forwardRef<HTMLInputElement, FieldProps>(function Field(
+  { label, hint, error, trailing, id, className = "", ...props },
+  ref,
+) {
   const inputId = id ?? `field-${label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
   const descriptionId = `${inputId}-description`;
 
@@ -21,6 +24,7 @@ export function Field({ label, hint, error, trailing, id, className = "", ...pro
           aria-describedby={hint || error ? descriptionId : undefined}
           aria-invalid={error ? true : undefined}
           id={inputId}
+          ref={ref}
           {...props}
         />
         {trailing}
@@ -32,4 +36,4 @@ export function Field({ label, hint, error, trailing, id, className = "", ...pro
       )}
     </div>
   );
-}
+});

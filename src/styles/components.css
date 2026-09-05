@@ -125,6 +125,49 @@
   padding: 16px;
 }
 
+.ui-dialog-form,
+.ui-confirmation {
+  display: grid;
+  gap: 14px;
+}
+
+.ui-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 7px;
+  padding-top: 2px;
+}
+
+.ui-dialog-actions > button {
+  min-height: 32px;
+  padding-inline: 12px;
+  white-space: nowrap;
+}
+
+.ui-confirmation-detail {
+  padding: 10px 11px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  color: var(--text-secondary);
+  background: var(--surface-control);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.ui-confirmation-warning .ui-confirmation-detail {
+  border-color: color-mix(in srgb, var(--status-warning) 42%, var(--border-subtle));
+}
+
+.ui-confirmation-destructive .ui-confirmation-detail {
+  border-color: color-mix(in srgb, var(--status-error) 42%, var(--border-subtle));
+  background: var(--status-error-surface);
+}
+
+.ui-dialog-content:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
 .ui-menu-content {
   z-index: 24;
   min-width: 176px;
