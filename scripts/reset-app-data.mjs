@@ -12,9 +12,12 @@ export function appDataRoot(platform = process.platform, env = process.env, home
     return path.win32.join(env.APPDATA, "com.tarik.desktop");
   }
   if (platform === "darwin") {
-    return path.join(home, "Library", "Application Support", "com.tarik.desktop");
+    return path.posix.join(home, "Library", "Application Support", "com.tarik.desktop");
   }
-  return path.join(env.XDG_DATA_HOME || path.join(home, ".local", "share"), "com.tarik.desktop");
+  return path.posix.join(
+    env.XDG_DATA_HOME || path.posix.join(home, ".local", "share"),
+    "com.tarik.desktop",
+  );
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
