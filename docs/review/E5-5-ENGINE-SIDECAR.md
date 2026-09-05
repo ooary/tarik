@@ -66,7 +66,7 @@ The desktop resolves the engine binary as a sibling of the current executable, f
 
 ## Remaining E5.5 follow-ups
 
-- `duckdb.session.configure` for resource profiles (memory/threads) in a later task.
+- E13.5 implemented typed `session.configure`/readback for application-wide DuckDB memory/thread profiles, with sidecar-level active-work refusal.
 - E6 later implemented bounded Arrow page artifacts directly in the DuckDB adapter with a bounded decoded-page LRU in the desktop. The unused placeholder `crates/arrow-page-format` abstraction was removed in E12-T0.
 - Deterministic runtime library discovery and packaging for Windows portable (E12).
-- Engine crash detection/restart policy.
+- E13 later implemented lazy crash detection and session recovery; E13.5 reapplies and verifies requested resources during that recovery.

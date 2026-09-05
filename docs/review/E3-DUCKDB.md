@@ -14,23 +14,19 @@ Tarik pins the maintained `duckdb` Rust binding `1.10505.0` with its bundled eng
 - Reopening the same path preserves its SQLite operational project identity.
 - A failed managed-project creation removes its incomplete directory.
 
-## Worker boundary
+## Sidecar boundary
 
-- One dedicated `tarik-duckdb-worker` thread owns the active connection.
-- A bounded channel accepts at most 16 waiting jobs.
-- Queue saturation is a structured error instead of unbounded memory growth.
-- Tauri commands dispatch blocking waits through `tauri::async_runtime::spawn_blocking`.
-- Shutdown sends a structural stop message and joins the worker thread.
+E5.5 replaced the original in-process worker with one lazy, long-lived DuckDB sidecar. The desktop serializes protocol requests, one primary connection owns the active project session, and query/export registries run cancellable asynchronous jobs from cloned connections. Closing a project releases the session and leaves a healthy process in standby; application shutdown stops it structurally.
 
 ## Resource profiles
 
-| Profile    | Memory | Threads |
-| ---------- | -----: | ------: |
-| Low memory | 512 MB |       1 |
-| Balanced   |   2 GB |       2 |
-| Fast       |   8 GB |       4 |
+| Profile    |  Memory | Threads |
+| ---------- | ------: | ------: |
+| Low memory | 512 MiB |       1 |
+| Balanced   |   2 GiB |       2 |
+| Fast       |   8 GiB |       4 |
 
-Custom values validate memory, threads, and temporary directory before application. DuckDB settings use parameter binding instead of interpolating user paths or values into SQL.
+E13.5 restored these profiles through the sidecar and added Custom values from 128 MiB–256 GiB and 1–256 threads. One application-wide request is stored in SQLite, applied on session open/recovery, and reported effective only after DuckDB readback. Active query/Actual Flow/export work refuses changes without cancellation. DuckDB settings use parameter binding instead of interpolated SQL. The spill directory remains Tarik-owned rather than user-configurable.
 
 ## Catalog
 

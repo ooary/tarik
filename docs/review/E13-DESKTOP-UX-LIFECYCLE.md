@@ -48,15 +48,7 @@ Radix Dialog owns focus trapping, Escape dismissal, accessible title/description
 
 ## Browser dialog inventory
 
-New project no longer calls a browser prompt or alert. Remaining calls are intentionally outside E13 implementation scope:
-
-- Open external project naming uses `window.prompt`.
-- Recent project rename uses `window.prompt`.
-- Project/source/catalog removal uses `window.confirm`.
-- Query execution and Actual Flow mutation warnings use `window.confirm`.
-- Unsaved tab close uses `window.confirm`; tab rename uses `window.prompt`.
-- Export mutation warning uses `window.confirm`.
-- Saved-query folders, renames, and removals use browser prompts/confirms.
+E13 initially replaced only the New project prompt. E13.5 subsequently replaced the remaining five `window.prompt` and twelve `window.confirm` calls with feature-owned accessible Tarik dialogs. A repository guard now rejects production browser dialogs while retaining native operating-system file/folder pickers. See `docs/review/E13-5-INTERACTIONS-RESOURCES.md`.
 
 ## Results regression
 
