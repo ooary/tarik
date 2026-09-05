@@ -8,8 +8,8 @@ use serde_json::Value;
 use tarik_engine_client::EngineProcess;
 use tarik_engine_protocol::{
     CatalogSnapshot, CreateTableDefinition, CsvOptions, EffectiveEngineResources,
-    EngineResourceSettings, ExportOptions, ExportStatus, ImportOptions, ProjectLocator,
-    SourceInspection, SourceRecord, SqlValidation,
+    EngineResourceSettings, ExportOptions, ExportStatus, ImportOptions, ProfileRequest,
+    ProfileStatus, ProjectLocator, SourceInspection, SourceRecord, SqlValidation,
 };
 
 pub struct EngineManager {
@@ -438,6 +438,48 @@ impl EngineManager {
             }),
         )
         .map(|_| ())
+    }
+
+    /// Submit a bounded asynchronous profile for the active engine session.
+    pub fn execute_profile(
+        &self,
+        profile_id: &str,
+        request: &ProfileRequest,
+    ) -> Result<(), String> {
+        self.session_request(
+            "profile.execute",
+            serde_json::json!({
+                "profileId": profile_id,
+                "request": request,
+            }),
+        )
+        .map(|_| ())
+    }
+
+    pub fn profile_status(&self, profile_id: &str) -> Result<Option<ProfileStatus>, String> {
+        match self.raw_request(
+            "profile.status",
+            serde_json::json!({ "profileId": profile_id }),
+        ) {
+            Ok(value) => serde_json::from_value(value)
+                .map(Some)
+                .map_err(|error| format!("profile status decode failed: {error}")),
+            Err(error) if Self::structured_code(&error) == Some("profile.missing") => Ok(None),
+            Err(error) => Err(error),
+        }
+    }
+
+    pub fn cancel_profile(&self, profile_id: &str) -> Result<Option<ProfileStatus>, String> {
+        match self.raw_request(
+            "profile.cancel",
+            serde_json::json!({ "profileId": profile_id }),
+        ) {
+            Ok(value) => serde_json::from_value(value)
+                .map(Some)
+                .map_err(|error| format!("profile status decode failed: {error}")),
+            Err(error) if Self::structured_code(&error) == Some("profile.missing") => Ok(None),
+            Err(error) => Err(error),
+        }
     }
 
     /// Submit an asynchronous export for the active engine session. Options

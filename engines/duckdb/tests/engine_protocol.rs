@@ -219,6 +219,7 @@ fn handshake_reports_duckdb_capabilities() {
     assert_eq!(result["protocolVersion"], 1);
     assert_eq!(result["capabilities"]["linkParquet"], true);
     assert_eq!(result["capabilities"]["importCsv"], true);
+    assert_eq!(result["capabilities"]["dataProfiling"], true);
     engine.child.kill().ok();
 }
 
@@ -557,6 +558,19 @@ fn poll_terminal(engine: &mut Engine, execution_id: &str) -> Value {
     poll_terminal_with_timeout(engine, execution_id, 200)
 }
 
+fn poll_profile_terminal(engine: &mut Engine, profile_id: &str, attempts: usize) -> Value {
+    for _ in 0..attempts {
+        let status =
+            engine.request("profile.status", json!({ "profileId": profile_id }))["result"].clone();
+        let state = status["state"].as_str().unwrap_or_default();
+        if state == "succeeded" || state == "failed" || state == "cancelled" {
+            return status;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    panic!("profile {profile_id} did not reach a terminal state");
+}
+
 fn poll_export_terminal(engine: &mut Engine, export_id: &str, attempts: usize) -> Value {
     for _ in 0..attempts {
         let status =
@@ -796,6 +810,197 @@ fn paging_reads_windows_across_pages_and_release_removes_artifacts() {
     engine.child.kill().ok();
     let _ = std::fs::remove_file(&database);
     let _ = std::fs::remove_dir_all(&cache_dir);
+}
+
+#[test]
+fn profile_protocol_is_bounded_truthful_stale_safe_and_leaves_no_result_artifacts() {
+    let mut engine = spawn_engine();
+    let root = temp_path("profile", "");
+    std::fs::create_dir_all(&root).unwrap();
+    let database = root.join("profile.duckdb");
+    engine.assert_ok(
+        "session.open",
+        json!({
+            "sessionId": "profile-session",
+            "locator": { "engineId": "duckdb", "payload": { "path": database } }
+        }),
+    );
+    engine.assert_ok(
+        "query.execute",
+        json!({
+            "sessionId": "profile-session",
+            "executionId": "profile-fixture",
+            "sql": "CREATE TABLE \"odd table\" AS SELECT i % 7 AS id, CASE WHEN i % 5 = 0 THEN NULL ELSE 'label-' || i END AS label FROM range(1000) t(i)",
+            "cacheDir": root.join("results")
+        }),
+    );
+    assert_eq!(
+        poll_terminal(&mut engine, "profile-fixture")["state"],
+        "succeeded"
+    );
+    let catalog = engine.assert_ok("catalog.inspect", json!({ "sessionId": "profile-session" }));
+    let target = catalog["objects"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|object| object["name"] == "odd table")
+        .unwrap()
+        .clone();
+    let request = json!({
+        "projectId": "project-1",
+        "target": target,
+        "columns": [
+            { "name": "id", "dataType": "BIGINT" },
+            { "name": "label", "dataType": "VARCHAR" }
+        ],
+        "catalogRevision": catalog["revision"],
+        "mode": "approximate"
+    });
+    let queued = engine.assert_ok(
+        "profile.execute",
+        json!({ "sessionId": "profile-session", "profileId": "profile-1", "request": request }),
+    );
+    assert_eq!(queued["state"], "queued");
+    let status = poll_profile_terminal(&mut engine, "profile-1", 400);
+    assert_eq!(status["state"], "succeeded");
+    assert_eq!(status["snapshot"]["metrics"][0]["kind"], "row_count");
+    assert_eq!(status["snapshot"]["metrics"][0]["value"], 1000);
+    assert!(status["snapshot"]["metrics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|metric| {
+            metric["column"] == "id"
+                && metric["kind"] == "distinct_count"
+                && metric["provenance"] == "approximate"
+        }));
+    let lists = status["snapshot"]["metrics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|metric| {
+            metric["kind"] == "common_values" || metric["kind"] == "representative_values"
+        });
+    for metric in lists {
+        assert!(metric["value"].as_array().unwrap().len() <= 20);
+    }
+    assert!(!root.join("results/profile-1").exists());
+
+    let stale = engine.request(
+        "profile.execute",
+        json!({
+            "sessionId": "profile-session",
+            "profileId": "profile-stale",
+            "request": {
+                "projectId": "project-1",
+                "target": { "database": "profile", "schema": "main", "name": "odd table", "kind": "table" },
+                "columns": [{ "name": "id", "dataType": "BIGINT" }],
+                "catalogRevision": "stale-revision",
+                "mode": "exact"
+            }
+        }),
+    );
+    assert_eq!(stale["ok"], true);
+    let stale_status = poll_profile_terminal(&mut engine, "profile-stale", 400);
+    assert_eq!(stale_status["state"], "failed");
+    assert_eq!(stale_status["error"]["code"], "profile.catalog_stale");
+
+    engine.assert_ok(
+        "query.execute",
+        json!({
+            "sessionId": "profile-session",
+            "executionId": "after-profile",
+            "sql": "SELECT 42",
+            "cacheDir": root.join("results")
+        }),
+    );
+    assert_eq!(
+        poll_terminal(&mut engine, "after-profile")["state"],
+        "succeeded"
+    );
+    engine.assert_ok("session.close", json!({ "sessionId": "profile-session" }));
+    engine.child.kill().ok();
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn active_profile_cancels_without_residue_and_the_session_remains_usable() {
+    let mut engine = spawn_engine();
+    let root = temp_path("profile-cancel", "");
+    std::fs::create_dir_all(&root).unwrap();
+    let database = root.join("cancel.duckdb");
+    engine.assert_ok(
+        "session.open",
+        json!({
+            "sessionId": "profile-cancel-session",
+            "locator": { "engineId": "duckdb", "payload": { "path": database } }
+        }),
+    );
+    engine.assert_ok(
+        "query.execute",
+        json!({
+            "sessionId": "profile-cancel-session",
+            "executionId": "profile-cancel-fixture",
+            "sql": "CREATE VIEW huge_profile AS SELECT i AS value FROM range(1000000000000) t(i)",
+            "cacheDir": root.join("results")
+        }),
+    );
+    assert_eq!(
+        poll_terminal(&mut engine, "profile-cancel-fixture")["state"],
+        "succeeded"
+    );
+    let catalog = engine.assert_ok(
+        "catalog.inspect",
+        json!({ "sessionId": "profile-cancel-session" }),
+    );
+    let target = catalog["objects"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|object| object["name"] == "huge_profile")
+        .unwrap()
+        .clone();
+    engine.assert_ok(
+        "profile.execute",
+        json!({
+            "sessionId": "profile-cancel-session",
+            "profileId": "cancel-profile",
+            "request": {
+                "projectId": "project-1",
+                "target": target,
+                "columns": [{ "name": "value", "dataType": "BIGINT" }],
+                "catalogRevision": catalog["revision"],
+                "mode": "exact"
+            }
+        }),
+    );
+    std::thread::sleep(std::time::Duration::from_millis(30));
+    let cancelled = engine.assert_ok("profile.cancel", json!({ "profileId": "cancel-profile" }));
+    assert!(cancelled["state"] == "running" || cancelled["state"] == "cancelled");
+    let status = poll_profile_terminal(&mut engine, "cancel-profile", 800);
+    assert_eq!(status["state"], "cancelled");
+    assert_eq!(status["snapshot"], Value::Null);
+    assert!(!root.join("results/cancel-profile").exists());
+
+    engine.assert_ok(
+        "query.execute",
+        json!({
+            "sessionId": "profile-cancel-session",
+            "executionId": "after-profile-cancel",
+            "sql": "SELECT 42",
+            "cacheDir": root.join("results")
+        }),
+    );
+    assert_eq!(
+        poll_terminal(&mut engine, "after-profile-cancel")["state"],
+        "succeeded"
+    );
+    engine.assert_ok(
+        "session.close",
+        json!({ "sessionId": "profile-cancel-session" }),
+    );
+    engine.child.kill().ok();
+    std::fs::remove_dir_all(root).unwrap();
 }
 
 #[test]

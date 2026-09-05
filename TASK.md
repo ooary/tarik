@@ -2028,7 +2028,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Tests: Graph Protocol completeness, adversarial NULL/type/catalog matrix, cancellation/resource inventory, and code-to-graph review before implementation.
   - Commit: `docs(design): define profiling and quality check graph`
 
-- [ ] **E14-T1 Add bounded DuckDB profiling primitives**
+- [x] **E14-T1 Add bounded DuckDB profiling primitives**
   - Depends on: E14-T0
   - Owns: adapter-friendly profile protocol, DuckDB profile compiler/executor, bounded status payloads, and profile tests
   - Deliverables:
@@ -2041,6 +2041,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: a wide or million-row table can be profiled without desktop result growth proportional to row count; cancelling a profile leaves the project session usable and no result artifacts.
   - Tests: empty/all-NULL/mixed tables; boolean, integer, decimal, floating/NaN, text/Unicode/long values, date/timestamp, binary, list/struct, and unsupported types; quoted identifiers; linked Parquet missing mid-run; exact/approximate labels; 100-column/value caps; cancellation; process restart; memory/cache residue.
   - Commit: `feat(profile): add bounded DuckDB data profiling`
+  - Notes: Implemented a dedicated typed `ProfileRegistry` with queued/running/terminal status, InterruptHandle cancellation, a five-minute deadline, 32 terminal-record retention, 100-column and 20-value caps, a 256 KiB snapshot budget, 64 KiB-safe displayed values, stable catalog revision checks before/after scanning, and no Arrow/result artifacts. Profile jobs are mutually exclusive with query/export work at the sidecar boundary; resource changes and shutdown include active profiles. Exact/approximate/sampled provenance and explicit unavailable reasons are protocol data, not inferred UI labels.
 
 - [ ] **E14-T2 Persist project-scoped quality definitions and bounded run history**
   - Depends on: E14-T0

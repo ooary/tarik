@@ -146,6 +146,35 @@ test("source inspection, link, import, repair, and removal use typed commands", 
   );
 });
 
+test("profiles use typed immutable requests and lifecycle commands", async () => {
+  const { executeProfile, getProfileStatus, cancelProfile } = await loadCommandsModule();
+  const calls = [];
+  const request = {
+    projectId: "p1",
+    target: { database: "retail", schema: "main", name: "orders", kind: "table" },
+    columns: [{ name: "id", dataType: "BIGINT" }],
+    catalogRevision: "abc123",
+    mode: "approximate",
+  };
+  const status = { profileId: "profile-1", state: "queued", snapshot: null, error: null };
+  const invoke = async (command, args) => {
+    calls.push({ command, args });
+    return status;
+  };
+
+  assert.deepEqual(await executeProfile(request, invoke), status);
+  await getProfileStatus("profile-1", invoke);
+  await cancelProfile("profile-1", invoke);
+  assert.equal(
+    JSON.stringify(calls),
+    JSON.stringify([
+      { command: "execute_profile", args: { request } },
+      { command: "get_profile_status", args: { profileId: "profile-1" } },
+      { command: "cancel_profile", args: { profileId: "profile-1" } },
+    ]),
+  );
+});
+
 test("query validation preserves project SQL and revision", async () => {
   const { validateQuery } = await loadCommandsModule();
   const calls = [];

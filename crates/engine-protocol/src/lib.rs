@@ -17,6 +17,10 @@ pub const MIN_ENGINE_MEMORY_MIB: u64 = 128;
 pub const MAX_ENGINE_MEMORY_MIB: u64 = 262_144;
 pub const MIN_ENGINE_THREADS: u16 = 1;
 pub const MAX_ENGINE_THREADS: u16 = 256;
+pub const MAX_PROFILE_COLUMNS: usize = 100;
+pub const MAX_PROFILE_VALUES: usize = 20;
+pub const MAX_PROFILE_VALUE_BYTES: usize = 64 * 1024;
+pub const MAX_PROFILE_SNAPSHOT_BYTES: usize = 256 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -101,6 +105,160 @@ pub struct EffectiveEngineResources {
     pub memory_limit_mib: u64,
     pub memory_limit_display: String,
     pub threads: u16,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProfileTarget {
+    pub database: String,
+    pub schema: String,
+    pub name: String,
+    pub kind: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProfileColumn {
+    pub name: String,
+    pub data_type: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProfileMode {
+    Approximate,
+    Exact,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProfileRequest {
+    pub project_id: String,
+    pub target: ProfileTarget,
+    pub columns: Vec<ProfileColumn>,
+    pub catalog_revision: String,
+    pub mode: ProfileMode,
+}
+
+impl ProfileRequest {
+    pub fn validate(&self) -> Result<(), ProfileValidationError> {
+        if self.project_id.trim().is_empty()
+            || self.target.database.trim().is_empty()
+            || self.target.schema.trim().is_empty()
+            || self.target.name.trim().is_empty()
+            || self.catalog_revision.trim().is_empty()
+        {
+            return Err(ProfileValidationError::MissingIdentity);
+        }
+        if !matches!(self.target.kind.as_str(), "table" | "view") {
+            return Err(ProfileValidationError::UnsupportedTarget);
+        }
+        if self.columns.is_empty() {
+            return Err(ProfileValidationError::NoColumns);
+        }
+        if self.columns.len() > MAX_PROFILE_COLUMNS {
+            return Err(ProfileValidationError::TooManyColumns);
+        }
+        if self
+            .columns
+            .iter()
+            .any(|column| column.name.trim().is_empty() || column.data_type.trim().is_empty())
+        {
+            return Err(ProfileValidationError::InvalidColumn);
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProfileValidationError {
+    MissingIdentity,
+    UnsupportedTarget,
+    NoColumns,
+    TooManyColumns,
+    InvalidColumn,
+}
+
+impl fmt::Display for ProfileValidationError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::MissingIdentity => "profile identity fields cannot be empty",
+            Self::UnsupportedTarget => "profile target must be a table or view",
+            Self::NoColumns => "at least one profile column is required",
+            Self::TooManyColumns => "profile requests support at most 100 columns",
+            Self::InvalidColumn => "profile column name and type cannot be empty",
+        })
+    }
+}
+
+impl std::error::Error for ProfileValidationError {}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MetricProvenance {
+    Exact,
+    Approximate,
+    Sampled,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProfileMetricKind {
+    RowCount,
+    NullCount,
+    NullRate,
+    DistinctCount,
+    Minimum,
+    Maximum,
+    Average,
+    TextLengthMinimum,
+    TextLengthMaximum,
+    TextLengthAverage,
+    CommonValues,
+    RepresentativeValues,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProfileMetric {
+    pub column: Option<String>,
+    pub kind: ProfileMetricKind,
+    pub value: Option<serde_json::Value>,
+    pub provenance: MetricProvenance,
+    pub unavailable_reason: Option<String>,
+    #[serde(default)]
+    pub truncated: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProfileSnapshot {
+    pub project_id: String,
+    pub target: ProfileTarget,
+    pub catalog_revision: String,
+    pub mode: ProfileMode,
+    pub observed_at_unix_ms: u64,
+    pub metrics: Vec<ProfileMetric>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProfileState {
+    Queued,
+    Running,
+    Succeeded,
+    Failed,
+    Cancelled,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProfileStatus {
+    pub profile_id: String,
+    pub state: ProfileState,
+    pub duration_ms: u64,
+    pub snapshot: Option<ProfileSnapshot>,
+    pub error: Option<ErrorEnvelope>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -411,6 +569,8 @@ pub struct Capabilities {
     pub cancel_query: bool,
     pub explain: bool,
     pub profile: bool,
+    #[serde(default)]
+    pub data_profiling: bool,
     pub link_parquet: bool,
     pub import_csv: bool,
     pub import_parquet: bool,
@@ -430,6 +590,7 @@ impl Default for Capabilities {
             cancel_query: true,
             explain: true,
             profile: true,
+            data_profiling: false,
             link_parquet: false,
             import_csv: false,
             import_parquet: false,
@@ -537,8 +698,36 @@ pub struct CatalogColumn {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CatalogSnapshot {
+    pub revision: String,
     pub objects: Vec<CatalogObject>,
     pub columns: Vec<CatalogColumn>,
+}
+
+pub fn catalog_revision(objects: &[CatalogObject], columns: &[CatalogColumn]) -> String {
+    // Stable FNV-1a over ordered catalog identity. This is a staleness token,
+    // not a cryptographic digest; the catalog query supplies deterministic order.
+    let mut hash = 0xcbf29ce484222325u64;
+    let mut write = |value: &str| {
+        for byte in value.as_bytes().iter().copied().chain(std::iter::once(0)) {
+            hash ^= u64::from(byte);
+            hash = hash.wrapping_mul(0x100000001b3);
+        }
+    };
+    for object in objects {
+        write(&object.database);
+        write(&object.schema);
+        write(&object.name);
+        write(&object.kind);
+    }
+    for column in columns {
+        write(&column.database);
+        write(&column.schema);
+        write(&column.object);
+        write(&column.name);
+        write(&column.data_type);
+        write(if column.nullable { "1" } else { "0" });
+    }
+    format!("{hash:016x}")
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -813,6 +1002,73 @@ mod tests {
         let postgres = Capabilities::default();
         assert!(duckdb.link_parquet);
         assert!(!postgres.link_parquet);
+    }
+
+    fn profile_request() -> ProfileRequest {
+        ProfileRequest {
+            project_id: "project-1".into(),
+            target: ProfileTarget {
+                database: "memory".into(),
+                schema: "main".into(),
+                name: "orders".into(),
+                kind: "table".into(),
+            },
+            columns: vec![ProfileColumn {
+                name: "order id".into(),
+                data_type: "BIGINT".into(),
+            }],
+            catalog_revision: "abc123".into(),
+            mode: ProfileMode::Approximate,
+        }
+    }
+
+    #[test]
+    fn profile_request_is_closed_bounded_and_serializable() {
+        let request = profile_request();
+        request.validate().unwrap();
+        let wire = serde_json::to_value(&request).unwrap();
+        assert_eq!(wire["mode"], "approximate");
+        assert_eq!(wire["target"]["kind"], "table");
+        assert_eq!(
+            serde_json::from_value::<ProfileRequest>(wire).unwrap(),
+            request
+        );
+
+        let mut too_wide = profile_request();
+        too_wide.columns = (0..=MAX_PROFILE_COLUMNS)
+            .map(|index| ProfileColumn {
+                name: format!("column-{index}"),
+                data_type: "INTEGER".into(),
+            })
+            .collect();
+        assert_eq!(
+            too_wide.validate(),
+            Err(ProfileValidationError::TooManyColumns)
+        );
+    }
+
+    #[test]
+    fn catalog_revision_is_stable_and_changes_with_column_identity() {
+        let objects = vec![CatalogObject {
+            database: "memory".into(),
+            schema: "main".into(),
+            name: "orders".into(),
+            kind: "table".into(),
+            estimated_row_count: Some(2),
+        }];
+        let mut columns = vec![CatalogColumn {
+            database: "memory".into(),
+            schema: "main".into(),
+            object: "orders".into(),
+            name: "id".into(),
+            data_type: "BIGINT".into(),
+            position: 0,
+            nullable: false,
+        }];
+        let first = catalog_revision(&objects, &columns);
+        assert_eq!(first, catalog_revision(&objects, &columns));
+        columns[0].data_type = "VARCHAR".into();
+        assert_ne!(first, catalog_revision(&objects, &columns));
     }
 
     #[test]

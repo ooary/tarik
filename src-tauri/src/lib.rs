@@ -7,6 +7,7 @@ mod metadata;
 mod observability;
 mod paths;
 mod plan;
+mod profile;
 mod projects;
 mod query;
 mod results;
@@ -145,16 +146,19 @@ pub fn run() {
                 export::ExportCoordinator::new(engine.clone(), database.clone())
                     .with_cleanup(cleanup.clone()),
             );
+            let profile_coordinator = Arc::new(profile::ProfileCoordinator::new(engine.clone()));
             let engine_resources = Arc::new(engine_resources::EngineResourceManager::new(
                 database.clone(),
                 engine.clone(),
                 coordinator.clone(),
                 export_coordinator.clone(),
+                profile_coordinator.clone(),
             ));
             let results_store = Arc::new(results::ResultStore::new(engine.clone()));
             let shutdown = Arc::new(shutdown::ShutdownCoordinator::new(
                 coordinator.clone(),
                 export_coordinator.clone(),
+                profile_coordinator.clone(),
                 results_store.clone(),
                 project_manager.clone(),
                 engine.clone(),
@@ -168,6 +172,7 @@ pub fn run() {
             app.manage(project_manager);
             app.manage(coordinator);
             app.manage(export_coordinator);
+            app.manage(profile_coordinator);
             app.manage(engine_resources);
             app.manage(results_store);
             app.manage(shutdown);
@@ -252,6 +257,9 @@ pub fn run() {
             projects::commands::drop_catalog_object,
             projects::commands::remove_linked_source,
             plan::commands::explain_query_plan,
+            profile::execute_profile,
+            profile::get_profile_status,
+            profile::cancel_profile,
             query::commands::validate_query,
             query::commands::execute_query,
             query::commands::get_query_status,

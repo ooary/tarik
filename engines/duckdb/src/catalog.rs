@@ -1,5 +1,5 @@
 use duckdb::Connection;
-use tarik_engine_protocol::{CatalogColumn, CatalogObject, CatalogSnapshot};
+use tarik_engine_protocol::{catalog_revision, CatalogColumn, CatalogObject, CatalogSnapshot};
 
 use crate::error::EngineError;
 
@@ -48,7 +48,12 @@ pub fn inspect(connection: &Connection) -> Result<CatalogSnapshot, EngineError> 
         })?
         .collect::<Result<Vec<_>, _>>()?;
 
-    Ok(CatalogSnapshot { objects, columns })
+    let revision = catalog_revision(&objects, &columns);
+    Ok(CatalogSnapshot {
+        revision,
+        objects,
+        columns,
+    })
 }
 
 /// Drop one user-visible catalog object with safely quoted identifiers.

@@ -4,6 +4,7 @@ pub mod export;
 mod export_jobs;
 mod jobs;
 mod pages;
+mod profile;
 mod resources;
 mod session;
 mod sources;
@@ -32,6 +33,7 @@ fn engine_info() -> EngineInfo {
             link_parquet: true,
             import_csv: true,
             import_parquet: true,
+            data_profiling: true,
             resource_controls: true,
             ..Default::default()
         },
@@ -55,6 +57,7 @@ fn dispatch(
     sessions: &mut session::SessionManager,
     jobs: &std::sync::Arc<jobs::JobRegistry>,
     exports: &std::sync::Arc<export_jobs::ExportRegistry>,
+    profiles: &std::sync::Arc<profile::ProfileRegistry>,
 ) -> Result<Value, EngineError> {
     let params = &request.params;
     match request.method.as_str() {
@@ -186,7 +189,10 @@ fn dispatch(
         }
         "session.configure" => {
             let session_id = required_string(params, "sessionId")?;
-            if jobs.has_active_session(&session_id)? || exports.has_active_session(&session_id)? {
+            if jobs.has_active_session(&session_id)?
+                || exports.has_active_session(&session_id)?
+                || profiles.has_active_session(&session_id)?
+            {
                 return Err(EngineError::ResourcesBusy);
             }
             let requested: tarik_engine_protocol::EngineResourceSettings = serde_json::from_value(
@@ -208,8 +214,39 @@ fn dispatch(
             // Cancel queued/running jobs first so closing cannot strand work.
             jobs.cancel_session(&session_id);
             exports.cancel_session(&session_id);
+            profiles.cancel_session(&session_id);
             sessions.close(&session_id)?;
             Ok(Value::Null)
+        }
+        "profile.execute" => {
+            let session_id = required_string(params, "sessionId")?;
+            if jobs.has_active_session(&session_id)?
+                || exports.has_active_session(&session_id)?
+                || profiles.has_active_session(&session_id)?
+            {
+                return Err(EngineError::ProfileBusy);
+            }
+            let profile_id = required_string(params, "profileId")?;
+            let profile_request: tarik_engine_protocol::ProfileRequest = serde_json::from_value(
+                params
+                    .get("request")
+                    .cloned()
+                    .ok_or_else(|| EngineError::MissingField("request".into()))?,
+            )?;
+            let connection = sessions.get(&session_id)?.try_clone()?;
+            profiles.execute(&session_id, &profile_id, profile_request, connection)?;
+            Ok(serde_json::json!({
+                "profileId": profile_id,
+                "state": "queued",
+            }))
+        }
+        "profile.status" => {
+            let profile_id = required_string(params, "profileId")?;
+            Ok(serde_json::to_value(profiles.status(&profile_id)?)?)
+        }
+        "profile.cancel" => {
+            let profile_id = required_string(params, "profileId")?;
+            Ok(serde_json::to_value(profiles.cancel(&profile_id)?)?)
         }
         "query.validate" => {
             let session_id = required_string(params, "sessionId")?;
@@ -225,6 +262,9 @@ fn dispatch(
         }
         "query.execute" => {
             let session_id = required_string(params, "sessionId")?;
+            if profiles.has_active_session(&session_id)? {
+                return Err(EngineError::ProfileBusy);
+            }
             let execution_id = required_string(params, "executionId")?;
             let sql = required_string(params, "sql")?;
             let cache_dir = params.get("cacheDir").and_then(Value::as_str);
@@ -243,6 +283,9 @@ fn dispatch(
         }
         "export.execute" => {
             let session_id = required_string(params, "sessionId")?;
+            if profiles.has_active_session(&session_id)? {
+                return Err(EngineError::ProfileBusy);
+            }
             let export_id = required_string(params, "exportId")?;
             let sql = required_string(params, "sql")?;
             let options: tarik_engine_protocol::ExportOptions = serde_json::from_value(
@@ -313,6 +356,7 @@ fn main() {
     let mut sessions = session::SessionManager::new();
     let jobs = std::sync::Arc::new(jobs::JobRegistry::new());
     let exports = std::sync::Arc::new(export_jobs::ExportRegistry::new());
+    let profiles = std::sync::Arc::new(profile::ProfileRegistry::new());
     let stdin = std::io::stdin();
     let stdout = std::io::stdout();
     let mut out = stdout.lock();
@@ -327,7 +371,7 @@ fn main() {
         }
 
         let response = match serde_json::from_str::<RequestEnvelope>(&line) {
-            Ok(request) => match dispatch(&request, &mut sessions, &jobs, &exports) {
+            Ok(request) => match dispatch(&request, &mut sessions, &jobs, &exports, &profiles) {
                 Ok(result) => ResponseEnvelope::ok(request.id, result),
                 Err(error) => ResponseEnvelope::err(
                     request.id.clone(),
@@ -364,6 +408,7 @@ mod tests {
         assert!(info.capabilities.link_parquet);
         assert!(info.capabilities.import_csv);
         assert!(info.capabilities.bounded_pages);
+        assert!(info.capabilities.data_profiling);
     }
 
     #[test]
@@ -378,6 +423,7 @@ mod tests {
             &mut session::SessionManager::new(),
             &std::sync::Arc::new(jobs::JobRegistry::new()),
             &std::sync::Arc::new(export_jobs::ExportRegistry::new()),
+            &std::sync::Arc::new(profile::ProfileRegistry::new()),
         )
         .unwrap_err();
         assert_eq!(error.code(), "method.not_found");
@@ -401,6 +447,7 @@ mod tests {
             &mut session::SessionManager::new(),
             &std::sync::Arc::new(jobs::JobRegistry::new()),
             &std::sync::Arc::new(export_jobs::ExportRegistry::new()),
+            &std::sync::Arc::new(profile::ProfileRegistry::new()),
         )
         .unwrap_err();
         assert_eq!(error.code(), "source.invalid_options");

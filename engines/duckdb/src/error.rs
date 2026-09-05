@@ -25,6 +25,18 @@ pub enum EngineError {
     ExecutionExists(String),
     #[error("execution does not exist: {0}")]
     ExecutionMissing(String),
+    #[error("profile already exists: {0}")]
+    ProfileExists(String),
+    #[error("profile does not exist: {0}")]
+    ProfileMissing(String),
+    #[error("invalid profile request: {0}")]
+    InvalidProfile(String),
+    #[error("profile catalog identity is stale")]
+    ProfileCatalogStale,
+    #[error("a profile cannot start while session work is queued or running")]
+    ProfileBusy,
+    #[error("profile exceeded its five-minute execution deadline")]
+    ProfileDeadline,
     #[error("export already exists: {0}")]
     ExportExists(String),
     #[error("export does not exist: {0}")]
@@ -102,6 +114,12 @@ impl EngineError {
             Self::SessionMissing(_) => "session.missing",
             Self::ExecutionExists(_) => "execution.exists",
             Self::ExecutionMissing(_) => "execution.missing",
+            Self::ProfileExists(_) => "profile.exists",
+            Self::ProfileMissing(_) => "profile.missing",
+            Self::InvalidProfile(_) => "profile.invalid",
+            Self::ProfileCatalogStale => "profile.catalog_stale",
+            Self::ProfileBusy => "profile.busy",
+            Self::ProfileDeadline => "profile.deadline",
             Self::ExportExists(_) => "export.exists",
             Self::ExportMissing(_) => "export.missing",
             Self::ExportCancelled => "export.cancelled",

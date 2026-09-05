@@ -40,6 +40,8 @@ export interface ShutdownReport {
   phase: "complete";
   queriesCancelled: number;
   exportsCancelled: number;
+  /** Added with profile jobs; optional only for legacy test fixtures. */
+  profilesCancelled?: number;
   resultsReleased: number;
   metadataCheckpointed: boolean;
   warnings: string[];
@@ -82,8 +84,74 @@ export interface CatalogColumn {
 }
 
 export interface ProjectCatalog {
+  /** Always supplied by the backend; optional only for legacy component fixtures. */
+  revision?: string;
   objects: CatalogObject[];
   columns: CatalogColumn[];
+}
+
+export type ProfileMode = "approximate" | "exact";
+export type MetricProvenance = "exact" | "approximate" | "sampled";
+export type ProfileState = "queued" | "running" | "succeeded" | "failed" | "cancelled";
+
+export interface ProfileTarget {
+  database: string;
+  schema: string;
+  name: string;
+  kind: CatalogObjectKind;
+}
+
+export interface ProfileColumn {
+  name: string;
+  dataType: string;
+}
+
+export interface ProfileRequest {
+  projectId: string;
+  target: ProfileTarget;
+  columns: ProfileColumn[];
+  catalogRevision: string;
+  mode: ProfileMode;
+}
+
+export type ProfileMetricKind =
+  | "row_count"
+  | "null_count"
+  | "null_rate"
+  | "distinct_count"
+  | "minimum"
+  | "maximum"
+  | "average"
+  | "text_length_minimum"
+  | "text_length_maximum"
+  | "text_length_average"
+  | "common_values"
+  | "representative_values";
+
+export interface ProfileMetric {
+  column: string | null;
+  kind: ProfileMetricKind;
+  value: unknown | null;
+  provenance: MetricProvenance;
+  unavailableReason: string | null;
+  truncated: boolean;
+}
+
+export interface ProfileSnapshot {
+  projectId: string;
+  target: ProfileTarget;
+  catalogRevision: string;
+  mode: ProfileMode;
+  observedAtUnixMs: number;
+  metrics: ProfileMetric[];
+}
+
+export interface ProfileStatus {
+  profileId: string;
+  state: ProfileState;
+  durationMs: number;
+  snapshot: ProfileSnapshot | null;
+  error: { code: string; message: string } | null;
 }
 
 export type CreateTableColumnType =
@@ -312,6 +380,27 @@ export function inspectProjectCatalog(
   invokeCommand: InvokeCommand = invoke,
 ): Promise<ProjectCatalog> {
   return invokeCommand<ProjectCatalog>("inspect_project_catalog");
+}
+
+export function executeProfile(
+  request: ProfileRequest,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<ProfileStatus> {
+  return invokeCommand<ProfileStatus>("execute_profile", { request });
+}
+
+export function getProfileStatus(
+  profileId: string,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<ProfileStatus | null> {
+  return invokeCommand<ProfileStatus | null>("get_profile_status", { profileId });
+}
+
+export function cancelProfile(
+  profileId: string,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<ProfileStatus | null> {
+  return invokeCommand<ProfileStatus | null>("cancel_profile", { profileId });
 }
 
 export function inspectSourceFile(
