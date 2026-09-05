@@ -4,6 +4,7 @@ pub mod export;
 mod export_jobs;
 mod jobs;
 mod pages;
+mod resources;
 mod session;
 mod sources;
 mod sql;
@@ -31,6 +32,7 @@ fn engine_info() -> EngineInfo {
             link_parquet: true,
             import_csv: true,
             import_parquet: true,
+            resource_controls: true,
             ..Default::default()
         },
         metadata: serde_json::Map::new(),
@@ -73,8 +75,14 @@ fn dispatch(
             // Idempotent open: replace any stale session with the same id so a
             // previously failed or interrupted open cannot block a retry.
             let _ = sessions.close(&session_id);
-            sessions.open(session_id, path)?;
-            Ok(Value::Null)
+            let resources: tarik_engine_protocol::EngineResourceSettings =
+                serde_json::from_value(params.get("resources").cloned().unwrap_or_else(|| {
+                    serde_json::to_value(tarik_engine_protocol::EngineResourceSettings::default())
+                        .expect("default resources serialize")
+                }))?;
+            Ok(serde_json::to_value(
+                sessions.open(session_id, path, &resources)?,
+            )?)
         }
         "catalog.inspect" => {
             let session_id = required_string(params, "sessionId")?;
@@ -175,6 +183,25 @@ fn dispatch(
             let connection = sessions.get(&session_id)?;
             sources::drop_link(connection, &source)?;
             Ok(Value::Null)
+        }
+        "session.configure" => {
+            let session_id = required_string(params, "sessionId")?;
+            if jobs.has_active_session(&session_id)? || exports.has_active_session(&session_id)? {
+                return Err(EngineError::ResourcesBusy);
+            }
+            let requested: tarik_engine_protocol::EngineResourceSettings = serde_json::from_value(
+                params
+                    .get("resources")
+                    .cloned()
+                    .ok_or_else(|| EngineError::MissingField("resources".into()))?,
+            )?;
+            Ok(serde_json::to_value(
+                sessions.configure(&session_id, &requested)?,
+            )?)
+        }
+        "session.resources" => {
+            let session_id = required_string(params, "sessionId")?;
+            Ok(serde_json::to_value(sessions.resources(&session_id)?)?)
         }
         "session.close" => {
             let session_id = required_string(params, "sessionId")?;

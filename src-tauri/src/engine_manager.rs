@@ -7,8 +7,9 @@ use serde::Serialize;
 use serde_json::Value;
 use tarik_engine_client::EngineProcess;
 use tarik_engine_protocol::{
-    CatalogSnapshot, CreateTableDefinition, CsvOptions, ExportOptions, ExportStatus, ImportOptions,
-    ProjectLocator, SourceInspection, SourceRecord, SqlValidation,
+    CatalogSnapshot, CreateTableDefinition, CsvOptions, EffectiveEngineResources,
+    EngineResourceSettings, ExportOptions, ExportStatus, ImportOptions, ProjectLocator,
+    SourceInspection, SourceRecord, SqlValidation,
 };
 
 pub struct EngineManager {
@@ -17,6 +18,8 @@ pub struct EngineManager {
     result_root: PathBuf,
     process: Mutex<Option<EngineProcess>>,
     session: Mutex<Option<EngineSession>>,
+    requested_resources: Mutex<EngineResourceSettings>,
+    effective_resources: Mutex<Option<EffectiveEngineResources>>,
 }
 
 struct EngineSession {
@@ -39,6 +42,8 @@ impl EngineManager {
             result_root,
             process: Mutex::new(None),
             session: Mutex::new(None),
+            requested_resources: Mutex::new(EngineResourceSettings::default()),
+            effective_resources: Mutex::new(None),
         }
     }
 
@@ -76,7 +81,21 @@ impl EngineManager {
         result
     }
 
-    pub fn open_session(&self, project_path: &Path) -> Result<(), String> {
+    pub fn set_requested_resources(&self, resources: EngineResourceSettings) -> Result<(), String> {
+        resources.validate().map_err(|error| error.to_string())?;
+        *self
+            .requested_resources
+            .lock()
+            .map_err(|_| "engine resource lock".to_string())? = resources;
+        Ok(())
+    }
+
+    pub fn open_session(&self, project_path: &Path) -> Result<EffectiveEngineResources, String> {
+        let requested = self
+            .requested_resources
+            .lock()
+            .map_err(|_| "engine resource lock".to_string())?
+            .clone();
         self.with_process(|process| {
             let mut session = self
                 .session
@@ -100,21 +119,29 @@ impl EngineManager {
                     .unwrap()
                     .clone(),
             };
-            process
-                .request(
-                    "session.open",
-                    serde_json::json!({
-                        "sessionId": session_id,
-                        "locator": locator,
-                    }),
-                )
-                .map_err(|error| error.to_string())?;
+            let effective: EffectiveEngineResources = serde_json::from_value(
+                process
+                    .request(
+                        "session.open",
+                        serde_json::json!({
+                            "sessionId": session_id,
+                            "locator": locator,
+                            "resources": requested,
+                        }),
+                    )
+                    .map_err(|error| error.to_string())?,
+            )
+            .map_err(|error| format!("engine resource decode failed: {error}"))?;
             *session = Some(EngineSession {
                 id: session_id,
                 project_path: project_path.to_path_buf(),
                 process_id: process.id(),
             });
-            Ok(())
+            *self
+                .effective_resources
+                .lock()
+                .map_err(|_| "effective resource lock".to_string())? = Some(effective.clone());
+            Ok(effective)
         })
     }
 
@@ -167,6 +194,9 @@ impl EngineManager {
             .lock()
             .map_err(|_| "session lock".to_string())?
             .take();
+        if let Ok(mut effective) = self.effective_resources.lock() {
+            *effective = None;
+        }
         if let (Some(current), Some(active_process)) = (current, process_guard.as_mut()) {
             if current.process_id == active_process.id() {
                 let result = active_process
@@ -202,12 +232,28 @@ impl EngineManager {
                         .unwrap()
                         .clone(),
                 };
-                process
-                    .request(
-                        "session.open",
-                        serde_json::json!({ "sessionId": session_id, "locator": locator }),
-                    )
-                    .map_err(|error| error.to_string())?;
+                let requested = self
+                    .requested_resources
+                    .lock()
+                    .map_err(|_| "engine resource lock".to_string())?
+                    .clone();
+                let effective: EffectiveEngineResources = serde_json::from_value(
+                    process
+                        .request(
+                            "session.open",
+                            serde_json::json!({
+                                "sessionId": session_id,
+                                "locator": locator,
+                                "resources": requested,
+                            }),
+                        )
+                        .map_err(|error| error.to_string())?,
+                )
+                .map_err(|error| format!("engine resource decode failed: {error}"))?;
+                *self
+                    .effective_resources
+                    .lock()
+                    .map_err(|_| "effective resource lock".to_string())? = Some(effective);
                 current.id = session_id;
                 current.process_id = process.id();
             }
@@ -218,6 +264,32 @@ impl EngineManager {
                 .request(method, params)
                 .map_err(|error| error.to_string())
         })
+    }
+
+    pub fn configure_resources(
+        &self,
+        requested: EngineResourceSettings,
+    ) -> Result<EffectiveEngineResources, String> {
+        requested.validate().map_err(|error| error.to_string())?;
+        let value = self.session_request(
+            "session.configure",
+            serde_json::json!({ "resources": requested }),
+        )?;
+        let effective: EffectiveEngineResources = serde_json::from_value(value)
+            .map_err(|error| format!("engine resource decode failed: {error}"))?;
+        *self
+            .requested_resources
+            .lock()
+            .map_err(|_| "engine resource lock".to_string())? = requested;
+        *self
+            .effective_resources
+            .lock()
+            .map_err(|_| "effective resource lock".to_string())? = Some(effective.clone());
+        Ok(effective)
+    }
+
+    pub fn effective_resources(&self) -> Option<EffectiveEngineResources> {
+        self.effective_resources.lock().ok()?.clone()
     }
 
     pub fn catalog(&self) -> Result<CatalogSnapshot, String> {
@@ -508,6 +580,9 @@ impl EngineManager {
         let process = self.process.lock().ok().and_then(|mut guard| guard.take());
         if let Ok(mut session) = self.session.lock() {
             *session = None;
+        }
+        if let Ok(mut effective) = self.effective_resources.lock() {
+            *effective = None;
         }
         if let Some(process) = process {
             process.shutdown();

@@ -1,4 +1,5 @@
 mod engine_manager;
+mod engine_resources;
 mod export;
 #[cfg(test)]
 mod golden_tests;
@@ -144,6 +145,12 @@ pub fn run() {
                 export::ExportCoordinator::new(engine.clone(), database.clone())
                     .with_cleanup(cleanup.clone()),
             );
+            let engine_resources = Arc::new(engine_resources::EngineResourceManager::new(
+                database.clone(),
+                engine.clone(),
+                coordinator.clone(),
+                export_coordinator.clone(),
+            ));
             let results_store = Arc::new(results::ResultStore::new(engine.clone()));
             let shutdown = Arc::new(shutdown::ShutdownCoordinator::new(
                 coordinator.clone(),
@@ -161,6 +168,7 @@ pub fn run() {
             app.manage(project_manager);
             app.manage(coordinator);
             app.manage(export_coordinator);
+            app.manage(engine_resources);
             app.manage(results_store);
             app.manage(shutdown);
             Ok(())
@@ -201,6 +209,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_runtime_info,
             get_engine_status,
+            engine_resources::get_engine_resources,
+            engine_resources::set_engine_resources,
             observability::get_log_info,
             observability::reveal_log_directory,
             observability::get_last_support_incident,

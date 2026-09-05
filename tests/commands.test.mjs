@@ -183,6 +183,30 @@ test("engine status and tab execution restoration use typed commands", async () 
   );
 });
 
+test("engine resources use typed status and apply commands", async () => {
+  const { getEngineResources, setEngineResources } = await loadCommandsModule();
+  const calls = [];
+  const status = {
+    requested: { preset: "balanced", memoryLimitMib: 2048, threads: 2 },
+    effective: null,
+    state: "pending",
+  };
+  const invoke = async (command, args) => {
+    calls.push({ command, args });
+    return status;
+  };
+
+  assert.deepEqual(await getEngineResources(invoke), status);
+  await setEngineResources(status.requested, invoke);
+  assert.equal(
+    JSON.stringify(calls),
+    JSON.stringify([
+      { command: "get_engine_resources" },
+      { command: "set_engine_resources", args: { requested: status.requested } },
+    ]),
+  );
+});
+
 test("query plans use the typed project/sql/mode command", async () => {
   const { explainQueryPlan } = await loadCommandsModule();
   const calls = [];

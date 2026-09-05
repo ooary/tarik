@@ -35,6 +35,10 @@ pub enum EngineError {
     ResultMissing(String),
     #[error("invalid query request: {0}")]
     InvalidQuery(&'static str),
+    #[error("invalid engine resource settings: {0}")]
+    InvalidResources(String),
+    #[error("engine resources cannot change while session work is queued or running")]
+    ResourcesBusy,
     #[error("could not spawn job worker: {0}")]
     WorkerSpawn(String),
     #[error("engine job registry state is unavailable")]
@@ -103,6 +107,8 @@ impl EngineError {
             Self::ExportCancelled => "export.cancelled",
             Self::ResultMissing(_) => "result.missing",
             Self::InvalidQuery(_) => "query.invalid",
+            Self::InvalidResources(_) => "resources.invalid",
+            Self::ResourcesBusy => "resources.busy",
             Self::WorkerSpawn(_) => "engine.worker_spawn",
             Self::RegistryPoisoned => "engine.registry",
             Self::CacheIo { .. } | Self::CacheDisplay(_) => "cache.io",

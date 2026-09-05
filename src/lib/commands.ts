@@ -403,8 +403,45 @@ export interface EngineStatus {
   processId: number | null;
 }
 
+export type EngineResourcePreset = "low_memory" | "balanced" | "fast" | "custom";
+
+export interface EngineResourceSettings {
+  preset: EngineResourcePreset;
+  memoryLimitMib: number;
+  threads: number;
+}
+
+export interface EffectiveEngineResources extends EngineResourceSettings {
+  memoryLimitDisplay: string;
+}
+
+export interface EngineResourceStatus {
+  requested: EngineResourceSettings;
+  effective: EffectiveEngineResources | null;
+  state: "pending" | "effective";
+  logicalCpuCount: number | null;
+  physicalMemoryMib: number | null;
+  minimumMemoryMib: number;
+  maximumMemoryMib: number;
+  minimumThreads: number;
+  maximumThreads: number;
+}
+
 export function getEngineStatus(invokeCommand: InvokeCommand = invoke): Promise<EngineStatus> {
   return invokeCommand<EngineStatus>("get_engine_status");
+}
+
+export function getEngineResources(
+  invokeCommand: InvokeCommand = invoke,
+): Promise<EngineResourceStatus> {
+  return invokeCommand<EngineResourceStatus>("get_engine_resources");
+}
+
+export function setEngineResources(
+  requested: EngineResourceSettings,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<EngineResourceStatus> {
+  return invokeCommand<EngineResourceStatus>("set_engine_resources", { requested });
 }
 
 export interface ExecutionError {

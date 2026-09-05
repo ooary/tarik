@@ -799,6 +799,106 @@ fn paging_reads_windows_across_pages_and_release_removes_artifacts() {
 }
 
 #[test]
+fn resource_protocol_applies_reads_back_and_survives_connection_clones() {
+    let mut engine = spawn_engine();
+    let root = temp_path("resources", "");
+    std::fs::create_dir_all(&root).unwrap();
+    let database = root.join("resources.duckdb");
+    let session_id = "resource-session";
+
+    let opened = engine.request(
+        "session.open",
+        json!({
+            "sessionId": session_id,
+            "locator": { "engineId": "duckdb", "payload": { "path": database } },
+            "resources": { "preset": "low_memory", "memoryLimitMib": 512, "threads": 1 }
+        }),
+    )["result"]
+        .clone();
+    assert_eq!(opened["memoryLimitMib"], 512);
+    assert_eq!(opened["threads"], 1);
+
+    let configured = engine.request(
+        "session.configure",
+        json!({
+            "sessionId": session_id,
+            "resources": { "preset": "custom", "memoryLimitMib": 768, "threads": 2 }
+        }),
+    )["result"]
+        .clone();
+    assert_eq!(configured["preset"], "custom");
+    assert_eq!(configured["memoryLimitMib"], 768);
+    assert_eq!(configured["threads"], 2);
+
+    let execution_id = "resource-readback-query";
+    engine.request(
+        "query.execute",
+        json!({
+            "sessionId": session_id,
+            "executionId": execution_id,
+            "sql": "SELECT current_setting('memory_limit'), current_setting('threads')",
+            "cacheDir": root.join("results")
+        }),
+    );
+    let status = poll_terminal(&mut engine, execution_id);
+    assert_eq!(status["state"], "succeeded");
+    let page = engine.request(
+        "result.get_page",
+        json!({ "resultId": execution_id, "offset": 0, "maxRows": 1 }),
+    );
+    assert!(page["result"]["rows"][0][0]
+        .as_str()
+        .is_some_and(|value| value.contains("768")));
+    assert_eq!(page["result"]["rows"][0][1], 2);
+
+    engine.request("session.close", json!({ "sessionId": session_id }));
+    engine.child.kill().ok();
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn resource_change_is_rejected_while_session_work_is_active() {
+    let mut engine = spawn_engine();
+    let root = temp_path("resource-busy", "");
+    std::fs::create_dir_all(&root).unwrap();
+    let database = root.join("busy.duckdb");
+    let session_id = "resource-busy-session";
+    engine.request(
+        "session.open",
+        json!({
+            "sessionId": session_id,
+            "locator": { "engineId": "duckdb", "payload": { "path": database } }
+        }),
+    );
+    engine.request(
+        "query.execute",
+        json!({
+            "sessionId": session_id,
+            "executionId": "busy-resource-query",
+            "sql": "SELECT sum(i) FROM range(1000000000) t(i)",
+            "cacheDir": root.join("results")
+        }),
+    );
+    let response = engine.request(
+        "session.configure",
+        json!({
+            "sessionId": session_id,
+            "resources": { "preset": "low_memory", "memoryLimitMib": 512, "threads": 1 }
+        }),
+    );
+    assert_eq!(response["ok"], false);
+    assert_eq!(response["error"]["code"], "resources.busy");
+    engine.request(
+        "query.cancel",
+        json!({ "executionId": "busy-resource-query" }),
+    );
+    let _ = poll_terminal(&mut engine, "busy-resource-query");
+    engine.request("session.close", json!({ "sessionId": session_id }));
+    engine.child.kill().ok();
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn export_protocol_streams_exact_csv_parts_with_bounded_status() {
     let mut engine = spawn_engine();
     let database = temp_path("export", ".duckdb");

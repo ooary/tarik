@@ -1,11 +1,17 @@
 use std::collections::HashMap;
 
 use duckdb::Connection;
+use tarik_engine_protocol::{EffectiveEngineResources, EngineResourceSettings};
 
-use crate::error::EngineError;
+use crate::{error::EngineError, resources};
+
+struct Session {
+    connection: Connection,
+    effective_resources: EffectiveEngineResources,
+}
 
 pub struct SessionManager {
-    sessions: HashMap<String, Connection>,
+    sessions: HashMap<String, Session>,
 }
 
 impl Default for SessionManager {
@@ -21,13 +27,46 @@ impl SessionManager {
         }
     }
 
-    pub fn open(&mut self, session_id: String, path: &str) -> Result<(), EngineError> {
+    pub fn open(
+        &mut self,
+        session_id: String,
+        path: &str,
+        requested: &EngineResourceSettings,
+    ) -> Result<EffectiveEngineResources, EngineError> {
         if self.sessions.contains_key(&session_id) {
             return Err(EngineError::SessionExists(session_id));
         }
         let connection = Connection::open(path)?;
-        self.sessions.insert(session_id, connection);
-        Ok(())
+        let effective_resources = resources::apply(&connection, requested)?;
+        self.sessions.insert(
+            session_id,
+            Session {
+                connection,
+                effective_resources: effective_resources.clone(),
+            },
+        );
+        Ok(effective_resources)
+    }
+
+    pub fn configure(
+        &mut self,
+        session_id: &str,
+        requested: &EngineResourceSettings,
+    ) -> Result<EffectiveEngineResources, EngineError> {
+        let session = self
+            .sessions
+            .get_mut(session_id)
+            .ok_or_else(|| EngineError::SessionMissing(session_id.to_string()))?;
+        let effective = resources::apply(&session.connection, requested)?;
+        session.effective_resources = effective.clone();
+        Ok(effective)
+    }
+
+    pub fn resources(&self, session_id: &str) -> Result<EffectiveEngineResources, EngineError> {
+        self.sessions
+            .get(session_id)
+            .map(|session| session.effective_resources.clone())
+            .ok_or_else(|| EngineError::SessionMissing(session_id.to_string()))
     }
 
     pub fn close(&mut self, session_id: &str) -> Result<(), EngineError> {
@@ -40,6 +79,7 @@ impl SessionManager {
     pub fn get(&self, session_id: &str) -> Result<&Connection, EngineError> {
         self.sessions
             .get(session_id)
+            .map(|session| &session.connection)
             .ok_or_else(|| EngineError::SessionMissing(session_id.to_string()))
     }
 }

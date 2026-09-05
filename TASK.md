@@ -1973,7 +1973,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Commit: `fix(saved-queries): restore folders and direct save flow`
   - Notes: Folder records now render independently from saved-query count and remain visible with empty/search states. A Save query button sits directly before Query library and opens a no-execution modal with required name, folder selection, in-flow folder creation, a bounded immutable SQL snapshot, retry-preserving errors, and success announcement. The direct save path never opens or mutates an editor tab; 161 UI tests pass.
 
-- [ ] **E13.5-T4 Restore typed customizable DuckDB resource settings**
+- [x] **E13.5-T4 Restore typed customizable DuckDB resource settings**
   - Depends on: E13.5-T0, E13-T3
   - Owns: engine protocol/capabilities, sidecar session configuration/readback, SQLite settings, Tauri commands, status state, and integration tests
   - Deliverables:
@@ -1987,6 +1987,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: settings survive restart and project switching, effective readback matches every preset/custom value, active work is never interrupted, failures do not create a false footer state, and query/export cancellation/memory bounds remain intact.
   - Tests: preset matrix, minimum/maximum/overflow/unit parsing, CPU/RAM warnings, SQLite persistence/default migration, open/switch/standby/recovery, busy refusal, apply/readback mismatch, cloned query/export connections, cancellation, sidecar failure, and fixed-workload process memory.
   - Commit: `feat(engine): add verified custom resource settings`
+  - Notes: A shared protocol contract now enforces canonical Low memory/Balanced/Fast profiles and bounded Custom values. SQLite stores one application-wide request; session open and crash recovery apply it before publishing a session; `session.configure` refuses queued/running sidecar work; bound DuckDB settings are read back before effective status is exposed; cloned query connections report the configured values. Hardware hints use cross-platform logical CPU and physical-memory detection.
 
 - [ ] **E13.5-T5 Add Engine resources modal and run combined critical review**
   - Depends on: E13.5-T2, E13.5-T3, E13.5-T4

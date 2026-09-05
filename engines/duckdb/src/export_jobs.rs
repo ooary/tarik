@@ -155,6 +155,14 @@ impl ExportRegistry {
         Ok(())
     }
 
+    pub fn has_active_session(&self, session_id: &str) -> Result<bool, EngineError> {
+        let inner = self.lock()?;
+        Ok(inner.exports.values().any(|record| {
+            record.session_id == session_id
+                && matches!(record.state, ExportState::Queued | ExportState::Running)
+        }))
+    }
+
     pub fn status(&self, export_id: &str) -> Result<ExportStatus, EngineError> {
         let inner = self.lock()?;
         inner

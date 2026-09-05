@@ -13,6 +13,95 @@ pub const MAX_EXPORT_ROWS_PER_PART: u64 = i64::MAX as u64;
 /// Status and history retain only the most recent part summaries; aggregate
 /// counters remain exact even when an export produces more files.
 pub const MAX_REPORTED_EXPORT_PARTS: usize = 100;
+pub const MIN_ENGINE_MEMORY_MIB: u64 = 128;
+pub const MAX_ENGINE_MEMORY_MIB: u64 = 262_144;
+pub const MIN_ENGINE_THREADS: u16 = 1;
+pub const MAX_ENGINE_THREADS: u16 = 256;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EngineResourcePreset {
+    LowMemory,
+    Balanced,
+    Fast,
+    Custom,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EngineResourceSettings {
+    pub preset: EngineResourcePreset,
+    pub memory_limit_mib: u64,
+    pub threads: u16,
+}
+
+impl Default for EngineResourceSettings {
+    fn default() -> Self {
+        Self::preset(EngineResourcePreset::Balanced)
+    }
+}
+
+impl EngineResourceSettings {
+    pub fn preset(preset: EngineResourcePreset) -> Self {
+        let (memory_limit_mib, threads) = match preset {
+            EngineResourcePreset::LowMemory => (512, 1),
+            EngineResourcePreset::Balanced => (2_048, 2),
+            EngineResourcePreset::Fast => (8_192, 4),
+            EngineResourcePreset::Custom => (2_048, 2),
+        };
+        Self {
+            preset,
+            memory_limit_mib,
+            threads,
+        }
+    }
+
+    pub fn validate(&self) -> Result<(), EngineResourceValidationError> {
+        if !(MIN_ENGINE_MEMORY_MIB..=MAX_ENGINE_MEMORY_MIB).contains(&self.memory_limit_mib) {
+            return Err(EngineResourceValidationError::MemoryOutOfRange);
+        }
+        if !(MIN_ENGINE_THREADS..=MAX_ENGINE_THREADS).contains(&self.threads) {
+            return Err(EngineResourceValidationError::ThreadsOutOfRange);
+        }
+        if self.preset != EngineResourcePreset::Custom {
+            let canonical = Self::preset(self.preset);
+            if self.memory_limit_mib != canonical.memory_limit_mib
+                || self.threads != canonical.threads
+            {
+                return Err(EngineResourceValidationError::PresetMismatch);
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EngineResourceValidationError {
+    MemoryOutOfRange,
+    ThreadsOutOfRange,
+    PresetMismatch,
+}
+
+impl fmt::Display for EngineResourceValidationError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::MemoryOutOfRange => "memory limit must be between 128 MiB and 256 GiB",
+            Self::ThreadsOutOfRange => "thread count must be between 1 and 256",
+            Self::PresetMismatch => "preset values do not match the canonical profile",
+        })
+    }
+}
+
+impl std::error::Error for EngineResourceValidationError {}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EffectiveEngineResources {
+    pub preset: EngineResourcePreset,
+    pub memory_limit_mib: u64,
+    pub memory_limit_display: String,
+    pub threads: u16,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -329,6 +418,8 @@ pub struct Capabilities {
     pub bounded_pages: bool,
     pub export_csv: bool,
     pub export_parquet: bool,
+    #[serde(default)]
+    pub resource_controls: bool,
 }
 
 impl Default for Capabilities {
@@ -346,6 +437,7 @@ impl Default for Capabilities {
             bounded_pages: true,
             export_csv: true,
             export_parquet: true,
+            resource_controls: false,
         }
     }
 }
@@ -721,6 +813,51 @@ mod tests {
         let postgres = Capabilities::default();
         assert!(duckdb.link_parquet);
         assert!(!postgres.link_parquet);
+    }
+
+    #[test]
+    fn engine_resource_presets_are_canonical_and_bounded() {
+        assert_eq!(
+            EngineResourceSettings::preset(EngineResourcePreset::LowMemory),
+            EngineResourceSettings {
+                preset: EngineResourcePreset::LowMemory,
+                memory_limit_mib: 512,
+                threads: 1,
+            }
+        );
+        assert_eq!(
+            EngineResourceSettings::preset(EngineResourcePreset::Balanced).memory_limit_mib,
+            2_048
+        );
+        assert_eq!(
+            EngineResourceSettings::preset(EngineResourcePreset::Fast).threads,
+            4
+        );
+        assert!(EngineResourceSettings {
+            preset: EngineResourcePreset::Custom,
+            memory_limit_mib: MIN_ENGINE_MEMORY_MIB,
+            threads: MAX_ENGINE_THREADS,
+        }
+        .validate()
+        .is_ok());
+        assert_eq!(
+            EngineResourceSettings {
+                preset: EngineResourcePreset::Balanced,
+                memory_limit_mib: 512,
+                threads: 2,
+            }
+            .validate(),
+            Err(EngineResourceValidationError::PresetMismatch)
+        );
+        assert_eq!(
+            EngineResourceSettings {
+                preset: EngineResourcePreset::Custom,
+                memory_limit_mib: MIN_ENGINE_MEMORY_MIB - 1,
+                threads: 1,
+            }
+            .validate(),
+            Err(EngineResourceValidationError::MemoryOutOfRange)
+        );
     }
 
     #[test]

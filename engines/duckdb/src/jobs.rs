@@ -152,6 +152,14 @@ impl JobRegistry {
         Ok(())
     }
 
+    pub fn has_active_session(&self, session_id: &str) -> Result<bool, EngineError> {
+        let inner = self.lock()?;
+        Ok(inner.jobs.values().any(|job| {
+            job.session_id == session_id
+                && matches!(job.state, ExecutionState::Queued | ExecutionState::Running)
+        }))
+    }
+
     pub fn status(&self, execution_id: &str) -> Result<ExecutionStatus, EngineError> {
         let inner = self.lock()?;
         let Some(job) = inner.jobs.get(execution_id) else {
