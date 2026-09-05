@@ -57,9 +57,26 @@ impl SessionManager {
             .sessions
             .get_mut(session_id)
             .ok_or_else(|| EngineError::SessionMissing(session_id.to_string()))?;
-        let effective = resources::apply(&session.connection, requested)?;
-        session.effective_resources = effective.clone();
-        Ok(effective)
+        let previous = session.effective_resources.clone();
+        match resources::apply(&session.connection, requested) {
+            Ok(effective) => {
+                session.effective_resources = effective.clone();
+                Ok(effective)
+            }
+            Err(apply_error) => {
+                let rollback = EngineResourceSettings {
+                    preset: previous.preset,
+                    memory_limit_mib: previous.memory_limit_mib,
+                    threads: previous.threads,
+                };
+                if let Err(rollback_error) = resources::apply(&session.connection, &rollback) {
+                    return Err(EngineError::InvalidResources(format!(
+                        "resource apply failed ({apply_error}); previous settings could not be restored ({rollback_error})"
+                    )));
+                }
+                Err(apply_error)
+            }
+        }
     }
 
     pub fn resources(&self, session_id: &str) -> Result<EffectiveEngineResources, EngineError> {

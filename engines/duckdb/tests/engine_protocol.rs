@@ -851,6 +851,31 @@ fn resource_protocol_applies_reads_back_and_survives_connection_clones() {
         .is_some_and(|value| value.contains("768")));
     assert_eq!(page["result"]["rows"][0][1], 2);
 
+    let output = root.join("export");
+    std::fs::create_dir(&output).unwrap();
+    engine.request(
+        "export.execute",
+        json!({
+            "sessionId": session_id,
+            "exportId": "resource-readback-export",
+            "sql": "SELECT current_setting('memory_limit') AS memory, current_setting('threads') AS threads",
+            "options": {
+                "format": "csv",
+                "outputDirectory": output,
+                "baseName": "resources",
+                "rowsPerPart": 10,
+                "overwrite": "fail_if_exists",
+                "csv": { "delimiter": ",", "includeHeader": true },
+                "parquet": null
+            }
+        }),
+    );
+    let export = poll_export_terminal(&mut engine, "resource-readback-export", 200);
+    assert_eq!(export["state"], "succeeded");
+    let csv = std::fs::read_to_string(output.join("resources-part-00001.csv")).unwrap();
+    assert!(csv.contains("768"));
+    assert!(csv.lines().last().is_some_and(|line| line.ends_with(",2")));
+
     engine.request("session.close", json!({ "sessionId": session_id }));
     engine.child.kill().ok();
     std::fs::remove_dir_all(root).unwrap();
