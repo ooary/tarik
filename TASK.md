@@ -397,6 +397,9 @@ E8  Saved/history           -> manual persistence and usability review
 E9  Chunked export          -> manual file-boundary review
 E10 Diagnostics/recovery    -> manual failure and cleanup review
 E11 Release quality         -> final acceptance review
+E12 Windows portable        -> native package and platform review
+E13 Desktop UX/lifecycle    -> packaged visual and process review
+E14 Profiles/quality checks -> beginner workflow and correctness review
 ```
 
 Only tasks inside the current EPIC may run concurrently, and only when dependencies and path ownership allow it. A later EPIC starts after the current EPIC's explicit user sign-off unless the user authorizes an exception.
@@ -1895,6 +1898,125 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
     - Packaged automated acceptance passed September 5, 2026 for `Tarik-0.1.0-windows-x64-portable.zip`: checksums/extraction, two responsive graceful desktop launches with zero no-project sidecars, WebView2 detection, bounded 100,000-row result paging/release, completed three-part 250,000-row export, one-billion-row cancellation with no residue, sidecar `MainWindowHandle = 0`, bounded memory, clean engine exit, and zero Tarik/sidecar processes afterward.
     - Evidence: `target/windows-manual-evidence/runtime-report.json`; archive SHA-256 `f782ceae64553510a6fbafc050e840e51bf617d332cb98337f82159f7ecf6939`.
     - T6 remains open for human visual/input acceptance of the modal, same-tab Results workflows, packaged EXE/window/taskbar/Alt+Tab icon, no console flash, light/dark, keyboard-only use, DPI matrix, mixed-monitor scaling, and clean Windows 10/11 machines.
+
+---
+
+## EPIC E14 — Beginner data profiling and quality checks
+
+**Status:** `PLANNED / BLOCKED` — requirements are recorded, but E14 must not start until E13-T6 receives explicit user approval.
+
+**Outcome:** Help beginners answer “What is in this data?”, “Can I trust it?”, and “What SQL proves that?” through explicit, local, cancellable profiles and reusable quality checks. Tarik must teach by showing deterministic SQL and metric provenance rather than hiding behavior behind an AI chat box or silently changing data.
+
+**Product contract:** Profiling and checks are read-only analytical actions. Every metric is labeled **Exact**, **Approximate**, or **Sampled**; unavailable metrics explain why. Generated SQL is visible and may be copied or opened in an editor without execution. Definitions and bounded run summaries live in SQLite, analytical scans run in the DuckDB sidecar, failing-row previews use ephemeral bounded result pages, and logs contain no generated/custom SQL, accepted values, samples, or failing rows.
+
+- [ ] **E14-T0 Design profiling and quality-check semantics**
+  - Depends on: E13-T6 approval, E4-T3, E6-T4, E8-T4
+  - Owns: `docs/design/E14-DESIGN-GRAPH.md`, domain vocabulary, provenance rules, resource budgets, and privacy boundaries
+  - Deliverables:
+    - Define `ProfileRequest`, `ProfileMetric`, `MetricProvenance(exact|approximate|sampled)`, `ProfileSnapshot`, `QualityCheckDefinition`, immutable `CheckRevision`, `CheckRun`, `CheckOutcome(pass|fail|error|cancelled)`, and bounded `FailurePreview` shapes.
+    - Draw the complete Graph Protocol flow for profile and check execution, including async submission/status/cancellation, project/session ownership, catalog/source changes, missing links, stale responses, sidecar restart, and application shutdown.
+    - Specify type-applicable profile metrics: row count, NULL count/rate, approximate distinct count by default, minimum/maximum, numeric summary, text length, temporal range, bounded common values, and bounded representative values. Unsupported metrics must be absent with a reason, not encoded as zero.
+    - Specify first-party check semantics and NULL policy for non-empty table, not-null, unique/composite unique, accepted values, numeric/date range, relationship integrity, freshness, and read-only custom SQL that passes only when it returns zero failing rows.
+    - Define scan cost disclosure and exact/approximate choices before execution. Full scans may take time but must remain bounded in desktop memory and cancellable; approximate output must never be presented as exact.
+    - Define privacy/retention: profile values and failing rows are ephemeral; SQLite stores bounded definitions and aggregate run facts only; logs retain stable IDs/codes/durations without SQL or data values.
+  - Acceptance: every metric/check has explicit SQL semantics, provenance, cardinality, failure strategy, dependency, trust boundary, and resource lifecycle; no design path mutates user data or collects an unbounded result.
+  - Tests: Graph Protocol completeness, adversarial NULL/type/catalog matrix, cancellation/resource inventory, and code-to-graph review before implementation.
+  - Commit: `docs(design): define profiling and quality check graph`
+
+- [ ] **E14-T1 Add bounded DuckDB profiling primitives**
+  - Depends on: E14-T0
+  - Owns: adapter-friendly profile protocol, DuckDB profile compiler/executor, bounded status payloads, and profile tests
+  - Deliverables:
+    - Add explicit table/column profile requests keyed by project, fully qualified catalog object, selected columns, immutable catalog revision, and requested exact/approximate mode.
+    - Compile identifiers only through the central quoting boundary; derive metric SQL from trusted typed options rather than concatenating UI text.
+    - Execute profile scans asynchronously in the sidecar with queued/running/terminal status, cancellation through DuckDB interruption, fixed deadlines, and no competition that can starve ordinary query/export cancellation.
+    - Return only bounded summaries: at most 100 columns per request, 20 common values, and 20 representative values per column; truncate individual displayed values through the existing safe-value policy. Never return a full column or table through status/IPC.
+    - Mark every metric with provenance and observation time. Reject stale project/catalog identity and surface linked-source missing/type/read failures without fabricating partial success.
+    - Release all profile cursor/cache state on success, error, cancellation, project close, sidecar restart, and Tarik shutdown.
+  - Acceptance: a wide or million-row table can be profiled without desktop result growth proportional to row count; cancelling a profile leaves the project session usable and no result artifacts.
+  - Tests: empty/all-NULL/mixed tables; boolean, integer, decimal, floating/NaN, text/Unicode/long values, date/timestamp, binary, list/struct, and unsupported types; quoted identifiers; linked Parquet missing mid-run; exact/approximate labels; 100-column/value caps; cancellation; process restart; memory/cache residue.
+  - Commit: `feat(profile): add bounded DuckDB data profiling`
+
+- [ ] **E14-T2 Persist project-scoped quality definitions and bounded run history**
+  - Depends on: E14-T0
+  - Owns: metadata migration 0008, repositories, typed Tauri commands, retention, and compatibility tests
+  - Deliverables:
+    - Add forward-only SQLite tables for project-scoped check definitions, immutable revisions, and terminal run summaries with foreign keys and explicit cascade behavior.
+    - Persist check name, type, target identity, typed bounded options, NULL policy, severity, enabled state, revision, and timestamps. Custom SQL is limited to one read-only statement and follows the same local SQL privacy contract as saved queries.
+    - Persist only aggregate run facts: definition/revision, terminal outcome, failure count, duration, observation time, and stable error code. Do not persist common/sample values or failing-row payloads.
+    - Enforce bounded configuration sizes: maximum checks per project, accepted-value entries/bytes, composite-key columns, custom SQL bytes, and retained runs per check/project.
+    - Add create/update/list/delete/get-history/clear-history commands with exact project isolation. Updating a check creates a new revision; historical runs continue to identify the revision actually executed.
+  - Acceptance: definitions and summaries survive restart, never cross projects, upgrade transactionally from schema 7, reject malformed/oversized variants before writes, and remain readable without analytical data.
+  - Tests: fresh migration, schema-7 upgrade, newer-schema refusal, CRUD/revisions, project cascade, retention, malformed JSON, size limits, transaction rollback, and Unicode names/options.
+  - Commit: `feat(quality): persist check definitions and history`
+
+- [ ] **E14-T3 Execute check suites with immutable SQL and bounded failure previews**
+  - Depends on: E14-T1, E14-T2
+  - Owns: check SQL compiler, suite coordinator, sidecar jobs, history finalization, and failure-page lifecycle
+  - Deliverables:
+    - Compile every first-party check into visible, deterministic, safely quoted read-only SQL. Validate custom SQL as exactly one result-producing read-only statement; reject DDL, DML, `COPY`, `ATTACH`, extension installation, and other mutating/external side effects.
+    - Run one check or an ordered project suite from immutable definition revisions. Capture one consistent DuckDB read snapshot when supported; otherwise disclose per-check observation boundaries rather than implying atomicity.
+    - Produce exact pass/fail semantics, aggregate failure count, duration, and stable errors. Failure examples are a separately requested bounded result with existing 500-row pages and 12-page desktop LRU; the suite never collects all failures.
+    - Support queued/running progress, active/queued cancellation, exactly-once terminal SQLite history, and continued session use after fail/error/cancel.
+    - Ensure sidecar crash/restart, project close, check deletion, result release, cache cleanup, and application shutdown cannot strand jobs, previews, or duplicate history.
+  - Acceptance: a suite with passing, failing, errored, and cancelled checks records one truthful terminal row per started check, exposes only bounded examples, and does not mutate tables or leak resources.
+  - Tests: generated SQL golden cases for every check/NULL policy, composite keys, reserved/quoted names, custom mutation sentinels, pass/fail/error/cancel transitions, suite order/snapshot disclosure, exactly-once history, preview paging/release, sidecar crash recovery, and fixed-workload memory/disk budgets.
+  - Commit: `feat(quality): run cancellable data quality suites`
+
+- [ ] **E14-T4 Add a beginner-focused Profile workspace**
+  - Depends on: E14-T1
+  - Owns: Explorer Profile action, profile workspace, provenance/cost language, accessibility, and component tests
+  - Deliverables:
+    - Add **Profile data** only to supported table/view Explorer context menus and keyboard actions. Opening the workspace does not scan until the user explicitly starts it.
+    - Show object identity, source kind/health, scan-cost disclosure, selected columns, exact/approximate choice, Run/Cancel, progress, observation time, and stale state when catalog/source identity changes.
+    - Present a calm dense table rather than dashboard cards: metric, value, provenance label, and plain-language meaning. Common/representative values are bounded, copyable, never logged, and hidden until explicitly expanded.
+    - Explain beginner concepts inline: NULL versus empty text, distinct versus unique, minimum/maximum, distribution limits, and why approximate values can differ.
+    - Offer **Create check** from supported observations such as NULLs, duplicate risk, suspicious range, or stale dates, while requiring review in the check builder before saving or running anything.
+    - Preserve keyboard focus, screen-reader labels, light/dark/system legibility, minimum viewport behavior, and tab/workspace state without adding decorative charts or unbounded DOM.
+  - Acceptance: a beginner can profile a table, identify one concrete issue, state whether each number is exact/approximate/sampled, cancel a slow scan, and reach a prefilled but unexecuted check.
+  - Tests: no-auto-run, empty/loading/progress/success/partial-unavailable/error/cancel/stale states, metric provenance, unsupported types, bounded expansion, context scope, keyboard/focus, theme/minimum viewport, and profile-to-check handoff.
+  - Commit: `feat(profile): add beginner data profile workspace`
+
+- [ ] **E14-T5 Add guided quality-check authoring and SQL teaching**
+  - Depends on: E14-T2, E14-T3, E14-T4
+  - Owns: Checks workspace, typed builder, generated SQL explanation, definition lifecycle, and accessibility tests
+  - Deliverables:
+    - Add a project **Checks** workspace with bounded searchable definitions, enabled/severity/type/target labels, latest outcome, Run, Edit, Duplicate, and Delete actions.
+    - Build each first-party check through plain-language fields and catalog-backed table/column selectors. State exactly what one passing row represents, how NULLs are treated, and what failure means.
+    - Show generated SQL and a sentence-by-sentence explanation before Save or Run. **Open SQL in new tab** and Copy never execute; edits in the new tab do not silently alter the saved check.
+    - Validate duplicate names, missing/stale objects, type-incompatible thresholds, accepted-value limits, relationship key arity/types, freshness units, and custom read-only SQL inline while preserving input after failure.
+    - Require explicit confirmation before running custom SQL or a suite containing it. Never auto-repair data, auto-apply a suggested check, or silently rewrite user SQL.
+  - Acceptance: a beginner can create not-null, unique, relationship, and freshness checks from the catalog, explain the generated SQL at a basic level, save them, and reopen them after restart without any execution occurring implicitly.
+  - Tests: every builder variant and NULL policy, catalog refresh/stale targets, profile prefill, validation/limits, generated SQL display, copy/open-without-run, save/revision/restart, custom mutation rejection/confirmation, keyboard/focus, themes, and minimum viewport.
+  - Commit: `feat(quality): add guided check builder`
+
+- [ ] **E14-T6 Present check runs, bounded failures, and learning-oriented recovery**
+  - Depends on: E14-T3, E14-T5
+  - Owns: suite progress, latest/history views, failure examples, rerun behavior, and recovery UX
+  - Deliverables:
+    - Show suite and individual status using text plus color: queued, running, passed, failed, error, and cancelled; distinguish a valid failed assertion from an execution error.
+    - Present observed versus expected facts in beginner language, for example `14 rows have NULL customer_id; expected 0`, with exact/approximate disclosure inherited from the check semantics.
+    - Browse bounded failing rows in the existing virtualized result grid, with immutable generated/custom SQL available for inspection and explicit rerun. Changing a definition never changes a historical run snapshot.
+    - Provide actionable deterministic recovery for missing objects/columns, type changes, missing linked files, invalid thresholds, and sidecar interruption. Suggestions may open Edit, Profile, Repair link, or SQL; none execute automatically.
+    - Show bounded history and simple outcome/duration trends without retaining or reconstructing historical row payloads. Clearing history does not delete definitions, projects, sources, or completed exports.
+  - Acceptance: users can distinguish data failure from engine failure, inspect bounded examples, understand the expectation, correct the source/check, rerun explicitly, and verify a later pass without losing prior aggregate evidence.
+  - Tests: mixed suite states, observed/expected wording, paged failure rows, truncation/NULL fidelity, immutable rerun, definition revision mismatch, restart restoration, missing-link repair, sidecar recovery, history retention/clear isolation, keyboard/focus, and zero residual preview cache.
+  - Commit: `feat(quality): explain check failures and recovery`
+
+- [ ] **E14-T7 Review the complete beginner data-trust workflow**
+  - Depends on: E14-T4, E14-T5, E14-T6
+  - Owns: `docs/review/E14-PROFILES-QUALITY.md`, sample issue fixture, automated evidence, and manual sign-off
+  - Deliverables:
+    - Provide a small local fixture with intentional NULLs, duplicate keys, out-of-range values, stale dates, and unmatched relationships; document expected profile metrics and check outcomes.
+    - Walk through Profile table → interpret provenance → create suggested check → inspect generated SQL → save → run suite → inspect bounded failures → repair data/check → rerun → restart/reopen.
+    - Re-run query/result/export cancellation, sidecar recovery, memory, cache cleanup, migration, log-redaction, Windows process invisibility, and packaged Linux/Windows smoke because profiling/checks add analytical jobs and metadata.
+    - Include light/dark/system and 100/125/150/200% DPI screenshots, keyboard-only flow, screen-reader labels, minimum viewport, large-table cancellation, and fixed-workload memory/disk reports.
+  - Acceptance: a beginner can explain what the profile measured, why a check passed or failed, what SQL established the result, and how to recover—without developer help, hidden execution, false exactness, data mutation, or unbounded memory/disk growth.
+  - Tests: full frontend/Rust/docs/package gates plus profile/check golden workflow, fresh/schema-7 migration, real sidecar restart, Windows/Linux filesystem paths, large-table memory, repeated suite retention, cancellation/residue, and manual review checklist.
+  - Commit: `docs(review): add beginner data trust checklist`
+  - Review: `docs/review/E14-PROFILES-QUALITY.md`
+
+**Explicitly deferred beyond E14:** Join/grain coaching and transformation-pipeline DAGs may be planned after E14 review. Generic AI chat, cloud integrations, automatic data repair, and silent SQL rewriting are not part of this EPIC.
 
 ---
 
