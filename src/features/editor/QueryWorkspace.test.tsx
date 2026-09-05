@@ -5,6 +5,7 @@ import {
   cancelQuery,
   executeQuery,
   getQueryStatus,
+  getTabExecution,
   getResultPage,
   explainQueryPlan,
   listQueryFolders,
@@ -21,6 +22,7 @@ vi.mock("../../lib/commands", () => ({
   saveQuerySession: vi.fn(),
   executeQuery: vi.fn(),
   getQueryStatus: vi.fn(),
+  getTabExecution: vi.fn(),
   validateQuery: vi.fn(),
   explainQueryPlan: vi.fn(),
   listSavedQueries: vi.fn(),
@@ -103,6 +105,7 @@ describe("QueryWorkspace", () => {
     vi.mocked(saveQuerySession).mockResolvedValue(undefined);
     vi.mocked(executeQuery).mockResolvedValue({ ...runningView, tabId: "t1" });
     vi.mocked(getQueryStatus).mockResolvedValue({ ...succeededView, tabId: "t1" });
+    vi.mocked(getTabExecution).mockResolvedValue(null);
     vi.mocked(validateQuery).mockImplementation(async (_projectId, _sql, revision) => ({
       revision,
       diagnostics: [],
@@ -870,7 +873,7 @@ describe("QueryWorkspace", () => {
     await waitFor(() => expect(cancelQuery).toHaveBeenCalledWith("exec-1"));
   });
 
-  it("shows the empty state before any execution", () => {
+  it("shows the empty state before any execution", async () => {
     render(
       <QueryWorkspace
         bottomOpen
@@ -882,8 +885,54 @@ describe("QueryWorkspace", () => {
       />,
     );
 
-    expect(screen.getByText("No results yet")).toBeInTheDocument();
+    expect(await screen.findByText("No results yet")).toBeInTheDocument();
     expect(screen.getByText("Run a query to see results here.")).toBeInTheDocument();
+  });
+
+  it("restores the same tab result without showing the initial empty state", async () => {
+    vi.mocked(getTabExecution).mockResolvedValue({
+      ...succeededView,
+      sql: "SELECT * FROM orders",
+      tabId: "t1",
+    });
+    render(
+      <QueryWorkspace
+        bottomOpen
+        bottomPanelHeight={292}
+        catalog={catalog}
+        onSetBottomHeight={vi.fn()}
+        onToggleBottom={vi.fn()}
+        projectId="p1"
+      />,
+    );
+
+    expect(await screen.findByText("Singapore")).toBeInTheDocument();
+    expect(screen.queryByText("No results yet")).not.toBeInTheDocument();
+    expect(getTabExecution).toHaveBeenCalledWith("p1", expect.any(String));
+  });
+
+  it("shows query startup instead of the initial empty state while submitting", async () => {
+    let resolveExecution!: (value: typeof runningView) => void;
+    vi.mocked(executeQuery).mockReturnValue(
+      new Promise((resolve) => {
+        resolveExecution = resolve;
+      }),
+    );
+    render(
+      <QueryWorkspace
+        bottomOpen
+        bottomPanelHeight={292}
+        catalog={catalog}
+        onSetBottomHeight={vi.fn()}
+        onToggleBottom={vi.fn()}
+        projectId="p1"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Run query/ }));
+    expect(await screen.findByText("Starting")).toBeInTheDocument();
+    expect(screen.queryByText("No results yet")).not.toBeInTheDocument();
+    resolveExecution({ ...runningView, sql: "", tabId: "t1" });
   });
 
   it("supports tab rename, duplicate, move, and close from context menu", async () => {

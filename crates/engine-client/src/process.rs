@@ -5,12 +5,17 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
 use serde_json::Value;
 use tarik_engine_protocol::{EngineInfo, ErrorEnvelope, RequestEnvelope, ResponseEnvelope};
 
 use crate::ClientError;
 
 const MAX_STDERR_LINES: usize = 30;
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 /// Long-lived engine process with newline-delimited JSON framing over stdio.
 /// The child's stderr is captured so a startup crash surfaces its real reason
@@ -20,14 +25,19 @@ pub struct EngineProcess {
     stdin: BufWriter<ChildStdin>,
     stdout: Lines<BufReader<ChildStdout>>,
     stderr_tail: Arc<Mutex<Vec<String>>>,
+    broken: bool,
 }
 
 impl EngineProcess {
     pub fn start(executable: &Path) -> Result<Self, ClientError> {
-        let mut child = Command::new(executable)
+        let mut command = Command::new(executable);
+        command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
+            .stderr(Stdio::piped());
+        #[cfg(windows)]
+        command.creation_flags(CREATE_NO_WINDOW);
+        let mut child = command
             .spawn()
             .map_err(|error| ClientError::Spawn(format!("{error:?}")))?;
         let stdin = BufWriter::new(child.stdin.take().ok_or(ClientError::ChannelClosed)?);
@@ -56,6 +66,7 @@ impl EngineProcess {
             stdin,
             stdout,
             stderr_tail,
+            broken: false,
         })
     }
 
@@ -107,6 +118,7 @@ impl EngineProcess {
     }
 
     fn closed_with_detail(&mut self) -> ClientError {
+        self.broken = true;
         let exit = self
             .child
             .try_wait()
@@ -129,6 +141,20 @@ impl EngineProcess {
         }
     }
 
+    pub fn is_usable(&mut self) -> bool {
+        !self.broken && matches!(self.child.try_wait(), Ok(None))
+    }
+
+    pub fn id(&self) -> u32 {
+        self.child.id()
+    }
+
+    pub fn terminate(&mut self) {
+        self.broken = true;
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+
     pub fn shutdown(mut self) {
         let _ = self.request("engine.shutdown", serde_json::json!({}));
         let _ = self.child.kill();
@@ -140,5 +166,38 @@ impl Drop for EngineProcess {
     fn drop(&mut self) {
         let _ = self.child.kill();
         let _ = self.child.wait();
+    }
+}
+
+#[cfg(all(test, windows))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn windows_sidecar_has_no_main_window() {
+        let executable = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .join("target/debug/tarik-engine-duckdb.exe");
+        assert!(executable.exists(), "build the DuckDB engine before this test");
+        let mut process = EngineProcess::start(&executable).unwrap();
+        process.handshake().unwrap();
+        let output = Command::new("powershell.exe")
+            .args([
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                &format!(
+                    "(Get-Process -Id {} -ErrorAction Stop).MainWindowHandle",
+                    process.id()
+                ),
+            ])
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "0");
+        process.shutdown();
     }
 }

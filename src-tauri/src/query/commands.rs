@@ -77,6 +77,15 @@ pub fn get_query_status(
 }
 
 #[tauri::command]
+pub fn get_tab_execution(
+    project_id: String,
+    tab_id: String,
+    coordinator: State<'_, Arc<QueryCoordinator>>,
+) -> Result<Option<super::ExecutionView>, String> {
+    Ok(coordinator.latest_for_tab(&project_id, &tab_id))
+}
+
+#[tauri::command]
 pub fn cancel_query(
     execution_id: String,
     coordinator: State<'_, Arc<QueryCoordinator>>,

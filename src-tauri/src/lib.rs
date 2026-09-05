@@ -18,7 +18,7 @@ use std::{
 };
 
 use serde::Serialize;
-use tauri::Manager;
+use tauri::{Manager, State};
 
 use observability::{AppLogger, EventFields, LogLevel};
 
@@ -76,6 +76,13 @@ fn runtime_info() -> RuntimeInfo {
 #[tauri::command]
 fn get_runtime_info() -> RuntimeInfo {
     runtime_info()
+}
+
+#[tauri::command]
+fn get_engine_status(
+    engine: State<'_, Arc<engine_manager::EngineManager>>,
+) -> engine_manager::EngineStatus {
+    engine.status()
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -193,6 +200,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             get_runtime_info,
+            get_engine_status,
             observability::get_log_info,
             observability::reveal_log_directory,
             observability::get_last_support_incident,
@@ -237,6 +245,7 @@ pub fn run() {
             query::commands::validate_query,
             query::commands::execute_query,
             query::commands::get_query_status,
+            query::commands::get_tab_execution,
             query::commands::cancel_query,
             query::commands::forget_tab_execution,
             export::commands::execute_export,

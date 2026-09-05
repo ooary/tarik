@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
   assertPortableContents,
@@ -41,7 +41,7 @@ test("Windows release host check fails closed off native x64 MSVC", () => {
 
 test("portable contents are exact and reject missing or extra files", async () => {
   const root = path.join(
-    process.env.RUNNER_TEMP || process.env.TMPDIR || "/tmp",
+    process.env.RUNNER_TEMP || process.env.TEMP || process.env.TMPDIR || "/tmp",
     `tarik-windows-package-${Date.now()}-${process.pid}`,
   );
   await mkdir(root, { recursive: true });
@@ -56,13 +56,13 @@ test("portable contents are exact and reject missing or extra files", async () =
     await writeFile(path.join(root, "unexpected.txt"), "no");
     await assert.rejects(() => assertPortableContents(root), /portable contents differ/);
   } finally {
-    await rm(root, { recursive: true, force: true });
+    await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   }
 });
 
 test("portable checksums reject tampering after extraction", async () => {
   const root = path.join(
-    process.env.RUNNER_TEMP || process.env.TMPDIR || "/tmp",
+    process.env.RUNNER_TEMP || process.env.TEMP || process.env.TMPDIR || "/tmp",
     `tarik-windows-checksum-${Date.now()}-${process.pid}`,
   );
   await mkdir(root, { recursive: true });
@@ -76,7 +76,7 @@ test("portable checksums reject tampering after extraction", async () => {
     await writeFile(path.join(root, "duckdb.dll"), "MZtampered");
     await assert.rejects(() => verifyPortableChecksums(root), /checksum mismatch: duckdb.dll/);
   } finally {
-    await rm(root, { recursive: true, force: true });
+    await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   }
 });
 
@@ -96,4 +96,18 @@ test("portable manifest records unsigned offline runtime contract", () => {
     "Windows 10 or 11 x64",
     "Microsoft Edge WebView2 Runtime",
   ]);
+});
+
+test("Windows release rebuilds Tarik after verifying icon inputs", async () => {
+  const script = await readFile(
+    path.resolve(import.meta.dirname, "../scripts/release-windows.mjs"),
+    "utf8",
+  );
+  const verifyIcons = script.indexOf('"verify-icons.mjs"');
+  const cleanTarik = script.indexOf('["clean", "-p", "tarik", "--release"]');
+  const tauriBuild = script.indexOf('"build", "--no-bundle"');
+
+  assert.ok(verifyIcons >= 0);
+  assert.ok(cleanTarik > verifyIcons);
+  assert.ok(tauriBuild > cleanTarik);
 });

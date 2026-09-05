@@ -136,7 +136,7 @@ export function ImportDialog({
               <div>
                 <span>Rows</span>
                 <strong
-                  title={`${inspection.rowCountExact ? "Exact" : "Estimated"}: ${inspection.rowCount.toLocaleString()} rows`}
+                  title={`${inspection.rowCountExact ? "Exact" : "Estimated"}: ${inspection.rowCount.toLocaleString("en-US")} rows`}
                 >
                   {inspection.rowCountExact ? "" : "~"}
                   {formatCompactCount(inspection.rowCount)}
@@ -144,7 +144,7 @@ export function ImportDialog({
               </div>
               <div>
                 <span>File size</span>
-                <strong title={`${inspection.fileSizeBytes.toLocaleString()} bytes`}>
+                <strong title={`${inspection.fileSizeBytes.toLocaleString("en-US")} bytes`}>
                   {formatFileSize(inspection.fileSizeBytes)}
                 </strong>
               </div>

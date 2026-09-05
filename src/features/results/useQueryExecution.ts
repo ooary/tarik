@@ -4,6 +4,7 @@ import {
   executeQuery,
   forgetTabExecution,
   getQueryStatus,
+  getTabExecution,
   releaseResult,
   type ExecutionError,
   type ExecutionState,
@@ -37,12 +38,18 @@ export function useQueryExecution(
   onSucceeded?: () => void | Promise<void>,
 ): {
   executions: Record<string, TabExecution>;
+  restoring: Record<string, boolean>;
+  starting: Record<string, boolean>;
   run: (tabId: string, sql: string) => Promise<void>;
+  restore: (tabId: string, sql: string) => Promise<void>;
   cancel: (tabId: string) => Promise<void>;
   forget: (tabId: string) => void;
 } {
   const [executions, setExecutions] = useState<Record<string, TabExecution>>({});
+  const [restoring, setRestoring] = useState<Record<string, boolean>>({});
+  const [starting, setStarting] = useState<Record<string, boolean>>({});
   const timers = useRef(new Map<string, number>());
+  const restoredTabs = useRef(new Set<string>());
   const stopped = useRef(false);
   const onSucceededRef = useRef(onSucceeded);
   const executionsRef = useRef(executions);
@@ -56,13 +63,14 @@ export function useQueryExecution(
   }, [executions]);
 
   useEffect(() => {
+    const activeTimers = timers.current;
     stopped.current = false;
     return () => {
       stopped.current = true;
-      for (const timer of timers.current.values()) {
+      for (const timer of activeTimers.values()) {
         window.clearTimeout(timer);
       }
-      timers.current.clear();
+      activeTimers.clear();
     };
   }, []);
 
@@ -84,7 +92,7 @@ export function useQueryExecution(
           if (status) {
             patch(tabId, {
               executionId,
-              sql: executionsRef.current[tabId]?.sql ?? "",
+              sql: status.sql || executionsRef.current[tabId]?.sql || "",
               state: status.state,
               durationMs: status.durationMs,
               rowsProduced: status.rowsProduced,
@@ -129,22 +137,59 @@ export function useQueryExecution(
       if (previous?.resultId) {
         await releaseResult(previous.resultId).catch(() => undefined);
       }
-      const view = await executeQuery(projectId, tabId, sql);
-      if (stopped.current) return;
-      patch(tabId, {
-        executionId: view.executionId,
-        sql,
-        state: view.state,
-        durationMs: view.durationMs,
-        rowsProduced: view.rowsProduced,
-        rowsAffected: view.rowsAffected,
-        error: view.error,
-        resultId: view.resultId,
-        rowTotal: view.rowTotal,
-      });
-      poll(tabId, view.executionId);
+      setStarting((current) => ({ ...current, [tabId]: true }));
+      try {
+        const view = await executeQuery(projectId, tabId, sql);
+        if (stopped.current) return;
+        patch(tabId, {
+          executionId: view.executionId,
+          sql: view.sql || sql,
+          state: view.state,
+          durationMs: view.durationMs,
+          rowsProduced: view.rowsProduced,
+          rowsAffected: view.rowsAffected,
+          error: view.error,
+          resultId: view.resultId,
+          rowTotal: view.rowTotal,
+        });
+        poll(tabId, view.executionId);
+      } finally {
+        if (!stopped.current) {
+          setStarting((current) => ({ ...current, [tabId]: false }));
+        }
+      }
     },
     [executions, patch, poll, projectId],
+  );
+
+  const restore = useCallback(
+    async (tabId: string, sql: string) => {
+      const restoreKey = `${projectId}:${tabId}`;
+      if (!projectId || restoredTabs.current.has(restoreKey)) return;
+      restoredTabs.current.add(restoreKey);
+      setRestoring((current) => ({ ...current, [tabId]: true }));
+      try {
+        const view = await getTabExecution(projectId, tabId);
+        if (stopped.current || !view || executionsRef.current[tabId]) return;
+        patch(tabId, {
+          executionId: view.executionId,
+          sql: view.sql || sql,
+          state: view.state,
+          durationMs: view.durationMs,
+          rowsProduced: view.rowsProduced,
+          rowsAffected: view.rowsAffected,
+          error: view.error,
+          resultId: view.resultId,
+          rowTotal: view.rowTotal,
+        });
+        if (!isTerminal(view.state)) poll(tabId, view.executionId);
+      } finally {
+        if (!stopped.current) {
+          setRestoring((current) => ({ ...current, [tabId]: false }));
+        }
+      }
+    },
+    [patch, poll, projectId],
   );
 
   const cancel = useCallback(
@@ -177,5 +222,5 @@ export function useQueryExecution(
     Promise.resolve(forgetTabExecution(tabId)).catch(() => undefined);
   }, []);
 
-  return { executions, run, cancel, forget };
+  return { executions, restoring, starting, run, restore, cancel, forget };
 }

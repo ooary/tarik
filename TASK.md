@@ -1758,31 +1758,143 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
     - Real sidecar coverage now opens a >260-character Unicode/space DuckDB path, imports a read-only Unicode CSV, pages a result, exports to a Unicode directory, and runs the same flow through a localhost UNC share on Windows CI. On-disk metadata reopens from a Unicode/space path.
     - Native Windows exclusive-handle tests require managed rename and export replacement to fail without changing project metadata or the original file. Unix read-only output coverage requires no final/hidden export artifact. Full Linux Rust/frontend/sidecar gates remain green.
 
-- [ ] **E12-T3 Configure portable Windows release artifact** _(implementation complete; native artifact evidence pending)_
+- [x] **E12-T3 Configure portable Windows release artifact**
   - Depends on: E11-T3, E12-T2
   - Deliverables: release-mode `Tarik.exe`, required runtime files, licenses, README, and checksums packaged as `Tarik-<version>-windows-x64-portable.zip`.
   - Acceptance: archive runs after extraction on a clean supported Windows machine without installation or administrator access.
   - Commit: `chore(windows): package portable x64 release`
   - Notes:
     - `npm run release:windows` is native-Windows-only and fails closed elsewhere. It verifies x64 MSVC host and npm/Tauri/Cargo version parity, builds pinned DuckDB 1.5.5, compiles Tauri without an installer, and assembles exactly `Tarik.exe`, `tarik-engine-duckdb.exe`, `duckdb.dll`, Windows README/compatibility/license/notices, dependency inventories, and internal checksums.
-    - The packager validates Windows PE headers, exact allow-listed contents, every internal checksum before and after ZIP extraction, and real sidecar handshakes before and after extraction. It emits an outer SHA-256 file and unsigned release manifest; Windows CI uploads only those three release outputs.
-    - Pure packaging/tamper/off-host tests pass on Linux. T3 remains unchecked until `windows-latest` produces the ZIP and its extracted `Tarik.exe` is launched on a supported Windows machine.
+    - The packager validates Windows PE headers, exact allow-listed contents, every internal checksum before and after ZIP extraction, and real sidecar handshakes before and after extraction. It emits an outer SHA-256 file and unsigned release manifest; CI upload remains optional supplemental evidence.
+    - `npm run verify:windows-manual` verifies the extracted package, desktop launch/restart, WebView2, bounded memory/workloads, export cancellation, and graceful shutdown without deleting existing Tarik AppData. Native Windows 10 x64 packaging, extraction, checksums, direct launch, and graceful close were accepted on September 5, 2026.
 
-- [ ] **E12-T4 Verify WebView2, DPI, and clean-machine behavior** _(automation implemented; native and manual evidence pending)_
+- [ ] **E12-T4 Verify WebView2, DPI, and clean-machine behavior** _(manual QA in progress)_
   - Depends on: E12-T3
   - Deliverables: Windows 10/11 smoke matrix, WebView2 prerequisite behavior, 100/125/150/200 percent DPI, mixed-monitor scaling, light/dark, keyboard focus, large-result memory, and long-running export checks.
   - Acceptance: missing WebView2 produces clear prerequisite guidance; normal supported systems launch the portable executable directly.
   - Commits: `39495a4 docs(windows): design portable runtime verification`; `f480499 test(windows): exercise extracted portable runtime`
   - Notes:
-    - Native `windows-latest` now verifies the checksummed extracted candidate under freshly cleaned ephemeral-runner AppData, launches and gracefully closes `Tarik.exe` twice, observes a responding window/WebView2 descendants/startup metadata and logs, and samples the complete desktop process tree under a conservative 768 MiB ceiling.
+    - `npm run verify:windows-runtime` remains available for destructive fresh-profile CI evidence. `npm run verify:windows-manual` provides the same package, desktop, WebView2, memory, sidecar, result, export, cancellation, and shutdown checks locally while preserving existing Tarik AppData and recording whether the profile already existed.
     - The extracted sidecar runs a bounded 100,000-row result/page/release scenario, a completed 250,000-row three-part CSV export, active cancellation of a one-billion-row requested export, zero-residue checks, sidecar memory under 512 MiB, and clean process exit. A schema-versioned report is uploaded even on a reached native failure.
-    - `docs/review/E12-WINDOWS-RUNTIME.md` is the acceptance matrix. Hosted automation does not satisfy physical Windows 10/11, missing-WebView2 VM, 100/125/150/200% DPI, mixed-monitor, light/dark/system, or keyboard-only review; T4 remains unchecked until native artifacts and every manual row are accepted.
+    - Local Windows 10 Enterprise manual automation passed on September 5, 2026: both launches were responsive and graceful with WebView2 152.0.4191.62 at device scale factor 1.5, desktop-tree peak was 374,861,824 bytes, sidecar peak was 20,901,888 bytes, result cache released to zero, exact export partitions passed, cancellation left no residue, and existing AppData was preserved. Visual 150% DPI acceptance remains manual.
+    - `docs/review/E12-WINDOWS-RUNTIME.md` is the acceptance matrix. GitHub Actions is not required for acceptance; T4 remains unchecked until the local evidence report and every required manual Windows/DPI/WebView2 row are accepted.
 
 - [ ] **E12-T5 Add portable upgrade, signing, and release documentation**
   - Depends on: E12-T4
   - Deliverables: replacement/upgrade instructions, AppData backup and migration behavior, optional Authenticode signing pipeline, checksum verification, known SmartScreen behavior if unsigned, and uninstall-by-folder-deletion guidance.
   - Acceptance: users know which files are portable, which data stays in AppData, and how to upgrade/remove Tarik safely.
   - Commit: `docs(windows): document portable release lifecycle`
+
+---
+
+## EPIC E13 — Desktop project UX, results correctness, branding, and invisible engine lifecycle revision
+
+**Status:** `IN PROGRESS` — E13-T0 through E13-T5 implemented and focused validation passed September 5, 2026; E13-T6 packaged/manual acceptance remains.
+
+**Outcome:** Project creation uses a native-feeling Tarik modal instead of browser prompts, the active tab never overlays or replaces a real result with the initial empty state, packaged desktop binaries use the supplied Tarik logo, and `tarik-engine-duckdb.exe` remains a strictly invisible, single-instance background sidecar that starts lazily, stays available between project sessions, recovers predictably, and exits with Tarik.
+
+**User-visible process contract:** Only `Tarik.exe` may create a window, taskbar button, Alt+Tab entry, or visible console. `tarik-engine-duckdb.exe` may appear in Task Manager as a child/background process, but must never appear as a second application or flash a console window.
+
+- [x] **E13-T0 Define project-modal and engine-lifecycle design graph**
+  - Depends on: E12-T5
+  - Owns: E13 interaction/state graph and implementation inventory
+  - Deliverables:
+    - Map New project modal states: closed, editing, invalid, submitting, failed, succeeded, and cancelled.
+    - Map engine states: stopped, starting, ready without session, opening session, connected, closing session, recovering, failed, and shutting down.
+    - Define ownership between frontend project state, Tauri `ProjectManager`, `EngineManager`, sidecar process, project session, and coordinated shutdown.
+    - Inventory every remaining browser `prompt`, `confirm`, or `alert`; only New project is implementation scope unless a later task explicitly expands it.
+    - Reproduce and trace the reported same-tab Results regression where `No results yet / Run a query to see results here` appears while that tab already has a real result; identify whether execution state is lost, the workspace remounts, or packaged UI output is stale before selecting a fix.
+  - Acceptance: graph covers success, cancellation, duplicate/invalid names, engine startup failure, crash recovery, project switching, and application shutdown without ambiguous process ownership.
+  - Tests: Graph Protocol completeness review and current-code mismatch inventory.
+  - Commit: `docs(design): define project modal and engine lifecycle revision`
+  - Notes: `docs/review/E13-DESKTOP-UX-LIFECYCLE.md` records the modal, engine, Results ownership, recovery, and shutdown state graphs plus the browser-dialog inventory and same-tab regression trace.
+
+- [x] **E13-T1 Replace New project prompt with an accessible Tarik modal**
+  - Depends on: E13-T0
+  - Owns: New project trigger, modal component, validation, loading/error UX, and component tests
+  - Deliverables:
+    - Replace `window.prompt` for New project with a Tarik-styled modal containing project name, managed-storage explanation, Cancel, and Create project actions.
+    - Focus the name input on open; Enter submits valid input; Escape cancels; closing restores focus to New project.
+    - Trim and validate names before submission, prevent duplicate submits, and present backend duplicate/path/startup failures inline without browser alerts.
+    - Show a stable `Creating project…` state while DuckDB starts and the managed project/session opens.
+    - Keep external DuckDB selection and Open project naming outside this task unless explicitly approved during E13 review.
+  - Acceptance: New project never opens a browser prompt/alert, all states are keyboard and screen-reader accessible, and failure leaves the user’s input available for correction.
+  - Tests: open/cancel/submit, autofocus/focus restoration, Enter/Escape, empty/whitespace/duplicate names, submission lock, backend failure, successful catalog transition, and no `window.prompt` call.
+  - Commit: `feat(projects): replace new project prompt with modal`
+  - Notes: `NewProjectDialog` is a controlled Radix dialog with trimmed/duplicate validation, focus management, keyboard submit/cancel, submission locking, and inline backend errors. Focused frontend acceptance passed 54 tests.
+
+- [x] **E13-T2 Guarantee an invisible Windows DuckDB sidecar process**
+  - Depends on: E13-T0
+  - Owns: Windows process creation flags, packaged runtime behavior, and process-visibility tests
+  - Deliverables:
+    - Launch `tarik-engine-duckdb.exe` on Windows with no console window using the appropriate native process creation flags, including `CREATE_NO_WINDOW` or an equivalent verified configuration.
+    - Ensure the sidecar creates no top-level window, taskbar button, notification-area icon, Alt+Tab entry, terminal, or startup console flash.
+    - Preserve piped stdin/stdout/stderr protocol transport and actionable captured startup errors.
+    - Keep Linux behavior unchanged and retain the sidecar as a normal observable process in Task Manager/process inspection.
+  - Acceptance: only Tarik appears as an application; the sidecar remains invisible through initial start, project switch, recovery, and shutdown while protocol/error reporting continues to work.
+  - Tests: Windows creation-flag unit test, packaged launch process/window enumeration, taskbar/Alt+Tab/manual flash review, handshake/error capture regression, and Linux sidecar regression.
+  - Commit: `fix(windows): keep duckdb sidecar process invisible`
+  - Notes: Windows process creation now applies `CREATE_NO_WINDOW` while retaining piped protocol streams. The native process test and runtime verifier assert that the sidecar has no main window handle; packaged visual confirmation remains in E13-T6.
+
+- [x] **E13-T3 Formalize lazy start, standby, recovery, and shutdown lifecycle**
+  - Depends on: E13-T1, E13-T2
+  - Owns: `EngineManager`, project-session transitions, status reporting, recovery, and shutdown tests
+  - Deliverables:
+    - Do not start the sidecar when Tarik opens with no active project or when the user only focuses/clicks the empty workspace.
+    - Start one sidecar lazily on create/open/reopen, perform the protocol handshake, then open exactly one project session.
+    - On Close project, close the session but keep the healthy process in standby for fast reuse; switching projects must close the previous session before opening the next.
+    - Detect an exited/broken sidecar, clear stale process/session state, restart it invisibly on the next safe engine operation, reopen the active project when possible, and show truthful recovering/failed status.
+    - Prevent duplicate concurrent sidecars and ensure coordinated Tarik shutdown closes jobs/results/session, sends engine shutdown, and leaves no `tarik-engine-duckdb.exe` process.
+  - Acceptance: workspace focus never starts DuckDB; project operations reuse one invisible process; a killed sidecar recovers without creating duplicates; closing Tarik leaves no sidecar residue.
+  - Tests: no-project lazy state, first open, close-to-standby, reopen/switch reuse, concurrent open serialization, forced sidecar exit and recovery, failed restart, status transitions, and graceful/forced app shutdown.
+  - Commit: `feat(engine): formalize background sidecar lifecycle`
+  - Notes: `EngineManager` now owns one lazy child process, session identity/project/PID state, close-to-standby reuse, health-based stale-state cleanup, next-operation recovery, truthful stopped/standby/connected/failed status, and final process termination. Focused Rust lifecycle and query coordinator tests pass.
+
+- [x] **E13-T4 Fix the same-tab Results empty-state regression**
+  - Depends on: E13-T0
+  - Owns: active-tab execution/result state selection, Results panel rendering conditions, and regression coverage
+  - Deliverables:
+    - Reproduce the reported state where a tab with a real query result also shows or falls back to `No results yet / Run a query to see results here`.
+    - Fix the root cause so the empty state is rendered only when the active tab has never produced or started an execution and no startup error applies.
+    - Preserve the active tab's queued, running, failed, cancelled, statement-completion, and row-grid states across Results collapse/expand and unrelated UI rerenders.
+    - Do not hide the symptom with CSS or remove the valid first-use empty state.
+  - Acceptance: one active tab can render exactly one truthful Results state at a time; a real result never shares space with or unexpectedly reverts to the initial empty state.
+  - Tests: initial empty state, successful same-tab row result, DML completion, collapse/reopen, rerender, tab switch/return, rerun, and mutual-exclusion assertions for every Results state.
+  - Commit: `fix(results): prevent same-tab empty-state regression`
+  - Notes: The root cause was frontend execution state loss when the workspace was recreated. `QueryCoordinator` now retains the latest project/tab execution, `get_tab_execution` restores it, and the UI renders explicit starting/restoring states instead of falling through to the initial empty state.
+
+- [x] **E13-T5 Replace generated Tauri icons with the supplied Tarik logo**
+  - Depends on: E13-T0
+  - Owns: canonical desktop icon source, generated Tauri icon set, bundle configuration verification, and packaged branding checks
+  - Inputs:
+    - Canonical source: `src-tauri/icons/TarikLogo-transparent.png` (`1156x864`, alpha-enabled).
+    - Visual reference only: `src-tauri/icons/Tarik Logo.jpeg` (`1200x896`, no alpha).
+  - Deliverables:
+    - Normalize the transparent logo onto a square transparent canvas with consistent safe-area padding; do not stretch, crop essential artwork, or use the JPEG background in generated application icons.
+    - Regenerate the complete Tauri icon family, including PNG sizes, Windows `icon.ico`, macOS `icon.icns`, Windows square assets, and store logo required by the existing bundle configuration.
+    - Keep `src-tauri/tauri.conf.json` pointed at the generated Tarik icon outputs and verify `Tarik.exe` embeds the new icon for the file, running window, taskbar, and Alt+Tab surfaces.
+    - Complete icon generation before the next Windows package/release command so no new artifact ships with the previous Tauri icon.
+  - Acceptance: generated assets consistently show the supplied Tarik logo at small and large sizes without distortion, clipping, opaque JPEG corners, or fallback/default Tauri branding.
+  - Tests: source-dimension/alpha check, generated-file inventory, ICO/ICNS decode smoke, Tauri config validation, release build resource inspection, and packaged Windows visual review.
+  - Commit: `chore(branding): apply tarik desktop icons`
+  - Notes: The supplied transparent artwork was normalized as `TarikLogo-square.png`, then used to regenerate the complete Tauri desktop/mobile icon family. `npm run verify:icons` validates source properties, generated inventory, formats, and Tauri configuration before every Windows release build.
+
+- [ ] **E13-T6 Run desktop UX, Results, branding, and process-lifecycle acceptance**
+  - Depends on: E13-T1, E13-T2, E13-T3, E13-T4, E13-T5
+  - Deliverables: Windows packaged manual matrix plus automated frontend/Rust/process lifecycle, Results regression, and branding evidence.
+  - Acceptance:
+    - New project modal is accepted in light/dark themes and at 100/125/150/200 percent DPI using pointer and keyboard-only navigation.
+    - A successful row result or statement completion in the active tab never displays or reverts to the initial `No results yet` state during collapse/expand, rerender, tab switching, or rerun workflows.
+    - `Tarik.exe`, its window, taskbar button, and Alt+Tab entry use the supplied Tarik logo, with no default Tauri icon remaining in the packaged artifact.
+    - Only Tarik appears on the taskbar and in Alt+Tab; no sidecar console flashes during first start, reuse, crash recovery, or shutdown.
+    - Task Manager shows at most one sidecar while a project is active or the engine is in standby, and none after Tarik exits.
+    - Create, close, reopen, switch, kill/recover, and final shutdown workflows preserve project/session data and report truthful status.
+  - Tests: full frontend component suite, Rust workspace lifecycle suite, icon/resource verification, packaged Windows smoke, process/window enumeration, and signed manual checklist.
+  - Commit: `test(desktop): accept ux results branding and sidecar lifecycle`
+  - Notes:
+    - Packaged automated acceptance passed September 5, 2026 for `Tarik-0.1.0-windows-x64-portable.zip`: checksums/extraction, two responsive graceful desktop launches with zero no-project sidecars, WebView2 detection, bounded 100,000-row result paging/release, completed three-part 250,000-row export, one-billion-row cancellation with no residue, sidecar `MainWindowHandle = 0`, bounded memory, clean engine exit, and zero Tarik/sidecar processes afterward.
+    - Evidence: `target/windows-manual-evidence/runtime-report.json`; archive SHA-256 `f782ceae64553510a6fbafc050e840e51bf617d332cb98337f82159f7ecf6939`.
+    - T6 remains open for human visual/input acceptance of the modal, same-tab Results workflows, packaged EXE/window/taskbar/Alt+Tab icon, no console flash, light/dark, keyboard-only use, DPI matrix, mixed-monitor scaling, and clean Windows 10/11 machines.
 
 ---
 

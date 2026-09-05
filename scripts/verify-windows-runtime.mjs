@@ -21,129 +21,165 @@ import {
 const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "..");
 const stage = path.join(root, "target", "release-artifacts", "windows");
-const evidenceRoot = path.join(root, "target", "windows-runtime-evidence");
+const evidenceMode = process.argv.includes("--manual") ? "manual" : "ci";
+const evidenceRoot = path.join(
+  root,
+  "target",
+  evidenceMode === "manual" ? "windows-manual-evidence" : "windows-runtime-evidence",
+);
 const reportFile = path.join(evidenceRoot, "runtime-report.json");
 const identifier = "com.tarik.desktop";
 const terminal = new Set(["succeeded", "failed", "cancelled"]);
 
 let runtimeReport = {
   schemaVersion: 1,
+  evidenceMode,
   recordedAt: new Date().toISOString(),
   verdict: { automatedPassed: false, failures: ["runtime verification did not complete"] },
 };
 
-try {
-  assertWindowsRuntimeHost({
-    platform: process.platform,
-    arch: process.arch,
-    actions: process.env.GITHUB_ACTIONS,
-    runnerTemp: process.env.RUNNER_TEMP,
-  });
-  await rm(evidenceRoot, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
-  await mkdir(evidenceRoot, { recursive: true });
+async function main() {
+  try {
+    assertWindowsRuntimeHost({
+      platform: process.platform,
+      arch: process.arch,
+      actions: process.env.GITHUB_ACTIONS,
+      runnerTemp: process.env.RUNNER_TEMP,
+      mode: evidenceMode,
+    });
+    await rm(evidenceRoot, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+    await mkdir(evidenceRoot, { recursive: true });
 
-  console.log("==> Verify and extract Windows portable candidate");
-  const checksum = parseSingleChecksum(await readFile(path.join(stage, "SHA256SUMS"), "utf8"));
-  const archive = path.join(stage, checksum.file);
-  if ((await sha256(archive)) !== checksum.digest) throw new Error("outer ZIP checksum mismatch");
-  const manifest = await readJson(path.join(stage, "release-manifest.json"));
-  if (
-    manifest.artifacts?.length !== 1 ||
-    manifest.artifacts[0]?.file !== checksum.file ||
-    manifest.artifacts[0]?.sha256 !== checksum.digest
-  ) {
-    throw new Error("release manifest does not match the checksummed ZIP");
-  }
-  const extractedRoot = path.join(evidenceRoot, "extracted");
-  await expandArchive(archive, extractedRoot);
-  const portableRoot = path.join(extractedRoot, checksum.file.replace(/\.zip$/i, ""));
-  await assertPortableContents(portableRoot);
-  await verifyPortableChecksums(portableRoot);
+    console.log("==> Verify and extract Windows portable candidate");
+    const checksum = parseSingleChecksum(await readFile(path.join(stage, "SHA256SUMS"), "utf8"));
+    const archive = path.join(stage, checksum.file);
+    if ((await sha256(archive)) !== checksum.digest) throw new Error("outer ZIP checksum mismatch");
+    const manifest = await readJson(path.join(stage, "release-manifest.json"));
+    if (
+      manifest.artifacts?.length !== 1 ||
+      manifest.artifacts[0]?.file !== checksum.file ||
+      manifest.artifacts[0]?.sha256 !== checksum.digest
+    ) {
+      throw new Error("release manifest does not match the checksummed ZIP");
+    }
+    const extractedRoot = path.join(evidenceRoot, "extracted");
+    await expandArchive(archive, extractedRoot);
+    const portableRoot = path.join(extractedRoot, checksum.file.replace(/\.zip$/i, ""));
+    await assertPortableContents(portableRoot);
+    await verifyPortableChecksums(portableRoot);
 
-  const profile = await windowsProfilePaths();
-  await resetProfile(profile);
-  const desktop = {
-    launches: [],
-    startupEvents: 0,
-    gracefulShutdownEvents: 0,
-    metadataCreated: false,
-    peakProcessTreeRssBytes: 0,
-  };
-
-  console.log("==> Launch extracted Tarik.exe with fresh AppData");
-  desktop.launches.push(await launchDesktop(path.join(portableRoot, "Tarik.exe"), profile));
-  console.log("==> Restart extracted Tarik.exe with the same AppData");
-  desktop.launches.push(await launchDesktop(path.join(portableRoot, "Tarik.exe"), profile));
-  const logText = await readFile(profile.logFile, "utf8");
-  desktop.startupEvents = countStructuredEvents(logText, "app", "startup");
-  desktop.gracefulShutdownEvents = countStructuredEvents(logText, "app", "graceful_shutdown");
-  desktop.metadataCreated = (await stat(profile.metadata)).size > 0;
-  desktop.peakProcessTreeRssBytes = Math.max(
-    ...desktop.launches.map((launch) => launch.peakProcessTreeRssBytes),
-  );
-
-  console.log("==> Run bounded workload against extracted DuckDB sidecar");
-  const engine = await runEngineWorkload(
-    path.join(portableRoot, "tarik-engine-duckdb.exe"),
-    path.join(evidenceRoot, "engine-workload"),
-  );
-  const { stdout: osCaption } = await execPowerShell(
-    "(Get-CimInstance Win32_OperatingSystem).Caption + ' ' + (Get-CimInstance Win32_OperatingSystem).Version",
-  );
-  const report = {
-    schemaVersion: 1,
-    recordedAt: new Date().toISOString(),
-    gitRevision: manifest.gitRevision,
-    machine: {
-      os: osCaption.trim(),
-      architecture: process.arch,
-      node: process.version,
-      runnerImage: process.env.ImageOS ?? "unknown",
-    },
-    package: {
-      archive: checksum.file,
-      bytes: (await stat(archive)).size,
-      sha256: checksum.digest,
-      checksumVerified: true,
-      extractedContentsVerified: true,
-      signed: manifest.signed,
-    },
-    prerequisites: {
-      webView2Available: desktop.launches.every((launch) => launch.webView2Processes > 0),
-      webView2Version:
-        desktop.launches.map((launch) => launch.webView2Version).find(Boolean) ?? null,
-      missingRuntimeBehavior:
-        "Tauri 2.11.5 release runtime displays a blocking WebView2 prerequisite dialog with the Microsoft download URL; clean-machine missing-runtime review remains manual.",
-    },
-    budgets: WINDOWS_RUNTIME_BUDGETS,
-    desktop,
-    engine,
-    manualGatesPending: [
-      "Windows 10 x64 clean-machine workflow",
-      "Windows 11 x64 clean-machine workflow",
-      "100/125/150/200 percent DPI visual matrix",
-      "mixed-monitor scaling transition",
-      "light/dark/system and keyboard-only review",
-      "missing-WebView2 clean-machine dialog review",
-    ],
-  };
-  runtimeReport = report;
-  assertRuntimeReport(report);
-  report.verdict = { automatedPassed: true, failures: [] };
-  await writeFile(reportFile, `${JSON.stringify(runtimeReport, null, 2)}\n`);
-  await resetProfile(profile);
-  console.log(`Windows runtime evidence: ${reportFile}`);
-} catch (error) {
-  const message = error.stack ?? error.message;
-  runtimeReport.verdict = { automatedPassed: false, failures: [message] };
-  if (process.platform === "win32" && process.env.GITHUB_ACTIONS === "true") {
-    await mkdir(evidenceRoot, { recursive: true }).catch(() => undefined);
-    await writeFile(reportFile, `${JSON.stringify(runtimeReport, null, 2)}\n`).catch(
-      () => undefined,
+    const profile = await windowsProfilePaths();
+    const profileState = {
+      roamingExistedAtStart: await pathExists(profile.roaming),
+      localExistedAtStart: await pathExists(profile.local),
+      preserved: evidenceMode === "manual",
+    };
+    if (evidenceMode === "ci") await resetProfile(profile);
+    const baselineLog = await readOptionalText(profile.logFile);
+    const baselineStartupEvents = countStructuredEvents(baselineLog, "app", "startup");
+    const baselineGracefulShutdownEvents = countStructuredEvents(
+      baselineLog,
+      "app",
+      "graceful_shutdown",
     );
+    const existingDesktopProcesses = (await processSnapshot()).filter((record) =>
+      ["tarik.exe", "tarik-engine-duckdb.exe"].includes(record.name.toLowerCase()),
+    );
+    if (existingDesktopProcesses.length > 0) {
+      throw new Error("close all Tarik desktop and sidecar processes before manual verification");
+    }
+    const desktop = {
+      launches: [],
+      startupEvents: 0,
+      gracefulShutdownEvents: 0,
+      metadataCreated: false,
+      peakProcessTreeRssBytes: 0,
+    };
+
+    console.log(
+      evidenceMode === "ci"
+        ? "==> Launch extracted Tarik.exe with fresh AppData"
+        : "==> Launch extracted Tarik.exe without deleting existing AppData",
+    );
+    desktop.launches.push(await launchDesktop(path.join(portableRoot, "Tarik.exe"), profile));
+    console.log("==> Restart extracted Tarik.exe with the same AppData");
+    desktop.launches.push(await launchDesktop(path.join(portableRoot, "Tarik.exe"), profile));
+    const logText = await readFile(profile.logFile, "utf8");
+    desktop.startupEvents =
+      countStructuredEvents(logText, "app", "startup") - baselineStartupEvents;
+    desktop.gracefulShutdownEvents =
+      countStructuredEvents(logText, "app", "graceful_shutdown") - baselineGracefulShutdownEvents;
+    desktop.metadataCreated = (await stat(profile.metadata)).size > 0;
+    desktop.peakProcessTreeRssBytes = Math.max(
+      ...desktop.launches.map((launch) => launch.peakProcessTreeRssBytes),
+    );
+
+    console.log("==> Run bounded workload against extracted DuckDB sidecar");
+    const engine = await runEngineWorkload(
+      path.join(portableRoot, "tarik-engine-duckdb.exe"),
+      path.join(evidenceRoot, "engine-workload"),
+    );
+    const { stdout: osCaption } = await execPowerShell(
+      "(Get-CimInstance Win32_OperatingSystem).Caption + ' ' + (Get-CimInstance Win32_OperatingSystem).Version",
+    );
+    const report = {
+      schemaVersion: 1,
+      evidenceMode,
+      recordedAt: new Date().toISOString(),
+      gitRevision: manifest.gitRevision,
+      machine: {
+        os: osCaption.trim(),
+        architecture: process.arch,
+        node: process.version,
+        runnerImage:
+          process.env.ImageOS ?? (evidenceMode === "manual" ? "local-manual" : "unknown"),
+      },
+      profile: profileState,
+      package: {
+        archive: checksum.file,
+        bytes: (await stat(archive)).size,
+        sha256: checksum.digest,
+        checksumVerified: true,
+        extractedContentsVerified: true,
+        signed: manifest.signed,
+      },
+      prerequisites: {
+        webView2Available: desktop.launches.every((launch) => launch.webView2Processes > 0),
+        webView2Version:
+          desktop.launches.map((launch) => launch.webView2Version).find(Boolean) ?? null,
+        missingRuntimeBehavior:
+          "Tauri 2.11.5 release runtime displays a blocking WebView2 prerequisite dialog with the Microsoft download URL; clean-machine missing-runtime review remains manual.",
+      },
+      budgets: WINDOWS_RUNTIME_BUDGETS,
+      desktop,
+      engine,
+      manualGatesPending: [
+        "Windows 10 x64 clean-machine workflow",
+        "Windows 11 x64 clean-machine workflow",
+        "100/125/150/200 percent DPI visual matrix",
+        "mixed-monitor scaling transition",
+        "light/dark/system and keyboard-only review",
+        "missing-WebView2 clean-machine dialog review",
+      ],
+    };
+    runtimeReport = report;
+    assertRuntimeReport(report);
+    report.verdict = { automatedPassed: true, failures: [] };
+    await writeFile(reportFile, `${JSON.stringify(runtimeReport, null, 2)}\n`);
+    if (evidenceMode === "ci") await resetProfile(profile);
+    console.log(`Windows runtime evidence: ${reportFile}`);
+  } catch (error) {
+    const message = error.stack ?? error.message;
+    runtimeReport.verdict = { automatedPassed: false, failures: [message] };
+    if (process.platform === "win32") {
+      await mkdir(evidenceRoot, { recursive: true }).catch(() => undefined);
+      await writeFile(reportFile, `${JSON.stringify(runtimeReport, null, 2)}\n`).catch(
+        () => undefined,
+      );
+    }
+    console.error(`Windows runtime verification failed: ${message}`);
+    process.exitCode = 1;
   }
-  console.error(`Windows runtime verification failed: ${message}`);
-  process.exitCode = 1;
 }
 
 async function windowsProfilePaths() {
@@ -178,9 +214,13 @@ async function expandArchive(archive, destination) {
 
 async function launchDesktop(executable, profile) {
   const startedAt = Date.now();
+  const childEnvironment =
+    evidenceMode === "ci"
+      ? { ...process.env, TEMP: process.env.RUNNER_TEMP, TMP: process.env.RUNNER_TEMP }
+      : process.env;
   const child = spawn(executable, [], {
     cwd: path.dirname(executable),
-    env: { ...process.env, TEMP: process.env.RUNNER_TEMP, TMP: process.env.RUNNER_TEMP },
+    env: childEnvironment,
     shell: false,
     stdio: "ignore",
   });
@@ -230,6 +270,9 @@ async function launchDesktop(executable, profile) {
     const finalTree = summarizeProcessTree(finalSnapshot, child.pid);
     samples.push({ elapsedMs: Date.now() - startedAt, ...finalTree });
     const treePids = new Set(finalTree.processes.map((item) => item.pid));
+    const sidecarProcesses = finalTree.processes.filter(
+      (item) => item.name.toLowerCase() === "tarik-engine-duckdb.exe",
+    ).length;
     const webviews = finalSnapshot.filter(
       (item) =>
         treePids.has(Number(item.pid ?? item.ProcessId)) &&
@@ -241,6 +284,14 @@ async function launchDesktop(executable, profile) {
       .map((item) => item.executablePath ?? item.ExecutablePath)
       .find(Boolean);
     const webView2Version = await executableVersion(webView2Executable);
+    const deviceScaleFactors = [
+      ...new Set(
+        webviews
+          .map((item) => String(item.commandLine ?? item.CommandLine ?? ""))
+          .map((commandLine) => commandLine.match(/--device-scale-factor=([^\s]+)/)?.[1])
+          .filter(Boolean),
+      ),
+    ].sort();
     const closeRequested = await closeMainWindow(child.pid);
     const result = await Promise.race([exit, delay(20_000).then(() => null)]);
     const gracefulExit = result?.code === 0;
@@ -261,8 +312,10 @@ async function launchDesktop(executable, profile) {
       exitCode: result?.code ?? child.exitCode,
       webView2Processes: webviews.length,
       webView2Version,
+      deviceScaleFactors,
       peakProcessTreeRssBytes: Math.max(...samples.map((sample) => sample.totalWorkingSetBytes)),
       peakProcessCount: Math.max(...samples.map((sample) => sample.processCount)),
+      sidecarProcesses,
       samples,
     };
   } finally {
@@ -295,6 +348,7 @@ async function runEngineWorkload(executable, workloadRoot) {
   })();
   try {
     const handshake = await client.request("engine.handshake");
+    const windowInfo = await processWindow(client.child.pid);
     await client.request("session.open", {
       sessionId: "windows-runtime",
       locator: {
@@ -368,6 +422,7 @@ async function runEngineWorkload(executable, workloadRoot) {
     const cleanExit = exitResult?.code === 0;
     return {
       handshake,
+      mainWindowHandle: windowInfo?.mainWindowHandle ?? 0,
       dataset: {
         largeResultRows: 100_000,
         completedExportRows: 250_000,
@@ -514,7 +569,7 @@ async function waitUntilRunning(client, exportId, timeoutMs) {
 async function processSnapshot() {
   const script = [
     "Get-CimInstance Win32_Process |",
-    "Select-Object @{N='pid';E={$_.ProcessId}},@{N='parentPid';E={$_.ParentProcessId}},@{N='name';E={$_.Name}},@{N='executablePath';E={$_.ExecutablePath}},@{N='workingSetBytes';E={[double]$_.WorkingSetSize}} |",
+    "Select-Object @{N='pid';E={$_.ProcessId}},@{N='parentPid';E={$_.ParentProcessId}},@{N='name';E={$_.Name}},@{N='executablePath';E={$_.ExecutablePath}},@{N='commandLine';E={$_.CommandLine}},@{N='workingSetBytes';E={[double]$_.WorkingSetSize}} |",
     "ConvertTo-Json -Compress",
   ].join(" ");
   const { stdout } = await execPowerShell(script, 32 * 1024 * 1024);
@@ -590,6 +645,27 @@ async function fileExists(file) {
   }
 }
 
+async function pathExists(candidate) {
+  try {
+    await stat(candidate);
+    return true;
+  } catch (error) {
+    if (error?.code === "ENOENT") return false;
+    throw error;
+  }
+}
+
+async function readOptionalText(file) {
+  try {
+    return await readFile(file, "utf8");
+  } catch (error) {
+    if (error?.code === "ENOENT") return "";
+    throw error;
+  }
+}
+
 function delay(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
+
+await main();

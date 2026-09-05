@@ -1,25 +1,25 @@
 # E12 Windows portable runtime review
 
-**Status:** BLOCKED — automation is implemented, but no native Windows artifact/report or clean-machine manual evidence has been produced.
+**Status:** IN REVIEW — a native portable candidate can be verified locally; clean-machine, DPI, mixed-monitor, and missing-WebView2 manual evidence remains pending.
 
 **Scope:** Extracted portable integrity, WebView2 prerequisite behavior, fresh-profile launch/restart, complete desktop process-tree memory, large-result paging, completed and cancelled exports, Windows 10/11 clean-machine workflows, DPI/mixed-monitor rendering, light/dark/system themes, and keyboard focus.
 
 ## Candidate identity
 
-Complete these fields from `target/release-artifacts/windows/release-manifest.json` and the uploaded Actions artifacts. Do not review an archive whose values differ.
+Complete these fields from `target/release-artifacts/windows/release-manifest.json`. Do not review an archive whose values differ. GitHub Actions artifacts are optional supplemental evidence.
 
-| Field           | Required value                                              | Observed  |
-| --------------- | ----------------------------------------------------------- | --------- |
-| Version         | `0.1.0`                                                     | _pending_ |
-| Target          | `x86_64-pc-windows-msvc`                                    | _pending_ |
-| Signed          | `false` unless an approved signing job changes the manifest | _pending_ |
-| Git revision    | Exact reviewed commit                                       | _pending_ |
-| ZIP             | `Tarik-0.1.0-windows-x64-portable.zip`                      | _pending_ |
-| ZIP bytes       | Recorded manifest value                                     | _pending_ |
-| ZIP SHA-256     | Same in manifest and outer `SHA256SUMS`                     | _pending_ |
-| DuckDB          | `1.5.5`                                                     | _pending_ |
-| Engine protocol | `1`                                                         | _pending_ |
-| Metadata schema | `7`                                                         | _pending_ |
+| Field           | Required value                                              | Observed                                                           |
+| --------------- | ----------------------------------------------------------- | ------------------------------------------------------------------ |
+| Version         | `0.1.0`                                                     | `0.1.0`                                                            |
+| Target          | `x86_64-pc-windows-msvc`                                    | `x86_64-pc-windows-msvc`                                           |
+| Signed          | `false` unless an approved signing job changes the manifest | `false`                                                            |
+| Git revision    | Exact reviewed commit                                       | `370e1bb7a625b35b6ddd7db3d8532959ee363928`                         |
+| ZIP             | `Tarik-0.1.0-windows-x64-portable.zip`                      | `Tarik-0.1.0-windows-x64-portable.zip`                             |
+| ZIP bytes       | Recorded manifest value                                     | `19,555,559`                                                       |
+| ZIP SHA-256     | Same in manifest and outer `SHA256SUMS`                     | `245bf7e6479b17634dec2b311de173581d2f2dfef0dc04abc63404bded2b5017` |
+| DuckDB          | `1.5.5`                                                     | `1.5.5`                                                            |
+| Engine protocol | `1`                                                         | `1`                                                                |
+| Metadata schema | `7`                                                         | `7`                                                                |
 
 ## Implemented automated boundary
 
@@ -30,34 +30,50 @@ Commits under review:
 - `3b48b5f` — handshake child processes must exit cleanly;
 - `f480499` — extracted desktop launch/restart, WebView2/process/memory observation, packaged-sidecar workload, bounded report, CI evidence upload.
 
-On `windows-latest`, `npm run release:windows` must finish before `npm run verify:windows-runtime`. The latter is intentionally restricted to a native x64 ephemeral GitHub Actions runner because it deletes Tarik's application-specific Roaming and Local AppData roots before launch.
+Run `npm run release:windows`, then `npm run verify:windows-manual` on the review machine. Manual mode preserves Tarik's application-specific Roaming and Local AppData roots, measures only events produced by its own two launches, and writes evidence under `target/windows-manual-evidence/`.
+
+`npm run verify:windows-runtime` remains an optional CI-only fresh-profile check. It intentionally deletes Tarik's AppData roots and must never be run by spoofing GitHub Actions variables on a normal workstation.
 
 Expected evidence artifact:
 
 ```text
-Tarik-windows-x64-runtime-evidence/
+target/windows-manual-evidence/
 └── runtime-report.json
 ```
 
-The report must have `schemaVersion: 1` and `verdict.automatedPassed: true`. A missing report is not a pass. A failure report is retained when the verifier reaches the native CI boundary.
+The report must have `schemaVersion: 1`, `evidenceMode: "manual"`, and `verdict.automatedPassed: true`. A missing or failed report is not a pass. `profile.preserved` must be true; pre-existing AppData is disclosed rather than removed.
 
 ### Automated acceptance
 
-- [ ] Outer checksum and release manifest identify the same ZIP and SHA-256.
-- [ ] Extracted package has the exact allow-listed files; executable/DLL files are Windows PE; internal checksums pass.
-- [ ] First launch starts extracted `Tarik.exe` from its package directory after Tarik's AppData roots were absent.
-- [ ] A responding main window, `tarik.sqlite`, and structured startup log appear within the fixed 60-second deadline.
-- [ ] Closing the native main window completes Tarik's frontend-coordinated graceful shutdown with exit code 0 and a structured `app/graceful_shutdown` event; force-kill is not counted as success.
-- [ ] Second launch uses the same profile, exposes a responding window, records a second startup and coordinated-shutdown event, and exits gracefully.
-- [ ] Both desktop launches observe at least one descendant `msedgewebview2.exe`; its product version is recorded when Windows exposes the executable path.
-- [ ] Peak working set for the full Tarik/WebView2 descendant tree is sampled and remains at or below 768 MiB for the fixed idle launch/restart smoke. This is a conservative regression ceiling, not an idle-memory claim.
-- [ ] The extracted sidecar handshakes as DuckDB protocol 1 with its sibling `duckdb.dll`.
-- [ ] A 100,000-row result publishes bounded pages; first and last 500-row pages are readable; result cache is zero bytes after release.
-- [ ] A 250,000-row CSV export succeeds with exact part rows `100,000 / 100,000 / 50,000`.
-- [ ] A one-billion-row requested export reaches running, is cancelled, and leaves no hidden `.tarik-export-*` stage.
-- [ ] Sidecar peak working set is sampled and remains at or below 512 MiB for the fixed workload.
-- [ ] The sidecar closes its session and exits cleanly after stdin closes.
-- [ ] `runtime-report.json` records OS version, architecture, Node version, runner image, artifact identity, fixed dataset, budgets, process samples, workload results, and pending manual gates without SQL/result payloads.
+- [x] Outer checksum and release manifest identify the same ZIP and SHA-256.
+- [x] Extracted package has the exact allow-listed files; executable/DLL files are Windows PE; internal checksums pass.
+- [x] First launch starts extracted `Tarik.exe` from its package directory; the report truthfully records whether Tarik AppData already existed and preserves it.
+- [x] A responding main window, `tarik.sqlite`, and structured startup log appear within the fixed 60-second deadline.
+- [x] Closing the native main window completes Tarik's frontend-coordinated graceful shutdown with exit code 0 and a structured `app/graceful_shutdown` event; force-kill is not counted as success.
+- [x] Second launch uses the same profile, exposes a responding window, records a second startup and coordinated-shutdown event, and exits gracefully.
+- [x] Both desktop launches observe at least one descendant `msedgewebview2.exe`; its product version is recorded when Windows exposes the executable path.
+- [x] Peak working set for the full Tarik/WebView2 descendant tree is sampled and remains at or below 768 MiB for the fixed idle launch/restart smoke. This is a conservative regression ceiling, not an idle-memory claim.
+- [x] The extracted sidecar handshakes as DuckDB protocol 1 with its sibling `duckdb.dll`.
+- [x] A 100,000-row result publishes bounded pages; first and last 500-row pages are readable; result cache is zero bytes after release.
+- [x] A 250,000-row CSV export succeeds with exact part rows `100,000 / 100,000 / 50,000`.
+- [x] A one-billion-row requested export reaches running, is cancelled, and leaves no hidden `.tarik-export-*` stage.
+- [x] Sidecar peak working set is sampled and remains at or below 512 MiB for the fixed workload.
+- [x] The sidecar closes its session and exits cleanly after stdin closes.
+- [x] `runtime-report.json` records evidence mode, profile preservation, OS version, architecture, Node version, artifact identity, fixed dataset, budgets, process samples, workload results, and pending manual gates without SQL/result payloads.
+
+### Local automated result
+
+Recorded September 5, 2026 on Windows 10 Enterprise 10.0.19045 x64 with Node 22.17.1:
+
+- manual evidence passed with the existing Roaming and Local AppData roots preserved;
+- both launches were responsive, observed six WebView2 152.0.4191.62 processes at device scale factor 1.5, exited with code 0, and recorded coordinated shutdown;
+- desktop/WebView2 process-tree peak was 374,861,824 bytes against the 768 MiB ceiling;
+- the 100,000-row result returned exact 500-row first/last pages and released its cache to zero bytes;
+- the 250,000-row export produced exact `100,000 / 100,000 / 50,000` parts;
+- the one-billion-row requested export cancelled with zero files, bytes, or hidden stages;
+- sidecar peak was 20,901,888 bytes against the 512 MiB ceiling and it exited cleanly.
+
+The captured 1.5 device scale factor proves the WebView2 process received 150% scaling; it does not replace visual sharpness, layout, pointer-target, or keyboard-focus review.
 
 ## Missing-WebView2 prerequisite review
 
@@ -127,7 +143,7 @@ Check each applicable item at its matrix row:
 
 ## Current automated regression evidence
 
-Recorded on Linux after `f480499` (implementation validation only, not Windows acceptance):
+Baseline implementation evidence recorded after `f480499`:
 
 - format and documentation checks pass;
 - ESLint: zero errors and three pre-existing warnings;
@@ -138,14 +154,14 @@ Recorded on Linux after `f480499` (implementation validation only, not Windows a
 - Rust format and workspace Clippy with warnings denied pass;
 - real DuckDB sidecar build/handshake passes;
 - Rust workspace passes: desktop 75 tests plus all engine protocol, sidecar, fixture, and documentation suites;
-- `npm run verify:windows-runtime` fails closed on Linux with `Windows runtime verification must run on Windows`.
+- both runtime modes fail closed off native Windows x64; CI mode additionally requires an ephemeral GitHub Actions runner.
 
 ## Sign-off
 
 T4 remains unchecked in `TASK.md` until:
 
-- [ ] Native `windows-latest` package and runtime jobs pass and their ZIP/checksum/manifest/report are attached.
-- [ ] The automated checklist above is checked against `runtime-report.json`.
+- [x] `npm run release:windows` succeeds for the exact reviewed commit and the ZIP/checksum/manifest identities are recorded above.
+- [x] `npm run verify:windows-manual` passes and the automated checklist above is checked against `target/windows-manual-evidence/runtime-report.json`.
 - [ ] Windows 10 and Windows 11 clean-machine rows pass.
 - [ ] All 100/125/150/200% and mixed-monitor rows pass.
 - [ ] Missing-WebView2 behavior passes on a disposable machine.

@@ -16,7 +16,7 @@ import {
   WINDOWS_RUNTIME_BUDGETS,
 } from "../scripts/windows-runtime.mjs";
 
-test("runtime verifier is restricted to ephemeral native Windows x64 CI", () => {
+test("runtime verifier supports non-destructive manual Windows x64 evidence", () => {
   assert.throws(
     () =>
       assertWindowsRuntimeHost({
@@ -54,6 +54,22 @@ test("runtime verifier is restricted to ephemeral native Windows x64 CI", () => 
       actions: "true",
       runnerTemp: "C:\\runner",
     }),
+  );
+  assert.doesNotThrow(() =>
+    assertWindowsRuntimeHost({
+      platform: "win32",
+      arch: "x64",
+      mode: "manual",
+    }),
+  );
+  assert.throws(
+    () =>
+      assertWindowsRuntimeHost({
+        platform: "win32",
+        arch: "x64",
+        mode: "unknown",
+      }),
+    /unknown Windows runtime verification mode/,
   );
 });
 
@@ -128,8 +144,8 @@ function passingReport() {
     prerequisites: { webView2Available: true },
     desktop: {
       launches: [
-        { windowObserved: true, responding: true, gracefulExit: true },
-        { windowObserved: true, responding: true, gracefulExit: true },
+        { windowObserved: true, responding: true, gracefulExit: true, sidecarProcesses: 0 },
+        { windowObserved: true, responding: true, gracefulExit: true, sidecarProcesses: 0 },
       ],
       startupEvents: 2,
       gracefulShutdownEvents: 2,
@@ -138,6 +154,7 @@ function passingReport() {
     },
     engine: {
       handshake: { engineId: "duckdb", protocolVersion: 1 },
+      mainWindowHandle: 0,
       largeResult: { rows: 100_000, firstPageRows: 500, lastPageRows: 500 },
       resultCacheBytesAfterRelease: 0,
       completedExport: {
@@ -161,9 +178,20 @@ test("runtime report passes only complete bounded evidence", () => {
   report.desktop.peakProcessTreeRssBytes = WINDOWS_RUNTIME_BUDGETS.peakDesktopTreeRssBytes + 1;
   report.engine.cancelledExport.hiddenStagesAfterCancel.push(".tarik-export-leftover");
   report.engine.cleanExit = false;
+  report.engine.mainWindowHandle = 42;
   const failures = runtimeFailures(report);
   assert.ok(failures.includes("desktop process-tree memory exceeded budget"));
   assert.ok(failures.includes("cancelled export left hidden stages"));
   assert.ok(failures.includes("sidecar did not exit cleanly"));
+  assert.ok(failures.includes("sidecar exposed a top-level window"));
   assert.throws(() => assertRuntimeReport(report), /Windows runtime evidence failed/);
+
+  const unsafeManualReport = passingReport();
+  unsafeManualReport.evidenceMode = "manual";
+  unsafeManualReport.profile = { preserved: false };
+  assert.ok(
+    runtimeFailures(unsafeManualReport).includes(
+      "manual evidence did not preserve the existing AppData roots",
+    ),
+  );
 });

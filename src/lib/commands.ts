@@ -396,6 +396,16 @@ export interface QuerySessionSnapshot {
 }
 
 export type ExecutionState = "queued" | "running" | "succeeded" | "failed" | "cancelled";
+export type EngineRuntimeState = "stopped" | "standby" | "connected" | "failed";
+
+export interface EngineStatus {
+  state: EngineRuntimeState;
+  processId: number | null;
+}
+
+export function getEngineStatus(invokeCommand: InvokeCommand = invoke): Promise<EngineStatus> {
+  return invokeCommand<EngineStatus>("get_engine_status");
+}
 
 export interface ExecutionError {
   code: string;
@@ -489,6 +499,14 @@ export function getQueryStatus(
   return invokeCommand<ExecutionView | null>("get_query_status", { executionId });
 }
 
+export function getTabExecution(
+  projectId: string,
+  tabId: string,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<ExecutionView | null> {
+  return invokeCommand<ExecutionView | null>("get_tab_execution", { projectId, tabId });
+}
+
 export function cancelQuery(
   executionId: string,
   invokeCommand: InvokeCommand = invoke,
@@ -500,6 +518,7 @@ export interface ExecutionView {
   executionId: string;
   projectId: string;
   tabId: string;
+  sql: string;
   state: ExecutionState;
   durationMs: number;
   rowsProduced: number | null;

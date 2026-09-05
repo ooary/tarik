@@ -44,6 +44,8 @@ try {
     );
   }
 
+  await run(process.execPath, [path.join(root, "scripts", "verify-icons.mjs")], { cwd: root });
+
   await rm(stage, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
   await mkdir(portable, { recursive: true });
 
@@ -58,6 +60,7 @@ try {
   await copyFile(duckdbDll, path.join(targetRelease, "duckdb.dll"));
 
   console.log("==> Compile Tauri Windows release executable");
+  await run("cargo", ["clean", "-p", "tarik", "--release"], { cwd: root });
   await run(
     process.execPath,
     [path.join(root, "node_modules", "@tauri-apps", "cli", "tauri.js"), "build", "--no-bundle"],

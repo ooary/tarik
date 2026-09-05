@@ -3,6 +3,7 @@ use std::{
     sync::Mutex,
 };
 
+use serde::Serialize;
 use serde_json::Value;
 use tarik_engine_client::EngineProcess;
 use tarik_engine_protocol::{
@@ -15,7 +16,20 @@ pub struct EngineManager {
     /// Directory where published result page artifacts live.
     result_root: PathBuf,
     process: Mutex<Option<EngineProcess>>,
-    session_id: Mutex<Option<String>>,
+    session: Mutex<Option<EngineSession>>,
+}
+
+struct EngineSession {
+    id: String,
+    project_path: PathBuf,
+    process_id: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EngineStatus {
+    pub state: &'static str,
+    pub process_id: Option<u32>,
 }
 
 impl EngineManager {
@@ -24,7 +38,7 @@ impl EngineManager {
             engine_bin,
             result_root,
             process: Mutex::new(None),
-            session_id: Mutex::new(None),
+            session: Mutex::new(None),
         }
     }
 
@@ -36,6 +50,9 @@ impl EngineManager {
             .process
             .lock()
             .map_err(|_| "engine process lock".to_string())?;
+        if guard.as_mut().is_some_and(|process| !process.is_usable()) {
+            *guard = None;
+        }
         if guard.is_none() {
             let mut process = EngineProcess::start(&self.engine_bin)
                 .map_err(|error| format!("could not start engine: {error}"))?;
@@ -51,35 +68,38 @@ impl EngineManager {
             }
             *guard = Some(process);
         }
-        operation(guard.as_mut().expect("engine process present"))
+        let process = guard.as_mut().expect("engine process present");
+        let result = operation(process);
+        if result.is_err() && !process.is_usable() {
+            *guard = None;
+        }
+        result
     }
 
     pub fn open_session(&self, project_path: &Path) -> Result<(), String> {
-        let mut session = self
-            .session_id
-            .lock()
-            .map_err(|_| "session lock".to_string())?;
-        // Close any previous session before opening a new one so a stale
-        // session cannot block project reopen.
-        if let Some(previous) = session.as_ref() {
-            let _ = self.with_process(|process| {
-                process
-                    .request(
-                        "session.close",
-                        serde_json::json!({ "sessionId": previous }),
-                    )
-                    .map_err(|error| error.to_string())
-            });
-        }
-        let session_id = uuid::Uuid::new_v4().to_string();
-        let locator = ProjectLocator {
-            engine_id: "duckdb".into(),
-            payload: serde_json::json!({ "path": project_path.to_string_lossy() })
-                .as_object()
-                .unwrap()
-                .clone(),
-        };
         self.with_process(|process| {
+            let mut session = self
+                .session
+                .lock()
+                .map_err(|_| "session lock".to_string())?;
+            if let Some(previous) = session.as_ref() {
+                if previous.process_id == process.id() {
+                    process
+                        .request(
+                            "session.close",
+                            serde_json::json!({ "sessionId": previous.id }),
+                        )
+                        .map_err(|error| error.to_string())?;
+                }
+            }
+            let session_id = uuid::Uuid::new_v4().to_string();
+            let locator = ProjectLocator {
+                engine_id: "duckdb".into(),
+                payload: serde_json::json!({ "path": project_path.to_string_lossy() })
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+            };
             process
                 .request(
                     "session.open",
@@ -89,45 +109,111 @@ impl EngineManager {
                     }),
                 )
                 .map_err(|error| error.to_string())?;
+            *session = Some(EngineSession {
+                id: session_id,
+                project_path: project_path.to_path_buf(),
+                process_id: process.id(),
+            });
             Ok(())
-        })?;
-        *session = Some(session_id);
-        Ok(())
+        })
+    }
+
+    pub fn status(&self) -> EngineStatus {
+        let mut process = match self.process.lock() {
+            Ok(process) => process,
+            Err(_) => {
+                return EngineStatus {
+                    state: "failed",
+                    process_id: None,
+                };
+            }
+        };
+        if process.as_mut().is_some_and(|current| !current.is_usable()) {
+            *process = None;
+        }
+        let process_id = process.as_ref().map(EngineProcess::id);
+        let connected = process_id.is_some()
+            && self
+                .session
+                .lock()
+                .ok()
+                .and_then(|session| session.as_ref().map(|current| current.process_id))
+                == process_id;
+        EngineStatus {
+            state: if connected {
+                "connected"
+            } else if process_id.is_some() {
+                "standby"
+            } else {
+                "stopped"
+            },
+            process_id,
+        }
     }
 
     pub fn close_session(&self) -> Result<(), String> {
-        let mut session = self
-            .session_id
+        let mut process_guard = self
+            .process
             .lock()
-            .map_err(|_| "session lock".to_string())?;
-        if let Some(session_id) = session.as_ref() {
-            self.with_process(|process| {
-                process
+            .map_err(|_| "engine process lock".to_string())?;
+        if process_guard
+            .as_mut()
+            .is_some_and(|current| !current.is_usable())
+        {
+            *process_guard = None;
+        }
+        let current = self
+            .session
+            .lock()
+            .map_err(|_| "session lock".to_string())?
+            .take();
+        if let (Some(current), Some(active_process)) = (current, process_guard.as_mut()) {
+            if current.process_id == active_process.id() {
+                let result = active_process
                     .request(
                         "session.close",
-                        serde_json::json!({ "sessionId": session_id }),
+                        serde_json::json!({ "sessionId": current.id }),
                     )
-                    .map_err(|error| error.to_string())
-            })?;
-            *session = None;
+                    .map_err(|error| error.to_string());
+                if result.is_err() && !active_process.is_usable() {
+                    *process_guard = None;
+                }
+                result?;
+            }
         }
         Ok(())
     }
 
-    fn require_session_id(&self) -> Result<String, String> {
-        self.session_id
-            .lock()
-            .map_err(|_| "session lock".to_string())?
-            .clone()
-            .ok_or_else(|| "no engine session is open".to_string())
-    }
-
     fn session_request(&self, method: &str, mut params: Value) -> Result<Value, String> {
-        let session_id = self.require_session_id()?;
-        if let Value::Object(map) = &mut params {
-            map.insert("sessionId".into(), Value::String(session_id));
-        }
         self.with_process(|process| {
+            let mut session = self
+                .session
+                .lock()
+                .map_err(|_| "session lock".to_string())?;
+            let current = session
+                .as_mut()
+                .ok_or_else(|| "no engine session is open".to_string())?;
+            if current.process_id != process.id() {
+                let session_id = uuid::Uuid::new_v4().to_string();
+                let locator = ProjectLocator {
+                    engine_id: "duckdb".into(),
+                    payload: serde_json::json!({ "path": current.project_path.to_string_lossy() })
+                        .as_object()
+                        .unwrap()
+                        .clone(),
+                };
+                process
+                    .request(
+                        "session.open",
+                        serde_json::json!({ "sessionId": session_id, "locator": locator }),
+                    )
+                    .map_err(|error| error.to_string())?;
+                current.id = session_id;
+                current.process_id = process.id();
+            }
+            if let Value::Object(map) = &mut params {
+                map.insert("sessionId".into(), Value::String(current.id.clone()));
+            }
             process
                 .request(method, params)
                 .map_err(|error| error.to_string())
@@ -404,6 +490,9 @@ impl EngineManager {
             .process
             .lock()
             .map_err(|_| "engine process lock".to_string())?;
+        if guard.as_mut().is_some_and(|process| !process.is_usable()) {
+            *guard = None;
+        }
         let Some(process) = guard.as_mut() else {
             return Ok(0);
         };
@@ -416,9 +505,25 @@ impl EngineManager {
     }
 
     pub fn shutdown(&self) {
-        if let Ok(mut guard) = self.process.lock() {
-            if let Some(process) = guard.take() {
-                process.shutdown();
+        let process = self.process.lock().ok().and_then(|mut guard| guard.take());
+        if let Ok(mut session) = self.session.lock() {
+            *session = None;
+        }
+        if let Some(process) = process {
+            process.shutdown();
+        }
+    }
+
+    #[cfg(test)]
+    fn process_id(&self) -> Option<u32> {
+        self.process.lock().ok()?.as_ref().map(EngineProcess::id)
+    }
+
+    #[cfg(test)]
+    fn terminate_process(&self) {
+        if let Ok(mut process) = self.process.lock() {
+            if let Some(process) = process.as_mut() {
+                process.terminate();
             }
         }
     }
@@ -469,6 +574,66 @@ mod tests {
             .unwrap()
             .as_nanos();
         std::env::temp_dir().join(format!("tarik-manager-{name}-{stamp}{suffix}"))
+    }
+
+    #[test]
+    fn process_is_lazy_and_reused_in_standby() {
+        let engine_bin = workspace_engine();
+        assert!(
+            engine_bin.exists(),
+            "engine binary missing; build the DuckDB engine first"
+        );
+        let first_database = temp_path("standby-first", ".duckdb");
+        let second_database = temp_path("standby-second", ".duckdb");
+        let result_root = temp_path("standby-results", "");
+        let manager = EngineManager::new(engine_bin, result_root.clone());
+
+        assert_eq!(manager.process_id(), None);
+        assert_eq!(manager.status().state, "stopped");
+        manager.open_session(&first_database).unwrap();
+        let process_id = manager.process_id().expect("process started lazily");
+        assert_eq!(manager.status().state, "connected");
+        manager.close_session().unwrap();
+        assert_eq!(manager.process_id(), Some(process_id));
+        assert_eq!(manager.status().state, "standby");
+        manager.open_session(&second_database).unwrap();
+        assert_eq!(manager.process_id(), Some(process_id));
+        assert_eq!(manager.status().state, "connected");
+        manager.close_session().unwrap();
+        manager.shutdown();
+        assert_eq!(manager.process_id(), None);
+        assert_eq!(manager.status().state, "stopped");
+
+        let _ = std::fs::remove_file(first_database);
+        let _ = std::fs::remove_file(second_database);
+        let _ = std::fs::remove_dir_all(result_root);
+    }
+
+    #[test]
+    fn dead_process_restarts_and_reopens_the_active_session() {
+        let engine_bin = workspace_engine();
+        assert!(
+            engine_bin.exists(),
+            "engine binary missing; build the DuckDB engine first"
+        );
+        let database = temp_path("recovery", ".duckdb");
+        let result_root = temp_path("recovery-results", "");
+        let manager = EngineManager::new(engine_bin, result_root.clone());
+        manager.open_session(&database).unwrap();
+        let first_process = manager.process_id().unwrap();
+        manager.terminate_process();
+        assert_eq!(manager.status().state, "stopped");
+
+        let catalog = manager.catalog().unwrap();
+        let second_process = manager.process_id().unwrap();
+        assert_ne!(first_process, second_process);
+        assert!(catalog.objects.is_empty());
+        assert_eq!(manager.status().state, "connected");
+
+        manager.close_session().unwrap();
+        manager.shutdown();
+        let _ = std::fs::remove_file(database);
+        let _ = std::fs::remove_dir_all(result_root);
     }
 
     #[test]

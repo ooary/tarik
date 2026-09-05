@@ -46,6 +46,7 @@ pub struct ExecutionView {
     pub execution_id: String,
     pub project_id: String,
     pub tab_id: String,
+    pub sql: String,
     pub state: ExecutionState,
     pub duration_ms: u64,
     pub rows_produced: Option<u64>,
@@ -76,6 +77,7 @@ impl ExecutionRecord {
             execution_id: execution_id.to_string(),
             project_id: self.project_id.clone(),
             tab_id: self.tab_id.clone(),
+            sql: self.sql.clone(),
             state: self.state,
             duration_ms: self.duration_ms,
             rows_produced: self.rows_produced,
@@ -91,6 +93,7 @@ pub struct QueryCoordinator {
     engine: Arc<dyn EngineExecutor>,
     database: MetadataDb,
     executions: Mutex<HashMap<String, ExecutionRecord>>,
+    latest_by_tab: Mutex<HashMap<(String, String), String>>,
     poll_interval: Duration,
 }
 
@@ -100,6 +103,7 @@ impl QueryCoordinator {
             engine,
             database,
             executions: Mutex::new(HashMap::new()),
+            latest_by_tab: Mutex::new(HashMap::new()),
             poll_interval: POLL_INTERVAL,
         }
     }
@@ -154,6 +158,13 @@ impl QueryCoordinator {
             },
         );
         drop(executions);
+        self.latest_by_tab
+            .lock()
+            .map_err(|_| "latest execution registry poisoned".to_string())?
+            .insert(
+                (project_id.to_string(), tab_id.to_string()),
+                execution_id.clone(),
+            );
 
         let submitted = match self.engine.execute(&execution_id, sql) {
             Ok(()) => true,
@@ -181,6 +192,16 @@ impl QueryCoordinator {
 
     pub fn status(&self, execution_id: &str) -> Option<ExecutionView> {
         self.view(execution_id)
+    }
+
+    pub fn latest_for_tab(&self, project_id: &str, tab_id: &str) -> Option<ExecutionView> {
+        let execution_id = self
+            .latest_by_tab
+            .lock()
+            .ok()?
+            .get(&(project_id.to_string(), tab_id.to_string()))?
+            .clone();
+        self.view(&execution_id)
     }
 
     /// Request cancellation; the poller observes the resulting terminal state.
@@ -235,6 +256,11 @@ impl QueryCoordinator {
             .lock()
             .map_err(|_| "execution registry poisoned".to_string())?;
         executions.retain(|_, record| record.tab_id != tab_id);
+        drop(executions);
+        self.latest_by_tab
+            .lock()
+            .map_err(|_| "latest execution registry poisoned".to_string())?
+            .retain(|(_, tracked_tab_id), _| tracked_tab_id != tab_id);
         Ok(())
     }
 
@@ -553,6 +579,23 @@ mod tests {
                 .state,
             ExecutionState::Succeeded
         );
+    }
+
+    #[test]
+    fn latest_execution_is_restorable_by_project_and_tab() {
+        let engine = FakeEngine::new(vec![status("e1", ExecutionState::Succeeded)]);
+        let (coordinator, project_id) = coordinator(engine);
+        let first = coordinator
+            .execute(&project_id, "tab1", "SELECT 1")
+            .unwrap();
+        let restored = coordinator
+            .latest_for_tab(&project_id, "tab1")
+            .expect("latest execution should remain coordinator-owned");
+        assert_eq!(restored.execution_id, first.execution_id);
+        assert_eq!(restored.sql, "SELECT 1");
+        assert!(coordinator.latest_for_tab(&project_id, "missing").is_none());
+        coordinator.forget("tab1").unwrap();
+        assert!(coordinator.latest_for_tab(&project_id, "tab1").is_none());
     }
 
     #[test]

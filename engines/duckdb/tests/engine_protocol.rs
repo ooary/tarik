@@ -184,6 +184,7 @@ fn exercise_native_paths(root: &std::path::Path) {
     #[cfg(windows)]
     {
         let mut permissions = std::fs::metadata(&source).unwrap().permissions();
+        #[allow(clippy::permissions_set_readonly_false)]
         permissions.set_readonly(false);
         std::fs::set_permissions(&source, permissions).unwrap();
     }

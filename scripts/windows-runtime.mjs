@@ -8,10 +8,14 @@ export const WINDOWS_RUNTIME_BUDGETS = Object.freeze({
   hiddenExportStagesAfterCancel: 0,
 });
 
-export function assertWindowsRuntimeHost({ platform, arch, actions, runnerTemp }) {
+export function assertWindowsRuntimeHost({ platform, arch, actions, runnerTemp, mode = "ci" }) {
   if (platform !== "win32") throw new Error("Windows runtime verification must run on Windows");
   if (arch !== "x64")
     throw new Error(`Windows runtime verification requires x64 Node, found ${arch}`);
+  if (mode !== "ci" && mode !== "manual") {
+    throw new Error(`unknown Windows runtime verification mode: ${mode}`);
+  }
+  if (mode === "manual") return;
   if (actions !== "true" || !runnerTemp) {
     throw new Error(
       "Windows runtime verification deletes Tarik AppData and is restricted to an ephemeral GitHub Actions runner",
@@ -133,6 +137,9 @@ export function countStructuredEvents(logText, target, eventName) {
 
 export function runtimeFailures(report, budgets = WINDOWS_RUNTIME_BUDGETS) {
   const failures = [];
+  if (report.evidenceMode === "manual" && report.profile?.preserved !== true) {
+    failures.push("manual evidence did not preserve the existing AppData roots");
+  }
   if (report.package?.checksumVerified !== true)
     failures.push("outer package checksum was not verified");
   if (!report.prerequisites?.webView2Available) failures.push("WebView2 Runtime was not available");
@@ -143,6 +150,9 @@ export function runtimeFailures(report, budgets = WINDOWS_RUNTIME_BUDGETS) {
       failures.push(`desktop launch ${index + 1} did not expose a window`);
     if (!launch.responding) failures.push(`desktop launch ${index + 1} was not responding`);
     if (!launch.gracefulExit) failures.push(`desktop launch ${index + 1} did not exit gracefully`);
+    if ((launch.sidecarProcesses ?? 0) !== 0) {
+      failures.push(`desktop launch ${index + 1} started DuckDB without an active project`);
+    }
   }
   if ((report.desktop?.startupEvents ?? 0) < 2)
     failures.push("startup log did not record both launches");
@@ -159,6 +169,9 @@ export function runtimeFailures(report, budgets = WINDOWS_RUNTIME_BUDGETS) {
     report.engine?.handshake?.protocolVersion !== 1
   ) {
     failures.push("packaged sidecar handshake was invalid");
+  }
+  if ((report.engine?.mainWindowHandle ?? -1) !== 0) {
+    failures.push("sidecar exposed a top-level window");
   }
   if (report.engine?.largeResult?.rows !== 100_000)
     failures.push("large-result row count differed");

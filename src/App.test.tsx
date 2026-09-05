@@ -13,8 +13,10 @@ import {
   createTable,
   dropCatalogObject,
   getActiveProject,
+  getEngineStatus,
   getLastSupportIncident,
   getRuntimeInfo,
+  getTabExecution,
   getLogInfo,
   getWorkbenchPreferences,
   importSourceTable,
@@ -56,8 +58,10 @@ vi.mock("./lib/commands", () => ({
   createTable: vi.fn(),
   dropCatalogObject: vi.fn(),
   getActiveProject: vi.fn(),
+  getEngineStatus: vi.fn(),
   getLastSupportIncident: vi.fn(),
   getRuntimeInfo: vi.fn(),
+  getTabExecution: vi.fn(),
   getLogInfo: vi.fn(),
   getWorkbenchPreferences: vi.fn(),
   importSourceTable: vi.fn(),
@@ -110,6 +114,8 @@ describe("Tarik workbench shell", () => {
     });
     vi.mocked(setWorkbenchPreferences).mockResolvedValue(undefined);
     vi.mocked(getActiveProject).mockResolvedValue(null);
+    vi.mocked(getEngineStatus).mockResolvedValue({ state: "stopped", processId: null });
+    vi.mocked(getTabExecution).mockResolvedValue(null);
     vi.mocked(inspectProjectCatalog).mockResolvedValue({ objects: [], columns: [] });
     vi.mocked(loadQuerySession).mockResolvedValue(null);
     vi.mocked(saveQuerySession).mockResolvedValue(undefined);
@@ -242,25 +248,32 @@ describe("Tarik workbench shell", () => {
 
   it("does not show connected when the engine-backed project command fails", async () => {
     vi.mocked(createProject).mockRejectedValue(new Error("engine handshake failed"));
-    vi.spyOn(window, "prompt").mockReturnValue("Broken");
     render(<App />);
     fireEvent.click(screen.getByRole("button", { name: "New project" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Project name" }), {
+      target: { value: "Broken" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create project" }));
+    expect(await screen.findByText("engine handshake failed")).toBeInTheDocument();
     expect(await screen.findByText("DuckDB connection failed")).toBeInTheDocument();
     expect(document.querySelector(".status-mark-failed")).toBeInTheDocument();
     expect(screen.queryByText(/Connected to/)).not.toBeInTheDocument();
   });
 
   it("creates and closes a real project through the typed commands", async () => {
-    const prompt = vi.spyOn(window, "prompt").mockReturnValue("Local analysis");
+    vi.mocked(getEngineStatus).mockResolvedValue({ state: "connected", processId: 42 });
+    const prompt = vi.spyOn(window, "prompt");
     render(<App />);
 
     fireEvent.click(screen.getByRole("button", { name: "New project" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create project" }));
     expect(await screen.findByText("Connected to Local analysis")).toBeInTheDocument();
     expect(document.querySelector(".status-mark-connected")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Close project" })).toHaveClass(
       "project-close-button",
     );
     expect(createProject).toHaveBeenCalledWith("Local analysis");
+    expect(prompt).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole("button", { name: "Close project" }));
     await waitFor(() => expect(closeProject).toHaveBeenCalled());

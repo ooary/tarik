@@ -70,7 +70,10 @@ export const QueryWorkspace = forwardRef<QueryWorkspaceHandle, QueryWorkspacePro
       flush,
     } = useQueryTabs(projectId);
     const sectionRef = useRef<HTMLElement>(null);
-    const { executions, run, cancel, forget } = useQueryExecution(projectId, onQuerySucceeded);
+    const { executions, restoring, starting, run, restore, cancel, forget } = useQueryExecution(
+      projectId,
+      onQuerySucceeded,
+    );
     const [runError, setRunError] = useState<string | null>(null);
     const [analysisMode, setAnalysisMode] = useState<AnalysisMode | null>(null);
     const { states: planStates, runPlan, clearPlan } = useQueryPlan(projectId);
@@ -82,6 +85,10 @@ export const QueryWorkspace = forwardRef<QueryWorkspaceHandle, QueryWorkspacePro
     const executionActive =
       activeExecution?.state === "queued" || activeExecution?.state === "running";
     const validation = useSqlValidation(projectId, activeTab?.id, activeTab?.sql, catalog);
+
+    useEffect(() => {
+      if (activeTab && !activeExecution) void restore(activeTab.id, activeTab.sql);
+    }, [activeExecution, activeTab, restore]);
 
     const submitSql = (tabId: string, sql: string) => {
       if (!projectId || executionActive) return;
@@ -379,7 +386,9 @@ export const QueryWorkspace = forwardRef<QueryWorkspaceHandle, QueryWorkspacePro
             <ResultPanel
               execution={activeExecution}
               onRunAgain={rerunExecution}
+              restoring={Boolean(activeTabId && restoring[activeTabId])}
               runError={runError}
+              starting={Boolean(activeTabId && starting[activeTabId])}
             />
           )}
         </div>
@@ -461,11 +470,15 @@ function formatSeconds(durationMs: number): string {
 function ResultPanel({
   execution,
   onRunAgain,
+  restoring,
   runError,
+  starting,
 }: {
   execution: TabExecution | undefined;
   onRunAgain: (execution: TabExecution) => void;
+  restoring: boolean;
   runError: string | null;
+  starting: boolean;
 }) {
   if (runError) {
     return (
@@ -474,6 +487,22 @@ function ResultPanel({
           <strong>Query could not start</strong>
           <span>{runError}</span>
         </div>
+      </div>
+    );
+  }
+  if (!execution && starting) {
+    return (
+      <div className="result-state" role="status">
+        <strong>Starting</strong>
+        <span>Submitting the query to DuckDB.</span>
+      </div>
+    );
+  }
+  if (!execution && restoring) {
+    return (
+      <div className="result-state" role="status">
+        <strong>Restoring results</strong>
+        <span>Checking this tab's latest execution.</span>
       </div>
     );
   }

@@ -10,6 +10,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import "./App.css";
 import { ContextMenu, Dialog, Menu } from "./components/ui";
 import { QueryWorkspace, type QueryWorkspaceHandle } from "./features/editor/QueryWorkspace";
+import { NewProjectDialog } from "./features/projects/NewProjectDialog";
 import { previewTableSql, qualifiedSqlName } from "./features/editor/sqlText";
 import { formatCompactCount } from "./features/sources/format";
 import { ImportDialog, type SourceAction } from "./features/sources/ImportDialog";
@@ -33,6 +34,7 @@ import {
   dropCatalogObject,
   releaseAllResults,
   getActiveProject,
+  getEngineStatus,
   getRuntimeInfo,
   getLastSupportIncident,
   getLogInfo,
@@ -70,7 +72,13 @@ type RuntimeState =
   | { kind: "unavailable" };
 
 type PreviewTheme = "system" | "light" | "dark";
-type EngineConnectionState = "idle" | "connecting" | "connected" | "failed";
+type EngineConnectionState =
+  | "idle"
+  | "connecting"
+  | "standby"
+  | "recovering"
+  | "connected"
+  | "failed";
 
 function SourceIcon({ kind }: { kind: "database" | "table" }) {
   const Icon = kind === "database" ? DatabaseIcon : TableIcon;
@@ -80,6 +88,15 @@ function SourceIcon({ kind }: { kind: "database" | "table" }) {
 function previewTheme(): PreviewTheme {
   const value = new URLSearchParams(window.location.search).get("theme");
   return value === "light" || value === "dark" ? value : "system";
+}
+
+function engineStatusLabel(state: EngineConnectionState): string {
+  if (state === "connected") return "DuckDB ready";
+  if (state === "connecting") return "Connecting to DuckDB";
+  if (state === "standby") return "DuckDB standby";
+  if (state === "recovering") return "DuckDB will reconnect";
+  if (state === "failed") return "DuckDB unavailable";
+  return "DuckDB stopped";
 }
 
 const preferencesRepository = createWorkbenchPreferencesRepository(
@@ -216,6 +233,33 @@ function App() {
     };
   }, []);
 
+  useEffect(() => {
+    let disposed = false;
+    const refreshEngineStatus = () => {
+      getEngineStatus()
+        .then((status) => {
+          if (disposed) return;
+          setEngineState((current) => {
+            if (status.state === "connected") return "connected";
+            if (status.state === "standby") return "standby";
+            if (status.state === "failed") return "failed";
+            if (project) return "recovering";
+            if (current === "connecting" || current === "failed") return current;
+            return "idle";
+          });
+        })
+        .catch(() => {
+          if (!disposed && project) setEngineState("recovering");
+        });
+    };
+    refreshEngineStatus();
+    const interval = window.setInterval(refreshEngineStatus, 1_000);
+    return () => {
+      disposed = true;
+      window.clearInterval(interval);
+    };
+  }, [project]);
+
   const finishShutdown = useCallback(
     async (skipDraft = false) => {
       if (shutdownInFlight.current) return;
@@ -290,9 +334,7 @@ function App() {
     }
   }
 
-  async function createLocalProject() {
-    const name = window.prompt("Project name", "Local analysis")?.trim();
-    if (!name) return;
+  async function createLocalProject(name: string) {
     setProjectError(null);
     setEngineState("connecting");
     try {
@@ -304,6 +346,7 @@ function App() {
     } catch (error) {
       setEngineState("failed");
       setProjectError(String(error));
+      throw error;
     }
   }
 
@@ -518,19 +561,16 @@ function App() {
         <div className="header-actions">
           <span className="engine-status">
             <span aria-hidden="true" className={`status-mark status-mark-${engineState}`} />
-            {engineState === "connected"
-              ? "DuckDB ready"
-              : engineState === "connecting"
-                ? "Connecting to DuckDB"
-                : engineState === "failed"
-                  ? "DuckDB unavailable"
-                  : "DuckDB idle"}
+            {engineStatusLabel(engineState)}
           </span>
           {project ? (
             <button className="text-button project-close-button" onClick={closeLocalProject} type="button">Close project</button>
           ) : (
             <>
-              <button className="text-button project-new-button" onClick={createLocalProject} type="button">New project</button>
+              <NewProjectDialog
+                existingNames={recentProjects.map((recent) => recent.name)}
+                onCreate={createLocalProject}
+              />
               <button className="text-button" onClick={openLocalProject} type="button">Open</button>
             </>
           )}
@@ -639,7 +679,7 @@ function App() {
                     const exactTitle =
                       rowCount === null
                         ? undefined
-                        : `${cachedExact ? "Exact cached" : "Estimated"}: ${rowCount.toLocaleString()} rows`;
+                        : `${cachedExact ? "Exact cached" : "Estimated"}: ${rowCount.toLocaleString("en-US")} rows`;
                     const qualifiedName = qualifiedSqlName(object.schema, object.name);
                     const items = [
                       {
@@ -843,7 +883,7 @@ function App() {
       )}
 
       <footer className="status-bar">
-        <span className="status-bar-left"><span className={`status-mark status-mark-${engineState}`} aria-hidden="true" /> {engineState === "connected" && project ? `Connected to ${project.name}` : engineState === "connecting" ? "Connecting to DuckDB" : engineState === "failed" ? "DuckDB connection failed" : runtime.kind === "ready" ? "No DuckDB project open" : "Starting Tarik"}</span>
+        <span className="status-bar-left"><span className={`status-mark status-mark-${engineState}`} aria-hidden="true" /> {engineState === "connected" && project ? `Connected to ${project.name}` : engineState === "connecting" ? "Connecting to DuckDB" : engineState === "standby" ? "DuckDB standby — no project session" : engineState === "recovering" ? "DuckDB stopped — reconnects on the next project operation" : engineState === "failed" ? "DuckDB connection failed" : runtime.kind === "ready" ? "No DuckDB project open" : "Starting Tarik"}</span>
         <span className="status-bar-right"><span>Memory limit: Balanced</span><span>2 threads</span><span>UTF-8</span></span>
       </footer>
     </main>

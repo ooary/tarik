@@ -163,6 +163,26 @@ test("query validation preserves project SQL and revision", async () => {
   );
 });
 
+test("engine status and tab execution restoration use typed commands", async () => {
+  const { getEngineStatus, getTabExecution } = await loadCommandsModule();
+  const calls = [];
+  const invoke = async (command, args) => {
+    calls.push({ command, args });
+    if (command === "get_engine_status") return { state: "standby", processId: 42 };
+    return { executionId: "e1", projectId: "p1", tabId: "t1", sql: "SELECT 1" };
+  };
+
+  assert.equal((await getEngineStatus(invoke)).state, "standby");
+  assert.equal((await getTabExecution("p1", "t1", invoke)).executionId, "e1");
+  assert.equal(
+    JSON.stringify(calls),
+    JSON.stringify([
+      { command: "get_engine_status" },
+      { command: "get_tab_execution", args: { projectId: "p1", tabId: "t1" } },
+    ]),
+  );
+});
+
 test("query plans use the typed project/sql/mode command", async () => {
   const { explainQueryPlan } = await loadCommandsModule();
   const calls = [];

@@ -359,6 +359,22 @@ button:active {
   background: color-mix(in srgb, var(--status-error-surface) 72%, var(--status-error) 28%);
 }
 
+.new-project-dialog {
+  width: min(440px, calc(100vw - 32px));
+}
+
+.new-project-form {
+  display: grid;
+  gap: 18px;
+  padding: 16px;
+}
+
+.new-project-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .theme-choices {
   display: grid;
   gap: 7px;
@@ -530,6 +546,14 @@ button:active {
 }
 
 .status-mark-connecting {
+  background: var(--status-warning);
+}
+
+.status-mark-standby {
+  background: var(--accent-solid);
+}
+
+.status-mark-recovering {
   background: var(--status-warning);
 }
 
