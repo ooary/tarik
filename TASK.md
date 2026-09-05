@@ -399,6 +399,7 @@ E10 Diagnostics/recovery    -> manual failure and cleanup review
 E11 Release quality         -> final acceptance review
 E12 Windows portable        -> native package and platform review
 E13 Desktop UX/lifecycle    -> packaged visual and process review
+E13.5 Interaction/resources -> modal, saved-query, and engine-settings review
 E14 Profiles/quality checks -> beginner workflow and correctness review
 ```
 
@@ -1883,7 +1884,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Notes: The supplied transparent artwork was normalized as `TarikLogo-square.png`, then used to regenerate the complete Tauri desktop/mobile icon family. `npm run verify:icons` validates source properties, generated inventory, formats, and Tauri configuration before every Windows release build.
 
 - [ ] **E13-T6 Run desktop UX, Results, branding, and process-lifecycle acceptance**
-  - Depends on: E13-T1, E13-T2, E13-T3, E13-T4, E13-T5
+  - Depends on: E13-T1, E13-T2, E13-T3, E13-T4, E13-T5, E13.5-T5
   - Deliverables: Windows packaged manual matrix plus automated frontend/Rust/process lifecycle, Results regression, and branding evidence.
   - Acceptance:
     - New project modal is accepted in light/dark themes and at 100/125/150/200 percent DPI using pointer and keyboard-only navigation.
@@ -1901,9 +1902,107 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
 
 ---
 
+## EPIC E13.5 — Desktop interaction consistency, saved-query correctness, and engine resource controls
+
+**Status:** `PLANNED / READY` — user authorized adding this critical pre-E14 pass on September 5, 2026. Implementation has not started. Complete E13.5-T0 through T5 before final E13-T6 packaged/manual acceptance.
+
+**Outcome:** Tarik uses one accessible desktop interaction language instead of browser prompts/confirms, newly created query folders are immediately truthful even when empty, saving the active SQL is a direct toolbar workflow with an explicit name/folder modal, and the status bar reports verified DuckDB resource settings that users can safely customize.
+
+**Design read:** preserve Tarik's calm dense IDE language. Dialogs are compact task surfaces with labels above fields, explicit verbs, inline errors, restrained motion, correct destructive emphasis, keyboard completion, and focus restoration—not generic browser chrome or oversized card layouts.
+
+**Truthfulness contract:** Current source contains no `window.alert`, but it contains five `window.prompt` and twelve `window.confirm` calls. All seventeen browser dialogs are in scope. Native operating-system file/folder pickers remain native. The current `Balanced / 2 threads` footer is hard-coded while the sidecar exposes no resource configuration/readback method; it must not claim a profile until DuckDB confirms effective values.
+
+- [ ] **E13.5-T0 Design modal, saved-query, and resource-setting graphs**
+  - Depends on: E13-T1, E13-T3, E8-T3, E8-T4
+  - Owns: `docs/design/E13-5-DESIGN-GRAPH.md`, interaction inventory, resource semantics, and implementation boundaries
+  - Deliverables:
+    - Inventory and classify every browser dialog by text-entry, destructive confirmation, unsaved-state confirmation, or potentially mutating SQL confirmation; record the current count and fail validation if a new call appears unnoticed.
+    - Define controlled dialog shapes and transitions for closed, editing, invalid, confirming, submitting, failed, succeeded, and externally closed states, including target identity and immutable action payloads.
+    - Trace the empty-folder bug from successful `create_query_folder` through refresh/grouping/rendering. Specify that folder visibility depends on folder records, never on whether any saved query exists.
+    - Define the direct Save query graph: active project/tab SQL snapshot → modal name/folder selection → validated metadata write → library refresh/status, with no SQL execution, editor mutation, or implicit tab creation.
+    - Define typed `EngineResourcePreset(low_memory|balanced|fast|custom)`, requested settings, effective DuckDB settings, pending-apply state, validation failures, active-work refusal, project open/switch, standby, crash recovery, and shutdown behavior.
+    - Document that DuckDB `memory_limit` constrains DuckDB working/buffer memory but is not a strict total Tarik process cap; WebView, sidecar overhead, some DuckDB allocations, and bounded result caches remain outside it.
+  - Acceptance: Graph Protocol sections cover success, cancellation, stale targets, duplicate submit, backend failure, project switch, active jobs, sidecar restart, persistence/readback mismatch, and focus/resource cleanup before implementation.
+  - Tests: source dialog inventory, current folder reproduction, A/E/R/cardinality/boundary completeness, and fixed resource-profile matrix.
+  - Commit: `docs(design): define desktop interaction and resource graph`
+
+- [ ] **E13.5-T1 Add controlled accessible prompt and confirmation foundations**
+  - Depends on: E13.5-T0
+  - Owns: shared Radix dialog primitives, form/confirmation contracts, accessibility behavior, and focused component tests
+  - Deliverables:
+    - Extend the existing dialog foundation for controlled open state, initial/cancel focus, focus restoration, busy-state close prevention, inline validation/errors, labelled descriptions, and explicit footer actions.
+    - Provide a compact text-entry form pattern with label, current/default value, optional contextual detail, Cancel, and an exact submit verb; Enter submits only valid idle forms and Escape cancels only when safe.
+    - Provide confirmation variants for normal, warning, and destructive actions. Destructive confirmations initially focus Cancel and name the exact operation/object instead of using generic `OK` or `Confirm` labels.
+    - Keep pending action state within the owning feature rather than introducing a global promise-based replacement for browser dialogs; stale or overlapping target identities must not execute.
+    - Preserve light/dark/system contrast, minimum viewport containment, reduced motion, keyboard traversal, screen-reader announcement, and pointer behavior.
+  - Acceptance: foundations support every inventoried interaction without browser APIs, nested focus traps, lost focus, accidental Enter submission, or modal dismissal during an active commit.
+  - Tests: controlled open/close, initial focus, Tab containment, Enter/Escape, click outside, focus restoration, busy/error states, destructive cancel focus, stale target, themes, and minimum viewport.
+  - Commit: `feat(ui): add controlled desktop dialog patterns`
+
+- [ ] **E13.5-T2 Replace every browser prompt and confirmation**
+  - Depends on: E13.5-T1
+  - Owns: project/source/catalog/editor/saved-query/history/export interaction state and regression tests
+  - Deliverables:
+    - Replace text-entry prompts for externally opened project naming, project rename, query-tab rename, folder creation, and folder rename with feature-owned Tarik form modals that trim/validate input and preserve it after backend failure.
+    - Replace confirmations for linked-source removal; table/view deletion; project delete/forget; potentially mutating Run, Actual Flow, and Export; failed-draft tab close; saved-SQL replacement; folder deletion; history retention/clear; and saved-query deletion.
+    - Use exact action labels and consequences. Managed delete shows the project name/path; external forget and linked-source removal explicitly preserve user-owned files; mutation dialogs explain that execution may change project data/catalog.
+    - Capture immutable target IDs and SQL snapshots when opening a confirmation; changing active tabs, project, catalog, or selection while a modal is open must cancel/refuse stale execution rather than act on the wrong target.
+    - Retain native operating-system file/folder pickers and the existing coordinated shutdown recovery boundary.
+    - Add a repository guard that rejects production `window.alert`, `window.prompt`, or `window.confirm` usage.
+  - Acceptance: no production browser dialog API remains; all seventeen known interactions complete/cancel/fail accessibly and execute at most once against the target shown to the user.
+  - Tests: each inventoried trigger, exact visible consequence, validation/backend failure retention, immutable target/SQL, duplicate submit, keyboard/focus, project/tab switch races, repository guard, and native picker preservation.
+  - Commit: `refactor(ui): replace browser dialogs with Tarik modals`
+
+- [ ] **E13.5-T3 Fix empty folders and add the direct Save query workflow**
+  - Depends on: E13.5-T1, E8-T3
+  - Owns: QueryWorkspace toolbar, save modal, Query Library folder rendering/refresh, metadata command integration, and saved-query tests
+  - Deliverables:
+    - Fix Query Library rendering so a successfully created folder appears immediately even when the project has zero saved queries, the folder itself is empty, or other queries are filtered out by search.
+    - Keep empty folder rows visible with a truthful `No saved queries` state and working Rename/Delete actions; distinguish global no-folders/no-queries state from an empty folder.
+    - Add a first-class **Save query** button immediately beside **Query library** in the editor toolbar. Disable it when no project is open or the active SQL is blank.
+    - Open a focused Tarik modal containing required **Query name** and **Folder** selection (`Unfiled` default), plus an accessible path to create a folder without abandoning the save draft.
+    - Capture the active tab's title and immutable SQL snapshot when the modal opens. Show a bounded read-only SQL preview or clear snapshot summary; do not allow subsequent editor changes to silently change what will be saved.
+    - Save creates a new saved query only after explicit submission. It never executes SQL, changes the editor, opens a tab, or overwrites an existing saved query implicitly; duplicate-name behavior follows the existing metadata contract and is explained inline.
+    - On success close the save modal, refresh the library/folder data, and announce a restrained success status including the saved name/folder. On failure keep name, folder, and SQL snapshot intact for retry.
+    - Keep **Query library** focused on browse/search/edit/delete/open/history; its existing **Save current** action may remain as a secondary equivalent only if both entry points use the same save-modal behavior and tests.
+  - Acceptance: creating the first empty folder displays it immediately; saving from the toolbar into that folder is possible without opening the library first; reopening the library shows the exact saved immutable SQL under the selected folder after restart.
+  - Tests: zero-query empty-folder reproduction, multiple empty folders, search behavior, refresh/race/failure, toolbar position/enabled state, modal autofocus/validation/folder creation, immutable SQL after editor changes, no execution/no tab mutation, duplicate names, save failure retry, success announcement, library consistency, and restart persistence.
+  - Commit: `fix(saved-queries): restore folders and direct save flow`
+
+- [ ] **E13.5-T4 Restore typed customizable DuckDB resource settings**
+  - Depends on: E13.5-T0, E13-T3
+  - Owns: engine protocol/capabilities, sidecar session configuration/readback, SQLite settings, Tauri commands, status state, and integration tests
+  - Deliverables:
+    - Restore Low memory (`512 MiB / 1 thread`), Balanced (`2 GiB / 2 threads`), and Fast (`8 GiB / 4 threads`) presets through the sidecar architecture; add Custom memory and thread values as a typed protocol—not interpolated arbitrary SQL.
+    - Validate overflow-safe memory units and positive thread counts against documented hard bounds; warn rather than misrepresent when requested values exceed detected physical memory or logical CPUs.
+    - Persist one application-wide requested default in SQLite and apply it whenever a project session opens, switches, or is recreated after sidecar recovery. Keep Tarik's spill directory app-owned; arbitrary temporary-directory customization is deferred.
+    - Apply a changed setting to an active session only while query, export, Actual Flow, validation, and future profile jobs are idle. Never silently interrupt work; return a structured busy state with Cancel/keep editing guidance.
+    - Configure the primary session and prove cloned query/export connections inherit the intended values. Read back DuckDB's effective `memory_limit` and `threads` after application before reporting success.
+    - Distinguish requested, pending reconnect/apply, effective, invalid, busy, and failed states. Preserve the previous verified effective settings after a failed application and recover/reapply predictably after a sidecar crash.
+    - Never label the value as total Tarik memory. Logs contain preset/error codes and safe numeric limits only, never project SQL or paths.
+  - Acceptance: settings survive restart and project switching, effective readback matches every preset/custom value, active work is never interrupted, failures do not create a false footer state, and query/export cancellation/memory bounds remain intact.
+  - Tests: preset matrix, minimum/maximum/overflow/unit parsing, CPU/RAM warnings, SQLite persistence/default migration, open/switch/standby/recovery, busy refusal, apply/readback mismatch, cloned query/export connections, cancellation, sidecar failure, and fixed-workload process memory.
+  - Commit: `feat(engine): add verified custom resource settings`
+
+- [ ] **E13.5-T5 Add Engine resources modal and run combined critical review**
+  - Depends on: E13.5-T2, E13.5-T3, E13.5-T4
+  - Owns: status-bar resource trigger/modal, `docs/review/E13-5-INTERACTIONS-RESOURCES.md`, packaged evidence, and manual sign-off
+  - Deliverables:
+    - Replace the hard-coded footer text with a keyboard-accessible **DuckDB resources** trigger showing verified preset, effective memory, and effective threads; show `Not configured`, `Applying`, `Pending`, or `Unavailable` truthfully when appropriate.
+    - Add a compact resources modal with preset selection and Custom memory/unit/thread fields, clear validation/warnings, current versus requested values, Apply/Cancel, and the statement: `Limits DuckDB working memory. Total Tarik process memory can be higher.`
+    - Explain whether Apply is immediate or pending and why active work blocks it. Do not auto-cancel jobs, auto-restart the sidecar, or close the modal on failure.
+    - Review all modal interactions and the direct Save query workflow in light/dark/system, pointer and keyboard-only modes, minimum viewport, Windows DPI 100/125/150/200 percent, and mixed-monitor movement.
+    - Repackage Windows and rerun sidecar invisibility/single-instance/recovery, results, exports, cancellation, restart persistence, process-tree memory, and zero-residue checks before E13-T6 final acceptance.
+  - Acceptance: users can name/confirm/save/manage folders without native browser chrome, can explain and change DuckDB memory/threads safely, and every visible resource value is verified rather than hard-coded; user gives explicit E13.5 sign-off.
+  - Tests: full frontend/Rust/docs/package gates, browser-dialog guard, saved-query golden workflow, real-sidecar resource readback, active-job refusal, restart/crash recovery, Windows packaged modal/DPI/focus matrix, and memory/residue report.
+  - Commit: `docs(review): accept desktop interactions and resources`
+  - Review: `docs/review/E13-5-INTERACTIONS-RESOURCES.md`
+
+---
+
 ## EPIC E14 — Beginner data profiling and quality checks
 
-**Status:** `PLANNED / BLOCKED` — requirements are recorded, but E14 must not start until E13-T6 receives explicit user approval.
+**Status:** `PLANNED / BLOCKED` — requirements are recorded, but E14 must not start until E13.5-T5 and E13-T6 receive explicit user approval.
 
 **Outcome:** Help beginners answer “What is in this data?”, “Can I trust it?”, and “What SQL proves that?” through explicit, local, cancellable profiles and reusable quality checks. Tarik must teach by showing deterministic SQL and metric provenance rather than hiding behavior behind an AI chat box or silently changing data.
 
