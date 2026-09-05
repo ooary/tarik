@@ -2008,14 +2008,14 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
 
 ## EPIC E14 — Beginner data profiling and quality checks
 
-**Status:** `PLANNED / BLOCKED` — requirements are recorded, but E14 must not start until E13.5-T5 and E13-T6 receive explicit user approval.
+**Status:** `IN PROGRESS` — user authorized starting E14 on September 5, 2026 (option 2) with E13-T6 native Windows acceptance consciously left open in parallel; E14 must not be called complete while E13-T6 is unresolved.
 
 **Outcome:** Help beginners answer “What is in this data?”, “Can I trust it?”, and “What SQL proves that?” through explicit, local, cancellable profiles and reusable quality checks. Tarik must teach by showing deterministic SQL and metric provenance rather than hiding behavior behind an AI chat box or silently changing data.
 
 **Product contract:** Profiling and checks are read-only analytical actions. Every metric is labeled **Exact**, **Approximate**, or **Sampled**; unavailable metrics explain why. Generated SQL is visible and may be copied or opened in an editor without execution. Definitions and bounded run summaries live in SQLite, analytical scans run in the DuckDB sidecar, failing-row previews use ephemeral bounded result pages, and logs contain no generated/custom SQL, accepted values, samples, or failing rows.
 
-- [ ] **E14-T0 Design profiling and quality-check semantics**
-  - Depends on: E13-T6 approval, E4-T3, E6-T4, E8-T4
+- [x] **E14-T0 Design profiling and quality-check semantics**
+  - Depends on: E4-T3, E6-T4, E8-T4 (E13-T6 approval waived for design only by user option 2 on September 5, 2026; E13-T6 remains required before E14 final acceptance)
   - Owns: `docs/design/E14-DESIGN-GRAPH.md`, domain vocabulary, provenance rules, resource budgets, and privacy boundaries
   - Deliverables:
     - Define `ProfileRequest`, `ProfileMetric`, `MetricProvenance(exact|approximate|sampled)`, `ProfileSnapshot`, `QualityCheckDefinition`, immutable `CheckRevision`, `CheckRun`, `CheckOutcome(pass|fail|error|cancelled)`, and bounded `FailurePreview` shapes.
