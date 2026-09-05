@@ -70,6 +70,9 @@ cargo test -p tarik-engine-duckdb --test engine_protocol resource_protocol_appli
 cargo test -p tarik-engine-duckdb --test engine_protocol resource_change_is_rejected_while_session_work_is_active
 cargo test -p tarik --lib engine_resources
 cargo test -p tarik --lib engine_manager::tests
+cargo test --workspace
+npm run engine:check
+LD_LIBRARY_PATH="$PWD/target/release" python3 scripts/benchmark-memory.py --engine target/release/tarik-engine-duckdb --report target/e13-5-memory-report.json
 git diff --check
 ```
 
@@ -86,6 +89,8 @@ Focused assertions include:
 - typed protocol serde and hard bounds;
 - real DuckDB readback through primary, query clone, and export clone connections;
 - crash recovery reopens with the requested settings.
+
+Linux release memory evidence (`target/e13-5-memory-report.json`) passed the versioned E11 budgets: 112,676 KiB peak sidecar RSS, 1,456 KiB post-cycle growth, zero result cache after release, and zero hidden export stages after cancellation.
 
 ## Manual review checklist
 
