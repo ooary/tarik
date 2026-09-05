@@ -128,41 +128,40 @@ describe("SavedQueryLibrary", () => {
     await screen.findAllByText("Monthly revenue");
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
     fireEvent.change(screen.getByLabelText("SQL"), { target: { value: "SELECT 2" } });
-    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
-
     fireEvent.click(screen.getByRole("button", { name: "Update saved query" }));
+    expect(await screen.findByRole("dialog", { name: "Replace saved SQL?" })).toBeInTheDocument();
     expect(updateSavedQuery).not.toHaveBeenCalled();
 
-    confirm.mockReturnValue(true);
-    fireEvent.click(screen.getByRole("button", { name: "Update saved query" }));
+    fireEvent.click(screen.getByRole("button", { name: "Replace saved SQL" }));
     await waitFor(() =>
       expect(updateSavedQuery).toHaveBeenCalledWith(
         "q1",
         expect.objectContaining({ sqlText: "SELECT 2" }),
       ),
     );
-    confirm.mockRestore();
   });
 
   it("creates, renames, and deletes folders while preserving query intent", async () => {
     renderLibrary();
     await screen.findAllByText("Monthly revenue");
-    const prompt = vi
-      .spyOn(window, "prompt")
-      .mockReturnValueOnce("Finance")
-      .mockReturnValueOnce("BI");
     fireEvent.click(screen.getByRole("button", { name: /New folder/ }));
+    fireEvent.change(await screen.findByRole("textbox", { name: "Folder name" }), {
+      target: { value: "Finance" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create folder" }));
     await waitFor(() => expect(createQueryFolder).toHaveBeenCalledWith("p1", "Finance"));
 
     fireEvent.click(screen.getByRole("button", { name: "Rename" }));
+    fireEvent.change(await screen.findByRole("textbox", { name: "Folder name" }), {
+      target: { value: "BI" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Rename folder" }));
     await waitFor(() => expect(renameQueryFolder).toHaveBeenCalledWith("p1", "f1", "BI"));
 
-    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
     fireEvent.click(screen.getAllByRole("button", { name: "Delete" })[0]);
+    expect(await screen.findByText(/kept and moved to Unfiled/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Delete folder" }));
     await waitFor(() => expect(deleteQueryFolder).toHaveBeenCalledWith("p1", "f1"));
-    expect(confirm).toHaveBeenCalledWith(expect.stringMatching(/kept in Unfiled/));
-    prompt.mockRestore();
-    confirm.mockRestore();
   });
 
   it("filters and pages bounded history", async () => {
@@ -206,12 +205,10 @@ describe("SavedQueryLibrary", () => {
     fireEvent.click(screen.getByRole("button", { name: "Retention" }));
     fireEvent.change(screen.getByLabelText("Keep newest entries"), { target: { value: "100" } });
     fireEvent.change(screen.getByLabelText("Maximum age in days"), { target: { value: "30" } });
-    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
-
     fireEvent.click(screen.getByRole("button", { name: "Apply retention" }));
+    expect(await screen.findByText(/permanently removes matching history/)).toBeInTheDocument();
     expect(applyQueryHistoryRetention).not.toHaveBeenCalled();
 
-    confirm.mockReturnValue(true);
     fireEvent.click(screen.getByRole("button", { name: "Apply retention" }));
     await waitFor(() =>
       expect(applyQueryHistoryRetention).toHaveBeenCalledWith("p1", {
@@ -220,34 +217,27 @@ describe("SavedQueryLibrary", () => {
       }),
     );
     expect(await screen.findByText("Deleted 3 entries. 2 remain.")).toBeInTheDocument();
-    expect(confirm).toHaveBeenCalledWith(
-      expect.stringMatching(/Saved queries and editor drafts are kept/),
-    );
-    confirm.mockRestore();
   });
 
   it("clears project history without touching saved queries", async () => {
     renderLibrary();
     fireEvent.click(screen.getByRole("tab", { name: "History" }));
     await screen.findAllByText("SELECT * FROM missing_orders");
-    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    fireEvent.click(screen.getByRole("button", { name: "Clear history" }));
+    expect(await screen.findByText(/permanently removes all query history/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Clear history" }));
     await waitFor(() => expect(clearQueryHistory).toHaveBeenCalledWith("p1"));
     expect(await screen.findByText("Deleted 5 history entries.")).toBeInTheDocument();
     expect(deleteSavedQuery).not.toHaveBeenCalled();
-    expect(confirm).toHaveBeenCalledWith(
-      expect.stringMatching(/Saved queries and editor drafts are kept/),
-    );
-    confirm.mockRestore();
   });
 
   it("deletes a selected saved query only after confirmation", async () => {
     renderLibrary();
     await screen.findAllByText("Monthly revenue");
-    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
     const deleteButtons = screen.getAllByRole("button", { name: "Delete" });
     fireEvent.click(deleteButtons[deleteButtons.length - 1]);
+    expect(await screen.findByText(/removes the saved copy only/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Delete saved query" }));
     await waitFor(() => expect(deleteSavedQuery).toHaveBeenCalledWith("p1", "q1"));
-    confirm.mockRestore();
   });
 });

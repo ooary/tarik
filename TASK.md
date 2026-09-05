@@ -1941,7 +1941,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Commit: `feat(ui): add controlled desktop dialog patterns`
   - Notes: Controlled Radix foundations now provide explicit text-entry and confirmation contracts, feature-supplied return focus, valid-idle Enter submission, destructive Cancel focus, busy dismissal prevention, inline operation errors, and compact responsive styling. The full frontend suite passes with 158 tests.
 
-- [ ] **E13.5-T2 Replace every browser prompt and confirmation**
+- [x] **E13.5-T2 Replace every browser prompt and confirmation**
   - Depends on: E13.5-T1
   - Owns: project/source/catalog/editor/saved-query/history/export interaction state and regression tests
   - Deliverables:
@@ -1954,6 +1954,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: no production browser dialog API remains; all seventeen known interactions complete/cancel/fail accessibly and execute at most once against the target shown to the user.
   - Tests: each inventoried trigger, exact visible consequence, validation/backend failure retention, immutable target/SQL, duplicate submit, keyboard/focus, project/tab switch races, repository guard, and native picker preservation.
   - Commit: `refactor(ui): replace browser dialogs with Tarik modals`
+  - Notes: All five prompts and twelve confirmations now use feature-owned controlled intents with immutable project/tab/source/catalog/folder/query/SQL/options payloads, exact action labels, stale-target checks, inline failure retention, and at-most-once busy guards. A Node repository guard reports zero production browser dialogs while preserving Tauri OS pickers; 30 Node and 158 UI tests pass.
 
 - [ ] **E13.5-T3 Fix empty folders and add the direct Save query workflow**
   - Depends on: E13.5-T1, E8-T3

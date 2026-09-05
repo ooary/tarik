@@ -98,15 +98,21 @@ describe("ExportDialog", () => {
   });
 
   it("requires confirmation before exporting potentially mutating SQL", async () => {
-    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
     render(<ExportDialog projectId="p1" sql="DELETE FROM orders" suggestedName="delete" />);
     fireEvent.click(screen.getByRole("button", { name: "Export" }));
     fireEvent.click(screen.getByRole("button", { name: "Choose output folder" }));
     await waitFor(() => expect(screen.getByLabelText("Output folder")).toHaveValue("/exports"));
     fireEvent.click(screen.getByRole("button", { name: "Start export" }));
-    expect(confirm).toHaveBeenCalledWith(expect.stringContaining("Export executes this SQL once"));
+    expect(await screen.findByText(/Export executes this SQL once/)).toBeInTheDocument();
     expect(executeExport).not.toHaveBeenCalled();
-    confirm.mockRestore();
+    fireEvent.click(screen.getByRole("button", { name: "Start export" }));
+    await waitFor(() =>
+      expect(executeExport).toHaveBeenCalledWith(
+        "p1",
+        "DELETE FROM orders",
+        expect.objectContaining({ baseName: "delete" }),
+      ),
+    );
   });
 
   it("submits canonical Parquet options, polls, and reveals completed output", async () => {

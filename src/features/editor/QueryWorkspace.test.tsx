@@ -565,15 +565,12 @@ describe("QueryWorkspace", () => {
       />,
     );
     act(() => ref.current?.insertSql("CREATE TABLE guarded AS SELECT 1"));
-    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
-    const callsBeforeCancel = vi.mocked(explainQueryPlan).mock.calls.length;
+    const callsBeforeConfirm = vi.mocked(explainQueryPlan).mock.calls.length;
 
     fireEvent.click(screen.getByRole("button", { name: "Actual Flow" }));
-    expect(confirm).toHaveBeenCalledWith(expect.stringMatching(/executes this SQL.*may modify/s));
-    expect(explainQueryPlan).toHaveBeenCalledTimes(callsBeforeCancel);
-
-    confirm.mockReturnValue(true);
-    fireEvent.click(screen.getByRole("button", { name: "Actual Flow" }));
+    expect(await screen.findByText(/executes this SQL.*may modify/s)).toBeInTheDocument();
+    expect(explainQueryPlan).toHaveBeenCalledTimes(callsBeforeConfirm);
+    fireEvent.click(screen.getByRole("button", { name: "Run Actual Flow" }));
     await waitFor(() =>
       expect(explainQueryPlan).toHaveBeenCalledWith(
         "p1",
@@ -581,7 +578,6 @@ describe("QueryWorkspace", () => {
         "profile",
       ),
     );
-    confirm.mockRestore();
   });
 
   it("shows raw fallback when structured plan parsing is unavailable", async () => {
@@ -936,7 +932,6 @@ describe("QueryWorkspace", () => {
   });
 
   it("supports tab rename, duplicate, move, and close from context menu", async () => {
-    vi.spyOn(window, "prompt").mockReturnValue("Revenue query");
     render(
       <QueryWorkspace
         bottomOpen
@@ -951,7 +946,11 @@ describe("QueryWorkspace", () => {
 
     fireEvent.contextMenu(tab);
     fireEvent.click(await screen.findByRole("menuitem", { name: "Rename" }));
-    expect(screen.getByRole("tab", { name: /Revenue query/ })).toBeInTheDocument();
+    fireEvent.change(await screen.findByRole("textbox", { name: "Query tab name" }), {
+      target: { value: "Revenue query" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Rename tab" }));
+    expect(await screen.findByRole("tab", { name: /Revenue query/ })).toBeInTheDocument();
 
     fireEvent.contextMenu(screen.getByRole("tab", { name: /Revenue query/ }));
     fireEvent.click(await screen.findByRole("menuitem", { name: "Duplicate" }));

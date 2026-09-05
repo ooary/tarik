@@ -9,7 +9,7 @@ import {
 } from "@phosphor-icons/react";
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import type { EffectiveTheme } from "../../app/preferences";
-import { ContextMenu } from "../../components/ui";
+import { ConfirmationDialog, ContextMenu, TextEntryDialog } from "../../components/ui";
 import type { ProjectCatalog } from "../../lib/commands";
 import { ExportDialog } from "../export/ExportDialog";
 import { QueryAnalysisWorkspace } from "../query-flow/QueryAnalysisWorkspace";
@@ -24,6 +24,25 @@ import { useQueryTabs } from "./useQueryTabs";
 import { useSqlValidation } from "./useSqlValidation";
 
 type AnalysisMode = "explain" | "profile";
+
+type WorkspaceTextIntent = {
+  kind: "rename-tab";
+  projectId: string;
+  tabId: string;
+  originalTitle: string;
+  value: string;
+};
+
+type WorkspaceConfirmIntent =
+  | { kind: "run-query"; projectId: string; tabId: string; sql: string }
+  | {
+      kind: "actual-flow";
+      projectId: string;
+      tabId: string;
+      sql: string;
+      returnToAnalysis: boolean;
+    }
+  | { kind: "close-tab"; projectId: string; tabId: string; title: string };
 
 export interface QueryWorkspaceHandle {
   insertSql(text: string): void;
@@ -76,6 +95,10 @@ export const QueryWorkspace = forwardRef<QueryWorkspaceHandle, QueryWorkspacePro
     );
     const [runError, setRunError] = useState<string | null>(null);
     const [analysisMode, setAnalysisMode] = useState<AnalysisMode | null>(null);
+    const [textIntent, setTextIntent] = useState<WorkspaceTextIntent | null>(null);
+    const [confirmIntent, setConfirmIntent] = useState<WorkspaceConfirmIntent | null>(null);
+    const [interactionBusy, setInteractionBusy] = useState(false);
+    const [interactionError, setInteractionError] = useState<string | null>(null);
     const { states: planStates, runPlan, clearPlan } = useQueryPlan(projectId);
 
     const activeTab = tabs.find((tab) => tab.id === activeTabId);
@@ -90,22 +113,26 @@ export const QueryWorkspace = forwardRef<QueryWorkspaceHandle, QueryWorkspacePro
       if (activeTab && !activeExecution) void restore(activeTab.id, activeTab.sql);
     }, [activeExecution, activeTab, restore]);
 
-    const submitSql = (tabId: string, sql: string) => {
-      if (!projectId || executionActive) return;
-      if (
-        sql.trim().length > 0 &&
-        !isClearlyReadOnlySql(sql) &&
-        !window.confirm(
-          "Run query?\n\nThis SQL may modify your project. INSERT, UPDATE, DELETE, CREATE, ALTER, and DROP can change stored data or catalog objects.",
-        )
-      ) {
-        return;
-      }
+    const executeSql = async (tabId: string, sql: string) => {
       setRunError(null);
       if (!bottomOpen) onToggleBottom();
-      run(tabId, sql).catch((error: unknown) => {
-        setRunError(error instanceof Error ? error.message : String(error));
-      });
+      try {
+        await run(tabId, sql);
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        setRunError(message);
+        throw error;
+      }
+    };
+
+    const submitSql = (tabId: string, sql: string) => {
+      if (!projectId || executionActive) return;
+      if (sql.trim() && !isClearlyReadOnlySql(sql)) {
+        setInteractionError(null);
+        setConfirmIntent({ kind: "run-query", projectId, tabId, sql });
+        return;
+      }
+      void executeSql(tabId, sql);
     };
 
     const runActiveTab = () => {
@@ -124,18 +151,27 @@ export const QueryWorkspace = forwardRef<QueryWorkspaceHandle, QueryWorkspacePro
       void runPlan(activeTab.sql, "explain");
     };
 
+    const executeActualFlow = async (sql: string) => {
+      setAnalysisMode("profile");
+      await runPlan(sql, "profile");
+    };
+
     const runActualFlow = () => {
       if (!projectId || !activeTab || !activeTab.sql.trim()) return;
-      if (
-        !isClearlyReadOnlySql(activeTab.sql) &&
-        !window.confirm(
-          "Run Actual Flow?\n\nActual Flow executes this SQL to collect operator metrics. INSERT, UPDATE, DELETE, CREATE, ALTER, and DROP may modify your project.",
-        )
-      ) {
+      if (!isClearlyReadOnlySql(activeTab.sql)) {
+        setInteractionError(null);
+        const returnToAnalysis = analysisMode === "profile";
+        if (returnToAnalysis) setAnalysisMode(null);
+        setConfirmIntent({
+          kind: "actual-flow",
+          projectId,
+          tabId: activeTab.id,
+          sql: activeTab.sql,
+          returnToAnalysis,
+        });
         return;
       }
-      setAnalysisMode("profile");
-      void runPlan(activeTab.sql, "profile");
+      void executeActualFlow(activeTab.sql);
     };
 
     const closeTabAndForget = (tabId: string) => {
@@ -143,6 +179,50 @@ export const QueryWorkspace = forwardRef<QueryWorkspaceHandle, QueryWorkspacePro
       clearPlan();
       closeTab(tabId);
     };
+
+    async function submitTextIntent() {
+      if (!textIntent || interactionBusy) return;
+      const intent = textIntent;
+      const title = intent.value.trim();
+      if (!title) return;
+      setInteractionBusy(true);
+      setInteractionError(null);
+      try {
+        if (projectId !== intent.projectId || !tabs.some((tab) => tab.id === intent.tabId)) {
+          throw new Error("query_tab.stale: This query tab is no longer available.");
+        }
+        renameTab(intent.tabId, title);
+        setTextIntent(null);
+      } catch (error) {
+        setInteractionError(String(error));
+      } finally {
+        setInteractionBusy(false);
+      }
+    }
+
+    async function submitConfirmation() {
+      if (!confirmIntent || interactionBusy) return;
+      const intent = confirmIntent;
+      setInteractionBusy(true);
+      setInteractionError(null);
+      try {
+        if (projectId !== intent.projectId || !tabs.some((tab) => tab.id === intent.tabId)) {
+          throw new Error("query_tab.stale: This query tab is no longer available.");
+        }
+        if (intent.kind === "run-query") {
+          await executeSql(intent.tabId, intent.sql);
+        } else if (intent.kind === "actual-flow") {
+          await executeActualFlow(intent.sql);
+        } else {
+          closeTabAndForget(intent.tabId);
+        }
+        setConfirmIntent(null);
+      } catch (error) {
+        setInteractionError(String(error));
+      } finally {
+        setInteractionBusy(false);
+      }
+    }
 
     const tables = catalog.objects.map((object): SqlTable => ({
       schema: object.schema,
@@ -203,18 +283,27 @@ export const QueryWorkspace = forwardRef<QueryWorkspaceHandle, QueryWorkspacePro
         <div className="query-tabs" role="tablist" aria-label="Query tabs">
           {tabs.map((tab, index) => {
             const close = () => {
-              if (
-                tab.dirty &&
-                saveError &&
-                !window.confirm(`Close "${tab.title}"?\n\nThe latest draft has not been saved.`)
-              ) {
+              if (tab.dirty && saveError) {
+                setInteractionError(null);
+                setConfirmIntent({
+                  kind: "close-tab",
+                  projectId,
+                  tabId: tab.id,
+                  title: tab.title,
+                });
                 return;
               }
               closeTabAndForget(tab.id);
             };
             const rename = () => {
-              const title = window.prompt("Query tab name", tab.title);
-              if (title) renameTab(tab.id, title);
+              setInteractionError(null);
+              setTextIntent({
+                kind: "rename-tab",
+                projectId,
+                tabId: tab.id,
+                originalTitle: tab.title,
+                value: tab.title,
+              });
             };
             return (
               <ContextMenu
@@ -392,6 +481,50 @@ export const QueryWorkspace = forwardRef<QueryWorkspaceHandle, QueryWorkspacePro
             />
           )}
         </div>
+        {textIntent && (
+          <TextEntryDialog
+            busy={interactionBusy}
+            description={`Choose a local name for “${textIntent.originalTitle}”.`}
+            label="Query tab name"
+            onOpenChange={(open) => {
+              if (!open) {
+                setTextIntent(null);
+                setInteractionError(null);
+              }
+            }}
+            onSubmit={submitTextIntent}
+            onValueChange={(value) =>
+              setTextIntent((current) => (current ? { ...current, value } : current))
+            }
+            open
+            operationError={interactionError}
+            submitLabel="Rename tab"
+            title="Rename query tab"
+            value={textIntent.value}
+          />
+        )}
+        {confirmIntent && (
+          <ConfirmationDialog
+            busy={interactionBusy}
+            confirmLabel={workspaceConfirmationLabel(confirmIntent)}
+            description={workspaceConfirmationDescription(confirmIntent)}
+            detail={workspaceConfirmationDetail(confirmIntent)}
+            error={interactionError}
+            onConfirm={submitConfirmation}
+            onOpenChange={(open) => {
+              if (!open) {
+                if (confirmIntent.kind === "actual-flow" && confirmIntent.returnToAnalysis) {
+                  setAnalysisMode("profile");
+                }
+                setConfirmIntent(null);
+                setInteractionError(null);
+              }
+            }}
+            open
+            title={`${workspaceConfirmationLabel(confirmIntent)}?`}
+            tone={confirmIntent.kind === "close-tab" ? "destructive" : "warning"}
+          />
+        )}
         {analysisMode && (
           <QueryAnalysisWorkspace
             currentSql={activeTab?.sql ?? ""}
@@ -406,6 +539,27 @@ export const QueryWorkspace = forwardRef<QueryWorkspaceHandle, QueryWorkspacePro
     );
   },
 );
+
+function workspaceConfirmationLabel(intent: WorkspaceConfirmIntent): string {
+  if (intent.kind === "run-query") return "Run query";
+  if (intent.kind === "actual-flow") return "Run Actual Flow";
+  return "Close without saving";
+}
+
+function workspaceConfirmationDescription(intent: WorkspaceConfirmIntent): string {
+  if (intent.kind === "run-query") {
+    return "This SQL may modify stored data or catalog objects in the active project.";
+  }
+  if (intent.kind === "actual-flow") {
+    return "Actual Flow executes this SQL to collect operator metrics and may modify the project.";
+  }
+  return "The latest editor draft could not be saved. Closing discards those unsaved changes.";
+}
+
+function workspaceConfirmationDetail(intent: WorkspaceConfirmIntent): string {
+  if (intent.kind === "close-tab") return intent.title;
+  return intent.sql.length > 600 ? `${intent.sql.slice(0, 600)}…` : intent.sql;
+}
 
 function SqlValidationSummary({ state }: { state: ReturnType<typeof useSqlValidation> }) {
   switch (state.status) {

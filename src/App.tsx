@@ -8,7 +8,13 @@ import {
 import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useRef, useState } from "react";
 import "./App.css";
-import { ContextMenu, Dialog, Menu } from "./components/ui";
+import {
+  ConfirmationDialog,
+  ContextMenu,
+  Dialog,
+  Menu,
+  TextEntryDialog,
+} from "./components/ui";
 import { QueryWorkspace, type QueryWorkspaceHandle } from "./features/editor/QueryWorkspace";
 import { NewProjectDialog } from "./features/projects/NewProjectDialog";
 import { previewTableSql, qualifiedSqlName } from "./features/editor/sqlText";
@@ -80,6 +86,20 @@ type EngineConnectionState =
   | "connected"
   | "failed";
 
+type AppTextIntent =
+  | { kind: "open-project"; duckdbPath: string; value: string }
+  | { kind: "rename-project"; project: RecentProject; value: string };
+
+type AppConfirmIntent =
+  | { kind: "remove-source"; projectId: string; source: SourceRecord }
+  | {
+      kind: "drop-object";
+      projectId: string;
+      object: ProjectCatalog["objects"][number];
+      source: SourceRecord | null;
+    }
+  | { kind: "remove-project"; project: RecentProject };
+
 function SourceIcon({ kind }: { kind: "database" | "table" }) {
   const Icon = kind === "database" ? DatabaseIcon : TableIcon;
   return <Icon aria-hidden="true" className="source-icon" size={15} weight="regular" />;
@@ -123,6 +143,10 @@ function App() {
   const [cacheStatus, setCacheStatus] = useState<string | null>(null);
   const [clearingCache, setClearingCache] = useState(false);
   const [shutdownError, setShutdownError] = useState<string | null>(null);
+  const [textIntent, setTextIntent] = useState<AppTextIntent | null>(null);
+  const [confirmIntent, setConfirmIntent] = useState<AppConfirmIntent | null>(null);
+  const [interactionBusy, setInteractionBusy] = useState(false);
+  const [interactionError, setInteractionError] = useState<string | null>(null);
   const shutdownInFlight = useRef(false);
   const [preferences, setPreferences] = useState<WorkbenchPreferences>(defaultWorkbenchPreferences);
   const { bottomPanelOpen: bottomOpen, sidebarOpen } = preferences;
@@ -353,20 +377,49 @@ function App() {
   async function openLocalProject() {
     const duckdbPath = await chooseDuckDbFile();
     if (!duckdbPath) return;
-    const defaultName = duckdbPath.split(/[\\/]/).pop()?.replace(/\.duckdb$/i, "") || "Local project";
-    const name = window.prompt("Project name", defaultName)?.trim();
-    if (!name) return;
-    setProjectError(null);
-    setEngineState("connecting");
+    const defaultName =
+      duckdbPath.split(/[\\/]/).pop()?.replace(/\.duckdb$/i, "") || "Local project";
+    setInteractionError(null);
+    setTextIntent({ kind: "open-project", duckdbPath, value: defaultName });
+  }
+
+  async function submitTextIntent() {
+    if (!textIntent || interactionBusy) return;
+    const intent = textIntent;
+    const value = intent.value.trim();
+    if (!value) return;
+    setInteractionBusy(true);
+    setInteractionError(null);
     try {
-      const activeProject = await openProject(name, duckdbPath);
-      setProject(activeProject);
-      setEngineState("connected");
-      await refreshProjectData(activeProject);
-      setRecentProjects(await listRecentProjects());
+      if (intent.kind === "open-project") {
+        setProjectError(null);
+        setEngineState("connecting");
+        const activeProject = await openProject(value, intent.duckdbPath);
+        setProject(activeProject);
+        setEngineState("connected");
+        await refreshProjectData(activeProject);
+        setRecentProjects(await listRecentProjects());
+      } else {
+        if (!recentProjects.some((recent) => recent.id === intent.project.id)) {
+          throw new Error("project.stale: This recent project is no longer available.");
+        }
+        if (value === intent.project.name) {
+          setTextIntent(null);
+          return;
+        }
+        setProjectError(null);
+        await renameProject(intent.project.id, value);
+        setProject(null);
+        setCatalog({ objects: [], columns: [] });
+        setSources([]);
+        setRecentProjects(await listRecentProjects());
+      }
+      setTextIntent(null);
     } catch (error) {
-      setEngineState("failed");
-      setProjectError(String(error));
+      if (intent.kind === "open-project") setEngineState("failed");
+      setInteractionError(String(error));
+    } finally {
+      setInteractionBusy(false);
     }
   }
 
@@ -454,82 +507,91 @@ function App() {
     }
   }
 
-  async function removeSource(source: SourceRecord) {
+  function removeSource(source: SourceRecord) {
     if (!project) return;
-    if (!window.confirm(`Remove linked source "${source.displayName}"?\n\nThe Parquet file is preserved.`)) return;
-    setSourceError(null);
-    try {
-      await removeLinkedSource(source.id);
-      await refreshProjectData(project);
-    } catch (error) {
-      setSourceError(String(error));
-    }
+    setInteractionError(null);
+    setConfirmIntent({ kind: "remove-source", projectId: project.id, source });
   }
 
-  async function removeCatalogObject(object: ProjectCatalog["objects"][number]) {
+  function removeCatalogObject(object: ProjectCatalog["objects"][number]) {
     if (!project) return;
-    const sourceMetadata = sources.find((source) => source.duckdbName === object.name);
+    const sourceMetadata =
+      sources.find((source) => source.duckdbName === object.name) ?? null;
     if (object.kind === "view" && sourceMetadata?.kind === "linked_parquet") {
-      await removeSource(sourceMetadata);
+      removeSource(sourceMetadata);
       return;
     }
-    const label = object.kind === "table" ? "Delete table" : "Delete view";
-    const fileNote = sourceMetadata?.sourcePath
-      ? `\n\nThe original source file is preserved:\n${sourceMetadata.sourcePath}`
-      : "";
-    if (
-      !window.confirm(
-        `${label} "${object.name}"?\n\nThis permanently removes it from the active DuckDB project.${fileNote}`,
-      )
-    ) {
-      return;
-    }
-    setSourceError(null);
-    try {
-      await dropCatalogObject(
-        project.id,
-        object.database,
-        object.schema,
-        object.name,
-        object.kind,
-      );
-      await refreshProjectData(project);
-    } catch (error) {
-      setSourceError(String(error));
-    }
+    setInteractionError(null);
+    setConfirmIntent({
+      kind: "drop-object",
+      projectId: project.id,
+      object,
+      source: sourceMetadata,
+    });
   }
 
-  async function renameLocalProject(recent: RecentProject) {
-    const newName = window.prompt("New project name", recent.name)?.trim();
-    if (!newName || newName === recent.name) return;
-    setProjectError(null);
-    try {
-      await renameProject(recent.id, newName);
-      setProject(null);
-      setCatalog({ objects: [], columns: [] });
-      setSources([]);
-      setRecentProjects(await listRecentProjects());
-    } catch (error) {
-      setProjectError(String(error));
-    }
+  function renameLocalProject(recent: RecentProject) {
+    setInteractionError(null);
+    setTextIntent({ kind: "rename-project", project: recent, value: recent.name });
   }
 
-  async function removeLocalProject(recent: RecentProject) {
-    const action = recent.ownership === "managed" ? "delete" : "forget";
-    const detail =
-      recent.ownership === "managed"
-        ? `This permanently deletes Tarik-managed project "${recent.name}" and its directory:\n${recent.duckdbPath}`
-        : `This forgets "${recent.name}" from Tarik. The external DuckDB file is preserved:\n${recent.duckdbPath}`;
-    if (!window.confirm(`${action[0].toUpperCase() + action.slice(1)} project?\n\n${detail}`)) return;
-    setProjectError(null);
+  function removeLocalProject(recent: RecentProject) {
+    setInteractionError(null);
+    setConfirmIntent({ kind: "remove-project", project: recent });
+  }
+
+  async function submitConfirmation() {
+    if (!confirmIntent || interactionBusy) return;
+    const intent = confirmIntent;
+    setInteractionBusy(true);
+    setInteractionError(null);
     try {
-      await removeProject(recent.id);
-      setProject(null);
-      setCatalog({ objects: [], columns: [] });
-      setSources([]);
-      setRecentProjects(await listRecentProjects());
+      if (intent.kind === "remove-source") {
+        if (
+          project?.id !== intent.projectId ||
+          !sources.some((source) => source.id === intent.source.id)
+        ) {
+          throw new Error("source.stale: This linked source is no longer available.");
+        }
+        await removeLinkedSource(intent.source.id);
+        await refreshProjectData(project);
+      } else if (intent.kind === "drop-object") {
+        if (
+          project?.id !== intent.projectId ||
+          !catalog.objects.some(
+            (object) =>
+              object.database === intent.object.database &&
+              object.schema === intent.object.schema &&
+              object.name === intent.object.name &&
+              object.kind === intent.object.kind,
+          )
+        ) {
+          throw new Error("catalog.stale: This catalog object is no longer available.");
+        }
+        await dropCatalogObject(
+          project.id,
+          intent.object.database,
+          intent.object.schema,
+          intent.object.name,
+          intent.object.kind,
+        );
+        await refreshProjectData(project);
+      } else {
+        if (!recentProjects.some((recent) => recent.id === intent.project.id)) {
+          throw new Error("project.stale: This recent project is no longer available.");
+        }
+        setProjectError(null);
+        await removeProject(intent.project.id);
+        setProject(null);
+        setCatalog({ objects: [], columns: [] });
+        setSources([]);
+        setRecentProjects(await listRecentProjects());
+      }
+      setConfirmIntent(null);
     } catch (error) {
-      setProjectError(String(error));
+      setInteractionError(String(error));
+    } finally {
+      setInteractionBusy(false);
     }
   }
 
@@ -841,6 +903,54 @@ function App() {
         />
       </div>
 
+      {textIntent && (
+        <TextEntryDialog
+          busy={interactionBusy}
+          description={
+            textIntent.kind === "open-project"
+              ? "Choose how this existing DuckDB file appears in Tarik."
+              : `Choose a new local name for “${textIntent.project.name}”.`
+          }
+          hint={textIntent.kind === "open-project" ? textIntent.duckdbPath : undefined}
+          label="Project name"
+          onOpenChange={(open) => {
+            if (!open) {
+              setTextIntent(null);
+              setInteractionError(null);
+            }
+          }}
+          onSubmit={submitTextIntent}
+          onValueChange={(value) =>
+            setTextIntent((current) => (current ? { ...current, value } : current))
+          }
+          open
+          operationError={interactionError}
+          submitLabel={textIntent.kind === "open-project" ? "Open project" : "Rename project"}
+          title={textIntent.kind === "open-project" ? "Name this project" : "Rename project"}
+          value={textIntent.value}
+        />
+      )}
+
+      {confirmIntent && (
+        <ConfirmationDialog
+          busy={interactionBusy}
+          confirmLabel={appConfirmationLabel(confirmIntent)}
+          description={appConfirmationDescription(confirmIntent)}
+          detail={appConfirmationDetail(confirmIntent)}
+          error={interactionError}
+          onConfirm={submitConfirmation}
+          onOpenChange={(open) => {
+            if (!open) {
+              setConfirmIntent(null);
+              setInteractionError(null);
+            }
+          }}
+          open
+          title={`${appConfirmationLabel(confirmIntent)}?`}
+          tone="destructive"
+        />
+      )}
+
       {sourceInspection && (
         <ImportDialog
           key={`${sourceInspection.path}:${sourceInspection.csvOptions?.delimiter ?? "parquet"}:${sourceInspection.csvOptions?.hasHeader ?? true}:${sourceInspection.csvOptions?.allVarchar ?? false}:${sourceInspection.csvOptions?.nullValue ?? ""}`}
@@ -888,6 +998,37 @@ function App() {
       </footer>
     </main>
   );
+}
+
+function appConfirmationLabel(intent: AppConfirmIntent): string {
+  if (intent.kind === "remove-source") return "Remove link";
+  if (intent.kind === "drop-object") {
+    return intent.object.kind === "table" ? "Delete table" : "Delete view";
+  }
+  return intent.project.ownership === "managed" ? "Delete project" : "Forget project";
+}
+
+function appConfirmationDescription(intent: AppConfirmIntent): string {
+  if (intent.kind === "remove-source") {
+    return "Remove this link from Tarik. The original Parquet file is preserved.";
+  }
+  if (intent.kind === "drop-object") {
+    return `This permanently removes the ${intent.object.kind} from the active DuckDB project.`;
+  }
+  return intent.project.ownership === "managed"
+    ? "This permanently deletes the Tarik-managed project and its directory."
+    : "This removes the project from Tarik. The external DuckDB file is preserved.";
+}
+
+function appConfirmationDetail(intent: AppConfirmIntent): string {
+  if (intent.kind === "remove-source") return intent.source.displayName;
+  if (intent.kind === "drop-object") {
+    const object = `${intent.object.database}.${intent.object.schema}.${intent.object.name}`;
+    return intent.source?.sourcePath
+      ? `${object}\nOriginal source preserved: ${intent.source.sourcePath}`
+      : object;
+  }
+  return `${intent.project.name}\n${intent.project.duckdbPath}`;
 }
 
 export default App;
