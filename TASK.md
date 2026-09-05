@@ -1956,7 +1956,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Commit: `refactor(ui): replace browser dialogs with Tarik modals`
   - Notes: All five prompts and twelve confirmations now use feature-owned controlled intents with immutable project/tab/source/catalog/folder/query/SQL/options payloads, exact action labels, stale-target checks, inline failure retention, and at-most-once busy guards. A Node repository guard reports zero production browser dialogs while preserving Tauri OS pickers; 30 Node and 158 UI tests pass.
 
-- [ ] **E13.5-T3 Fix empty folders and add the direct Save query workflow**
+- [x] **E13.5-T3 Fix empty folders and add the direct Save query workflow**
   - Depends on: E13.5-T1, E8-T3
   - Owns: QueryWorkspace toolbar, save modal, Query Library folder rendering/refresh, metadata command integration, and saved-query tests
   - Deliverables:
@@ -1971,6 +1971,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: creating the first empty folder displays it immediately; saving from the toolbar into that folder is possible without opening the library first; reopening the library shows the exact saved immutable SQL under the selected folder after restart.
   - Tests: zero-query empty-folder reproduction, multiple empty folders, search behavior, refresh/race/failure, toolbar position/enabled state, modal autofocus/validation/folder creation, immutable SQL after editor changes, no execution/no tab mutation, duplicate names, save failure retry, success announcement, library consistency, and restart persistence.
   - Commit: `fix(saved-queries): restore folders and direct save flow`
+  - Notes: Folder records now render independently from saved-query count and remain visible with empty/search states. A Save query button sits directly before Query library and opens a no-execution modal with required name, folder selection, in-flow folder creation, a bounded immutable SQL snapshot, retry-preserving errors, and success announcement. The direct save path never opens or mutates an editor tab; 161 UI tests pass.
 
 - [ ] **E13.5-T4 Restore typed customizable DuckDB resource settings**
   - Depends on: E13.5-T0, E13-T3

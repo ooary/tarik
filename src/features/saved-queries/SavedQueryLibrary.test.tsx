@@ -92,6 +92,82 @@ describe("SavedQueryLibrary", () => {
     vi.mocked(deleteSavedQuery).mockResolvedValue(true);
   });
 
+  it("renders valid empty folders even when the project has no saved queries", async () => {
+    vi.mocked(listSavedQueries).mockResolvedValue([]);
+    vi.mocked(listQueryFolders).mockResolvedValue([folder]);
+    renderLibrary();
+
+    expect(await screen.findByText("Reporting")).toBeInTheDocument();
+    expect(screen.getByText("No saved queries.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Rename" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Delete" })).toBeInTheDocument();
+    expect(screen.queryByText("No saved queries or folders yet")).not.toBeInTheDocument();
+  });
+
+  it("saves an immutable editor snapshot directly without opening the library", async () => {
+    let capturedSql = "SELECT * FROM orders";
+    const { rerender } = render(
+      <SavedQueryLibrary
+        activeSql={capturedSql}
+        activeTitle="Orders"
+        onOpenSql={vi.fn()}
+        projectId="p1"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Save query" }));
+    expect(await screen.findByRole("dialog", { name: "Save query" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "SQL snapshot" })).toHaveTextContent(capturedSql);
+    capturedSql = "DELETE FROM orders";
+    rerender(
+      <SavedQueryLibrary
+        activeSql={capturedSql}
+        activeTitle="Orders changed"
+        onOpenSql={vi.fn()}
+        projectId="p1"
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save query" }));
+
+    await waitFor(() =>
+      expect(createSavedQuery).toHaveBeenCalledWith({
+        projectId: "p1",
+        folderId: null,
+        name: "Orders",
+        sqlText: "SELECT * FROM orders",
+        tags: [],
+      }),
+    );
+    expect(screen.queryByRole("dialog", { name: "Query library" })).not.toBeInTheDocument();
+  });
+
+  it("creates and selects a folder without losing the direct save draft", async () => {
+    vi.mocked(listQueryFolders)
+      .mockResolvedValueOnce([folder])
+      .mockResolvedValueOnce([folder, { ...folder, id: "f2", name: "Checks" }]);
+    vi.mocked(createQueryFolder).mockResolvedValue({ ...folder, id: "f2", name: "Checks" });
+    render(
+      <SavedQueryLibrary
+        activeSql="SELECT count(*) FROM orders"
+        activeTitle="Order count"
+        onOpenSql={vi.fn()}
+        projectId="p1"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Save query" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Create a folder" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "New folder name" }), {
+      target: { value: "Checks" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create folder" }));
+    await waitFor(() => expect(screen.getByLabelText("Folder")).toHaveValue("f2"));
+    expect(screen.getByRole("textbox", { name: "Query name" })).toHaveValue("Order count");
+    expect(screen.getByRole("region", { name: "SQL snapshot" })).toHaveTextContent(
+      "SELECT count(*) FROM orders",
+    );
+  });
+
   it("loads, searches, previews, and opens saved SQL without executing it", async () => {
     const onOpenSql = renderLibrary();
     expect(await screen.findAllByText("Monthly revenue")).toHaveLength(2);

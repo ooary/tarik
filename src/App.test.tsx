@@ -666,6 +666,7 @@ describe("Tarik workbench shell", () => {
       [...toolbar.querySelectorAll("button")].map((button) => button.textContent?.trim()),
     ).toEqual([
       expect.stringMatching(/^Run query/),
+      "Save query",
       "Query library",
       "Estimate",
       "Actual Flow",

@@ -1,6 +1,7 @@
 import {
   BookmarksIcon,
   ClockCounterClockwiseIcon,
+  FloppyDiskIcon,
   FolderPlusIcon,
   MagnifyingGlassIcon,
   PlusIcon,
@@ -8,7 +9,12 @@ import {
 } from "@phosphor-icons/react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { useEffect, useMemo, useState } from "react";
-import { ConfirmationDialog, Field, TextEntryDialog } from "../../components/ui";
+import {
+  ConfirmationDialog,
+  Dialog as UiDialog,
+  Field,
+  TextEntryDialog,
+} from "../../components/ui";
 import {
   applyQueryHistoryRetention,
   clearQueryHistory,
@@ -51,6 +57,20 @@ type FormState = {
 type LibraryTextIntent =
   | { kind: "create-folder"; projectId: string; value: string }
   | { kind: "rename-folder"; projectId: string; folder: QueryFolder; value: string };
+
+type SaveQuerySnapshot = {
+  projectId: string;
+  suggestedName: string;
+  sqlText: string;
+};
+
+type DirectSaveState = {
+  snapshot: SaveQuerySnapshot;
+  name: string;
+  folderId: string;
+  creatingFolder: boolean;
+  folderName: string;
+};
 
 type LibraryConfirmIntent =
   | { kind: "replace-sql"; projectId: string; form: FormState }
@@ -106,6 +126,11 @@ export function SavedQueryLibrary({
   const [confirmIntent, setConfirmIntent] = useState<LibraryConfirmIntent | null>(null);
   const [interactionBusy, setInteractionBusy] = useState(false);
   const [interactionError, setInteractionError] = useState<string | null>(null);
+  const [directSave, setDirectSave] = useState<DirectSaveState | null>(null);
+  const [directSaveBusy, setDirectSaveBusy] = useState(false);
+  const [directSaveError, setDirectSaveError] = useState<string | null>(null);
+  const [saveStatus, setSaveStatus] = useState<string | null>(null);
+  const [libraryRevision, setLibraryRevision] = useState(0);
   const selected = queries.find((query) => query.id === selectedId) ?? null;
   const selectedHistory = history.find((entry) => entry.id === selectedHistoryId) ?? null;
 
@@ -145,9 +170,9 @@ export function SavedQueryLibrary({
     if (!open || view !== "saved") return;
     const timeout = window.setTimeout(() => void refresh(search), search ? 180 : 0);
     return () => window.clearTimeout(timeout);
-    // refresh intentionally follows current project/open/search only.
+    // refresh intentionally follows current project/open/search/revision only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, view, projectId, search]);
+  }, [open, view, projectId, search, libraryRevision]);
 
   useEffect(() => {
     if (!open || view !== "history" || !projectId) return;
@@ -192,7 +217,32 @@ export function SavedQueryLibrary({
     historyRevision,
   ]);
 
+  const openDirectSave = () => {
+    if (!projectId || !activeSql.trim()) return;
+    const snapshot: SaveQuerySnapshot = {
+      projectId,
+      suggestedName: activeTitle === "Untitled" ? "" : activeTitle,
+      sqlText: activeSql,
+    };
+    setDirectSaveError(null);
+    setSaveStatus(null);
+    setDirectSave({
+      snapshot,
+      name: snapshot.suggestedName,
+      folderId: "",
+      creatingFolder: false,
+      folderName: "",
+    });
+    void listQueryFolders(projectId)
+      .then((nextFolders) => setFolders(nextFolders))
+      .catch((cause) => setDirectSaveError(String(cause)));
+  };
+
   const startCreate = () => {
+    if (!open) {
+      openDirectSave();
+      return;
+    }
     setError(null);
     setForm({
       ...emptyForm(),
@@ -200,6 +250,67 @@ export function SavedQueryLibrary({
       sqlText: activeSql,
     });
   };
+
+  async function createDirectSaveFolder() {
+    if (!directSave || directSaveBusy) return;
+    const name = directSave.folderName.trim();
+    if (!name) return;
+    setDirectSaveBusy(true);
+    setDirectSaveError(null);
+    try {
+      if (projectId !== directSave.snapshot.projectId) {
+        throw new Error("project.stale: The active project changed.");
+      }
+      const created = await createQueryFolder(projectId, name);
+      const nextFolders = await listQueryFolders(projectId);
+      setFolders(
+        nextFolders.some((folder) => folder.id === created.id)
+          ? nextFolders
+          : [...nextFolders, created],
+      );
+      setDirectSave((current) =>
+        current
+          ? { ...current, folderId: created.id, creatingFolder: false, folderName: "" }
+          : current,
+      );
+      setLibraryRevision((current) => current + 1);
+    } catch (cause) {
+      setDirectSaveError(String(cause));
+    } finally {
+      setDirectSaveBusy(false);
+    }
+  }
+
+  async function submitDirectSave() {
+    if (!directSave || directSaveBusy) return;
+    const snapshot = directSave;
+    if (!snapshot.name.trim() || !snapshot.snapshot.sqlText.trim()) return;
+    setDirectSaveBusy(true);
+    setDirectSaveError(null);
+    try {
+      if (projectId !== snapshot.snapshot.projectId) {
+        throw new Error("project.stale: The active project changed.");
+      }
+      if (snapshot.folderId && !folders.some((folder) => folder.id === snapshot.folderId)) {
+        throw new Error("query_folder.stale: The selected folder is no longer available.");
+      }
+      await createSavedQuery({
+        projectId: snapshot.snapshot.projectId,
+        folderId: snapshot.folderId || null,
+        name: snapshot.name,
+        sqlText: snapshot.snapshot.sqlText,
+        tags: [],
+      });
+      const folder = folderName(folders, snapshot.folderId || null);
+      setSaveStatus(`Saved “${snapshot.name.trim()}” in ${folder}.`);
+      setDirectSave(null);
+      setLibraryRevision((current) => current + 1);
+    } catch (cause) {
+      setDirectSaveError(String(cause));
+    } finally {
+      setDirectSaveBusy(false);
+    }
+  }
 
   const startEdit = (query: SavedQuery) => {
     setError(null);
@@ -436,6 +547,14 @@ export function SavedQueryLibrary({
 
   return (
     <>
+      <button
+        className="toolbar-button"
+        disabled={!projectId || !activeSql.trim()}
+        onClick={openDirectSave}
+        type="button"
+      >
+        <FloppyDiskIcon aria-hidden="true" size={14} /> Save query
+      </button>
       <Dialog.Root
         onOpenChange={(nextOpen) => {
           setOpen(nextOpen);
@@ -624,16 +743,24 @@ export function SavedQueryLibrary({
                   <div className="saved-query-loading" role="status">
                     Loading saved queries
                   </div>
-                ) : queries.length === 0 && !search ? (
+                ) : queries.length === 0 && folders.length === 0 && !search ? (
                   <div className="saved-query-empty">
-                    <strong>No saved queries yet</strong>
-                    <span>Save the active editor SQL to keep it in this project.</span>
+                    <strong>No saved queries or folders yet</strong>
+                    <span>Save the active editor SQL or create a folder for this project.</span>
                   </div>
                 ) : (
                   <>
-                    {renderGroup("Unfiled", "", grouped.get("") ?? [])}
+                    {queries.length > 0 || search
+                      ? renderGroup("Unfiled", "", grouped.get("") ?? [])
+                      : null}
                     {folders.map((folder) =>
                       renderGroup(folder.name, folder.id, grouped.get(folder.id) ?? [], folder),
+                    )}
+                    {search && queries.length === 0 && (
+                      <div className="saved-query-empty saved-query-search-empty">
+                        <strong>No matching saved queries</strong>
+                        <span>Folders remain visible; clear the search to see all saved SQL.</span>
+                      </div>
                     )}
                   </>
                 )}
@@ -835,6 +962,128 @@ export function SavedQueryLibrary({
           </Dialog.Content>
         </Dialog.Portal>
       </Dialog.Root>
+      {directSave && (
+        <UiDialog
+          busy={directSaveBusy}
+          description="Save an immutable copy of the active editor SQL. This does not run the query."
+          onOpenChange={(nextOpen) => {
+            if (!nextOpen) {
+              setDirectSave(null);
+              setDirectSaveError(null);
+            }
+          }}
+          open
+          title="Save query"
+        >
+          <form
+            className="ui-dialog-form direct-save-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void submitDirectSave();
+            }}
+          >
+            <Field
+              autoFocus
+              disabled={directSaveBusy}
+              error={!directSave.name.trim() ? "Enter a query name." : undefined}
+              label="Query name"
+              onChange={(event) =>
+                setDirectSave((current) =>
+                  current ? { ...current, name: event.target.value } : current,
+                )
+              }
+              value={directSave.name}
+            />
+            <label className="saved-query-select">
+              <span>Folder</span>
+              <select
+                disabled={directSaveBusy}
+                onChange={(event) =>
+                  setDirectSave((current) =>
+                    current ? { ...current, folderId: event.target.value } : current,
+                  )
+                }
+                value={directSave.folderId}
+              >
+                <option value="">Unfiled</option>
+                {folders.map((folder) => (
+                  <option key={folder.id} value={folder.id}>
+                    {folder.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {directSave.creatingFolder ? (
+              <div className="direct-save-new-folder">
+                <Field
+                  disabled={directSaveBusy}
+                  label="New folder name"
+                  onChange={(event) =>
+                    setDirectSave((current) =>
+                      current ? { ...current, folderName: event.target.value } : current,
+                    )
+                  }
+                  value={directSave.folderName}
+                />
+                <button
+                  className="toolbar-button"
+                  disabled={directSaveBusy || !directSave.folderName.trim()}
+                  onClick={() => void createDirectSaveFolder()}
+                  type="button"
+                >
+                  Create folder
+                </button>
+              </div>
+            ) : (
+              <button
+                className="text-button direct-save-folder-toggle"
+                onClick={() =>
+                  setDirectSave((current) =>
+                    current ? { ...current, creatingFolder: true } : current,
+                  )
+                }
+                type="button"
+              >
+                <FolderPlusIcon aria-hidden="true" size={14} /> Create a folder
+              </button>
+            )}
+            <section aria-label="SQL snapshot" className="direct-save-snapshot">
+              <span>
+                SQL snapshot · {directSave.snapshot.sqlText.length.toLocaleString()} characters
+              </span>
+              <code>{boundedSqlPreview(directSave.snapshot.sqlText)}</code>
+            </section>
+            {directSaveError && (
+              <div className="ui-inline-error" role="alert">
+                <strong>Query could not be saved</strong>
+                <span>{directSaveError}</span>
+              </div>
+            )}
+            <div className="ui-dialog-actions">
+              <button
+                className="toolbar-button"
+                disabled={directSaveBusy}
+                onClick={() => setDirectSave(null)}
+                type="button"
+              >
+                Cancel
+              </button>
+              <button
+                className="run-button"
+                disabled={directSaveBusy || !directSave.name.trim()}
+                type="submit"
+              >
+                {directSaveBusy ? "Saving…" : "Save query"}
+              </button>
+            </div>
+          </form>
+        </UiDialog>
+      )}
+      {saveStatus && (
+        <span className="sr-only" role="status">
+          {saveStatus}
+        </span>
+      )}
       {textIntent && (
         <TextEntryDialog
           busy={interactionBusy}
@@ -882,6 +1131,11 @@ export function SavedQueryLibrary({
       )}
     </>
   );
+}
+
+function boundedSqlPreview(sql: string): string {
+  const normalized = sql.trim();
+  return normalized.length > 1_000 ? `${normalized.slice(0, 1_000)}…` : normalized;
 }
 
 function libraryConfirmationLabel(intent: LibraryConfirmIntent): string {
