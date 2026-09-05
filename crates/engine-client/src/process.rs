@@ -181,7 +181,10 @@ mod tests {
             .parent()
             .unwrap()
             .join("target/debug/tarik-engine-duckdb.exe");
-        assert!(executable.exists(), "build the DuckDB engine before this test");
+        assert!(
+            executable.exists(),
+            "build the DuckDB engine before this test"
+        );
         let mut process = EngineProcess::start(&executable).unwrap();
         process.handshake().unwrap();
         let output = Command::new("powershell.exe")
