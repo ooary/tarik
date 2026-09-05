@@ -1,7 +1,7 @@
 # E13.5 desktop interactions and DuckDB resources review
 
 Date: September 5, 2026
-Status: **IMPLEMENTED / REVIEW — manual and native Windows approval required**
+Status: **APPROVED — user accepted E13.5 on September 5, 2026; native Windows release-candidate checks continue under E13-T6**
 
 ## What changed
 
@@ -123,6 +123,6 @@ Linux release memory evidence (`target/e13-5-memory-report.json`) passed the ver
 - [ ] Capture updated `runtime-report.json` and process-tree peak/growth/residue evidence.
 - [ ] Complete the remaining E13-T6 branding/Results/Windows 10/11 checklist against the same candidate.
 
-## Remaining boundary
+## Sign-off and remaining boundary
 
-No native Windows package was built or manually inspected in this Linux session. The code is review-ready, but E13.5-T5 and E13-T6 must remain open until the user reviews the UI and the packaged Windows matrix passes. E14 remains blocked.
+The user explicitly accepted the E13.5 interaction, saved-query, and resource-control work on September 5, 2026. No native Windows package was built or manually inspected in the Linux implementation session, so package/DPI/mixed-monitor/process evidence remains open under E13-T6. E14 remains blocked until E13-T6 receives explicit approval.

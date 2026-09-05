@@ -1904,7 +1904,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
 
 ## EPIC E13.5 — Desktop interaction consistency, saved-query correctness, and engine resource controls
 
-**Status:** `REVIEW` — E13.5-T0 through T4 and the automated/review-ready portion of T5 are implemented. Manual UI and native Windows package acceptance remain open before E13-T6.
+**Status:** `APPROVED` — user accepted E13.5 on September 5, 2026. Native Windows package, DPI, mixed-monitor, and process evidence is consolidated into the remaining E13-T6 release-candidate gate.
 
 **Outcome:** Tarik uses one accessible desktop interaction language instead of browser prompts/confirms, newly created query folders are immediately truthful even when empty, saving the active SQL is a direct toolbar workflow with an explicit name/folder modal, and the status bar reports verified DuckDB resource settings that users can safely customize.
 
@@ -1989,7 +1989,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Commit: `feat(engine): add verified custom resource settings`
   - Notes: A shared protocol contract now enforces canonical Low memory/Balanced/Fast profiles and bounded Custom values. SQLite stores one application-wide request; session open and crash recovery apply it before publishing a session; `session.configure` refuses queued/running sidecar work; bound DuckDB settings are read back before effective status is exposed; cloned query connections report the configured values. Hardware hints use cross-platform logical CPU and physical-memory detection.
 
-- [ ] **E13.5-T5 Add Engine resources modal and run combined critical review** — implementation complete; awaiting explicit manual/native Windows sign-off
+- [x] **E13.5-T5 Add Engine resources modal and run combined critical review** — user approved September 5, 2026
   - Depends on: E13.5-T2, E13.5-T3, E13.5-T4
   - Owns: status-bar resource trigger/modal, `docs/review/E13-5-INTERACTIONS-RESOURCES.md`, packaged evidence, and manual sign-off
   - Deliverables:
@@ -2002,7 +2002,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Tests: full frontend/Rust/docs/package gates, browser-dialog guard, saved-query golden workflow, real-sidecar resource readback, active-job refusal, restart/crash recovery, Windows packaged modal/DPI/focus matrix, and memory/residue report.
   - Commit: `docs(review): accept desktop interactions and resources`
   - Review: `docs/review/E13-5-INTERACTIONS-RESOURCES.md`
-  - Notes: The footer now opens a compact DuckDB resources modal and distinguishes checking, pending, effective readback, and unavailable states. Preset/Custom UI, overflow-safe validation, hardware warnings, busy guidance, and the total-process-memory disclaimer are covered by 166 UI tests. Linux production/Rust/real-sidecar gates pass; native Windows DPI/mixed-monitor/package review and explicit user approval remain open, so T5 is intentionally unchecked.
+  - Notes: The footer now opens a compact DuckDB resources modal and distinguishes checking, pending, effective readback, and unavailable states. Preset/Custom UI, overflow-safe validation, hardware warnings, busy guidance, and the total-process-memory disclaimer are covered by 166 UI tests. Linux production/Rust/real-sidecar gates pass. The user explicitly approved E13.5 on September 5, 2026; native Windows package/DPI/mixed-monitor/process checks remain part of E13-T6 and are not implied by this approval.
 
 ---
 
