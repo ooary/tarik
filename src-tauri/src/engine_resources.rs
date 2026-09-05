@@ -92,21 +92,40 @@ impl EngineResourceManager {
             );
         }
 
-        let effective = if has_active_project && self.engine.status().state == "connected" {
+        let previous = self
+            .requested
+            .lock()
+            .map_err(|_| "engine resource state lock".to_string())?
+            .clone();
+        let connected = has_active_project && self.engine.status().state == "connected";
+        let effective = if connected {
             Some(self.engine.configure_resources(requested.clone())?)
         } else {
             self.engine.set_requested_resources(requested.clone())?;
             None
         };
 
-        let persistence = SettingsRepository::new(self.database.clone())
-            .set(RESOURCE_SETTINGS_KEY, &requested)
-            .map_err(|error| format!("resources.persistence: {error}"));
+        if let Err(error) =
+            SettingsRepository::new(self.database.clone()).set(RESOURCE_SETTINGS_KEY, &requested)
+        {
+            let rollback = if connected {
+                self.engine
+                    .configure_resources(previous.clone())
+                    .map(|_| ())
+            } else {
+                self.engine.set_requested_resources(previous)
+            };
+            return match rollback {
+                Ok(()) => Err(format!("resources.persistence: {error}")),
+                Err(rollback_error) => Err(format!(
+                    "resources.persistence: {error}; previous runtime settings could not be restored: {rollback_error}"
+                )),
+            };
+        }
         *self
             .requested
             .lock()
             .map_err(|_| "engine resource state lock".to_string())? = requested.clone();
-        persistence?;
         Ok(status_with_environment(requested, effective))
     }
 }

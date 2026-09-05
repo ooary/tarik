@@ -32,7 +32,7 @@ Status: **IMPLEMENTED / REVIEW — manual and native Windows approval required**
 - DuckDB settings are bound parameters, then read through `current_setting`; only readback becomes effective status.
 - Query and export connection clones are proven to inherit configured memory/thread values.
 - Resource changes are refused by desktop coordinators and the sidecar while query/Actual Flow/export work is queued or running. Nothing is auto-cancelled.
-- A partial apply restores the previous verified pair before returning failure.
+- A partial DuckDB apply or post-apply SQLite persistence failure restores the previous verified pair before returning failure.
 - The app-owned temporary/spill boundary remains unchanged.
 - Hardware warnings compare Custom values with detected physical memory and logical CPUs but do not silently clamp them.
 
