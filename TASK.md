@@ -2008,9 +2008,9 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
 
 ## EPIC E14 — Beginner data profiling and quality checks
 
-**Status:** `REMEDIATION IN PROGRESS` - E14-R0 through E14-R3 are complete and manually approved, and the user temporarily approved the current Checks authoring baseline on September 6, 2026 (E14-R4). E14-T6 Runs presentation, which now also absorbs the deferred authoring layout refinement, is next. E13-T6 native Windows acceptance remains open in parallel, and E14 must not be called complete while it is unresolved.
+**Status:** `IMPLEMENTATION APPROVED / CROSS-PLATFORM BLOCKED` - The user approved the complete E14 Profile, Definitions, Runs, failure-preview, repair, and rerun workflow in the real Tauri app on September 6, 2026. E14-T6/T7 and the deferred authoring refinement are complete. E13-T6 native Windows acceptance and E12-T4 clean-machine/DPI evidence remain open in parallel, so E14 does not yet claim final cross-platform acceptance.
 
-**Review correction:** Automated tests are not visual acceptance. All E14 UI corrections stay local until the user reviews the real Tauri app and explicitly approves them. Do not push an E14 UI implementation commit before that approval.
+**Review correction:** Automated tests are not visual acceptance. E14 UI corrections remained local until the user reviewed the real Tauri app and explicitly authorized commit on September 6, 2026. Windows package, DPI, mixed-monitor, and process-lifecycle acceptance are still separate manual evidence.
 
 **Outcome:** Help beginners answer “What is in this data?”, “Can I trust it?”, and “What SQL proves that?” through explicit, local, cancellable profiles and reusable quality checks. Tarik must teach by showing deterministic SQL and metric provenance rather than hiding behavior behind an AI chat box or silently changing data.
 
@@ -2067,7 +2067,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Commit: `fix(profile): redesign profiling workbench`
   - Notes: The approved workbench defaults to the first 12 columns, aligns Columns/Distinct Counts/Local Scan setup regions, fills the right-side workspace before and after execution, and uses container-responsive Columns/Measurements/SQL Evidence panes. Measurements are grouped on a distinct theme-aware surface; values are bounded and readable; exact sidecar SQL can be copied or opened without execution. Run collapses setup into a reduced-motion-safe Starting/Queued/Running state with a once-per-second elapsed timer and available cancellation. QueryWorkspace stays mounted but is removed from visual layout and the accessibility tree while Profile or Checks owns the workspace. The packaged Tarik icon now replaces the temporary navbar T tile. The user reviewed the evolving real-Tauri candidate, requested layout and loading corrections, then explicitly authorized commit and push on September 6, 2026. The broader theme, minimum-viewport, packaged, privacy, and complete workflow matrix remains in E14-T7.
 
-- [x] **E14-R4 Review and correct the Checks authoring workspace** - temporarily approved September 6, 2026; authoring layout correction folded into T6
+- [x] **E14-R4 Review and correct the Checks authoring workspace** - approved September 6, 2026; deferred layout correction completed in T6
   - Depends on: E14-R3 manual approval
   - Owns: Checks workspace layout/copy/accessibility and focused tests
   - Deliverables:
@@ -2077,7 +2077,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: user manually approves the real Tauri Checks flow before its UI correction is committed or pushed.
   - Tests: all variants, draft retention, SQL copy/open isolation, custom confirmation, keyboard/focus, themes, minimum viewport.
   - Commit after approval only: `fix(quality): refine guided check authoring`
-  - Notes: The user reviewed the real-Tauri Checks flow and gave a temporary approval of the current authoring baseline on September 6, 2026. The only correction requested now was a more prominent run-confirmation notice; it now renders as a full-width accent strip below the workspace header with larger text and `role="status"`, and it is visible when running directly from the saved list (previously it only appeared inside an open builder draft). The fuller authoring refinement (container-responsive panes replacing the overlapping SQL panel, tabbed Checks/Definition/SQL at narrow widths, field-order polish) is folded into the E14-T6 Runs workspace rework so the workspace is redesigned once together with run presentation. No-auto-save/no-auto-run and explicit custom SQL confirmation remain enforced.
+  - Notes: The user first gave temporary approval to the authoring baseline, then approved the completed T6/T7 workspace on September 6, 2026. The prominent run-confirmation notice renders as a full-width accent strip below the workspace header with larger text and `role="status"`, including runs started from the saved list. T6 completed the deferred authoring refinement with container-responsive panes, explicit Checks/Definition/SQL narrow tabs, and no overlapping SQL panel. No-auto-save/no-auto-run and explicit custom SQL confirmation remain enforced.
 
 - [x] **E14-T0 Design profiling and quality-check semantics** - original implementation; superseded by E14-R0 reconciliation
   - Depends on: E4-T3, E6-T4, E8-T4 (E13-T6 approval waived for design only by user option 2 on September 5, 2026; E13-T6 remains required before E14 final acceptance)
@@ -2151,7 +2151,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Commit: `feat(profile): add beginner data profile workspace`
   - Notes: Added Profile data to supported table/view menus plus an `Alt+P` Explorer action, with immutable project/object/catalog/source capture and focus restoration. Opening Profile never scans; explicit Run/Cancel drives the typed bounded profile lifecycle with non-overlapping polling and cancellation on exit. The dense metric table labels Exact/Approximate/Sampled values, distinguishes absent metrics as not applicable with a reason, hides bounded common/sample values until expansion, exposes copy actions and truncation, and explains NULL/distinct/range/distribution semantics. Requests freeze at 100 selected columns and controls freeze in flight. Catalog/source drift refuses rerun until the workspace is reopened. Supported observations produce a typed, review-only `QualityCheckDraft` handoff without metadata writes or execution. Query workspace state remains mounted and hidden while Profile is open. Verified by 34 command tests, 178 UI tests, lint (only two pre-existing warnings), typecheck, formatting/docs checks, and production build.
 
-- [x] **E14-T5 Add guided quality-check authoring and SQL teaching** - implemented; authoring baseline temporarily approved via E14-R4
+- [x] **E14-T5 Add guided quality-check authoring and SQL teaching** - implemented and approved via E14-R4/T6 review
   - Depends on: E14-T2, E14-T3, E14-T4
   - Owns: Checks workspace, typed builder, generated SQL explanation, definition lifecycle, and accessibility tests
   - Deliverables:
@@ -2165,7 +2165,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Commit: `feat(quality): add guided check builder`
   - Notes: Added a project Checks workspace with bounded searchable definitions, latest-outcome labels, and Run/Edit/Duplicate/Delete actions. The guided builder covers all eight check types with catalog-backed selectors, ordered relationship key mapping, NULL-policy choices with plain-language consequences, and client validation for names, targets, limits, and freshness/range types before any request. Generated count and failure SQL is compiled by the sidecar Rust compiler via the new `preview_quality_check_sql` command — no SQL is generated in the frontend — and is shown with sentence-by-sentence teaching, copy, and Open SQL that never execute. Saves validate the draft against the live catalog (stale objects/columns, relationship type matching, freshness/range compatibility) and bind-validate custom SQL before persistence; opening or editing never executes anything. Profile observations open the builder as an unsaved, unexecuted typed draft; running custom SQL always requires a separate explicit confirmation. Verified by 34 command tests, 40 focused UI tests including all eight variants, backend preview non-execution, stale-target refusal, no-auto-run, and Open-SQL isolation; lint/typecheck/format/docs gates pass with only the two pre-existing warnings.
 
-- [ ] **E14-T6 Present check runs, bounded failures, and learning-oriented recovery** - unblocked via temporary E14-R4 approval; also absorbs the deferred authoring layout refinement
+- [x] **E14-T6 Present check runs, bounded failures, and learning-oriented recovery** - approved September 6, 2026
   - Depends on: E14-T3, E14-T5
   - Owns: suite progress, latest/history views, failure examples, rerun behavior, and recovery UX
   - Deliverables:
@@ -2182,10 +2182,11 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
     - Recompile historical failure SQL for an explicitly labeled current-data preview, add dedicated release, cap coordinator terminal records at 256 and tracked previews at 8, and keep one UI-owned preview.
     - Add `Definitions | Runs` inside Quality Checks. A run switches to Runs, shows suite progress/status/elapsed/cancel, and refreshes bounded history without page navigation.
     - Replace viewport/absolute SQL layout with container-responsive panes and explicit Checks/Definition/SQL narrow tabs.
-  - Manual gate: keep the combined T6 UI candidate local and uncommitted until the user reviews the real Tauri app and explicitly approves it.
+  - Manual gate: satisfied September 6, 2026 after real-Tauri review and fixes for failure-grid scrolling, direct Checks-to-Profile navigation, query responsiveness, startup feedback, and result-state transitions.
   - Commit: `feat(quality): explain check failures and recovery`
+  - Notes: Added durable restart-safe run detail, historical revision reruns, immutable SQL evidence, explicit historical/current revision labels, current-data historical previews, dedicated preview release, and coordinator limits of 256 terminal runs and 8 tracked previews. Definitions and Runs share one workspace; starting a run switches to Runs with suite counts, elapsed time, cancellation, beginner observed-versus-expected explanations, bounded history, and deterministic Edit/Profile/Repair/Open SQL actions. Wide and narrow layouts use container-responsive panes and explicit tabs. The shared ResultGrid now uses one delegated context menu and constant-time truncation lookup to keep preview scrolling responsive.
 
-- [ ] **E14-T7 Review the complete beginner data-trust workflow**
+- [x] **E14-T7 Review the complete beginner data-trust workflow** - approved September 6, 2026; Windows evidence remains separately blocked
   - Depends on: E14-T4, E14-T5, E14-T6
   - Owns: `docs/review/E14-PROFILES-QUALITY.md`, sample issue fixture, automated evidence, and manual sign-off
   - Deliverables:
@@ -2195,6 +2196,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
     - Include light/dark/system and 100/125/150/200% DPI screenshots, keyboard-only flow, screen-reader labels, minimum viewport, large-table cancellation, and fixed-workload memory/disk reports.
   - Acceptance: a beginner can explain what the profile measured, why a check passed or failed, what SQL established the result, and how to recover—without developer help, hidden execution, false exactness, data mutation, or unbounded memory/disk growth.
   - Tests: full frontend/Rust/docs/package gates plus profile/check golden workflow, fresh/schema-7 migration, real sidecar restart, Windows/Linux filesystem paths, large-table memory, repeated suite retention, cancellation/residue, and manual review checklist.
+  - Notes: Added `tests/fixtures/e14/data-trust.sql`, deterministic expected results, and `docs/review/E14-PROFILES-QUALITY.md`. The user exercised the real-Tauri workflow and approved commit after iterative fixes on September 6, 2026. Final gates passed with 212 UI tests, 36 Node tests, the full Cargo workspace/all-target matrix, clippy with warnings denied, typecheck, formatting/docs checks, production build, and engine protocol check. E13-T6/E12-T4 still own Windows portable, DPI, mixed-monitor, and clean-machine acceptance; this approval does not infer those results.
   - Commit: `docs(review): add beginner data trust checklist`
   - Fixture: `tests/fixtures/e14/data-trust.sql`, `tests/fixtures/e14/expected-results.md`
   - Manual gate: implementation and automated evidence may be completed locally, but T7 stays open until the user explicitly signs off the real-Tauri workflow. E13-T6 Windows acceptance remains separately open and blocks a final cross-platform claim.
