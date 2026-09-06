@@ -2028,7 +2028,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Commit: `docs(e14): reconcile profiling remediation plan`
   - Notes: Reconstructed E14-T1 through T5 against the graph after the failed visual checkpoint. The reconciled contract keeps a dedicated but session-exclusive Profile registry, defines scalar batching plus the total statement bound, adds immutable executed-SQL evidence, replaces the flat metric dump with a column/metrics/evidence composition, and makes real-Tauri manual approval mandatory before any E14 UI correction is committed or pushed.
 
-- [ ] **E14-R1 Correct Profile execution cardinality and SQL evidence**
+- [x] **E14-R1 Correct Profile execution cardinality and SQL evidence**
   - Depends on: E14-R0
   - Owns: profile protocol, DuckDB profile compiler/executor, sidecar lifecycle tests
   - Deliverables:
@@ -2039,6 +2039,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: 100-column profiling has a mechanically tested statement bound, SQL shown later is exactly what ran, and no query/result artifacts are created.
   - Tests: protocol serde/bounds, DuckDB golden metrics/evidence, statement counter, busy/cancel/stale/restart/residue.
   - Commit: `fix(profile): bound scans and expose SQL evidence`
+  - Notes: Profile now rejects a second active job for the same session, batches scalar aggregates across at most 25 columns, and returns the exact sidecar-generated SQL for row count, scalar batches, common values, and representative values. The response budget serializes the complete snapshot including evidence. For N columns the statement bound is `1 + ceil(N/25) + 2N`; profile work remains mutually exclusive with query/export and creates no result artifacts.
 
 - [ ] **E14-R2 Fix Profile entry and lifecycle defects**
   - Depends on: E14-R0

@@ -9,8 +9,9 @@ use duckdb::{types::Value as DuckValue, Connection};
 use serde_json::{Number, Value};
 use tarik_engine_protocol::{
     catalog_revision, ErrorEnvelope, MetricProvenance, ProfileColumn, ProfileMetric,
-    ProfileMetricKind, ProfileMode, ProfileRequest, ProfileSnapshot, ProfileState, ProfileStatus,
-    ProfileTarget, MAX_PROFILE_SNAPSHOT_BYTES, MAX_PROFILE_VALUES, MAX_PROFILE_VALUE_BYTES,
+    ProfileMetricKind, ProfileMode, ProfileRequest, ProfileSnapshot, ProfileSqlEvidence,
+    ProfileState, ProfileStatus, ProfileTarget, MAX_PROFILE_SCALAR_BATCH_COLUMNS,
+    MAX_PROFILE_SNAPSHOT_BYTES, MAX_PROFILE_VALUES, MAX_PROFILE_VALUE_BYTES,
 };
 
 use crate::{catalog, error::EngineError, sources::quote_identifier};
@@ -84,6 +85,12 @@ impl ProfileRegistry {
         let mut inner = self.lock()?;
         if inner.profiles.contains_key(profile_id) {
             return Err(EngineError::ProfileExists(profile_id.to_string()));
+        }
+        if inner.profiles.values().any(|record| {
+            record.session_id == session_id
+                && matches!(record.state, ProfileState::Queued | ProfileState::Running)
+        }) {
+            return Err(EngineError::ProfileBusy);
         }
         inner.profiles.insert(
             profile_id.to_string(),
@@ -177,6 +184,31 @@ impl ProfileRegistry {
             record.session_id == session_id
                 && matches!(record.state, ProfileState::Queued | ProfileState::Running)
         }))
+    }
+
+    #[cfg(test)]
+    fn register_queued_for_test(
+        &self,
+        session_id: &str,
+        profile_id: &str,
+        request: ProfileRequest,
+    ) {
+        self.inner.lock().unwrap().profiles.insert(
+            profile_id.into(),
+            ProfileRecord {
+                session_id: session_id.into(),
+                request,
+                connection: None,
+                state: ProfileState::Queued,
+                queued_at: Instant::now(),
+                started_at: None,
+                duration_ms: None,
+                interrupt: None,
+                cancel_requested: false,
+                snapshot: None,
+                error: None,
+            },
+        );
     }
 
     fn terminal(
@@ -368,38 +400,110 @@ pub fn execute_profile(
     }
 
     let qualified = qualified_target(&request.target)?;
+    let row_sql = format!("SELECT count(*) FROM {qualified}");
+    let mut statements = vec![ProfileSqlEvidence {
+        columns: Vec::new(),
+        metric_kinds: vec![ProfileMetricKind::RowCount],
+        sql: row_sql.clone(),
+    }];
     let mut metrics = vec![ProfileMetric {
         column: None,
         kind: ProfileMetricKind::RowCount,
-        value: Some(query_value(
-            connection,
-            &format!("SELECT count(*) FROM {qualified}"),
-        )?),
+        value: Some(query_value(connection, &row_sql)?),
         provenance: MetricProvenance::Exact,
         unavailable_reason: None,
         truncated: false,
     }];
     let row_count = metric_u64(metrics[0].value.as_ref());
 
-    for column in &request.columns {
-        profile_column(
-            connection,
-            &qualified,
-            column,
-            request.mode,
-            row_count,
-            &mut metrics,
-        )?;
+    for columns in request.columns.chunks(MAX_PROFILE_SCALAR_BATCH_COLUMNS) {
+        let (sql, specifications) = compile_scalar_batch(&qualified, columns, request.mode)?;
+        let values = query_values(connection, &sql, specifications.len())?;
+        let mut metric_kinds = Vec::new();
+        for (specification, value) in specifications.into_iter().zip(values) {
+            metric_kinds.push(specification.kind);
+            let value = if specification.kind == ProfileMetricKind::NullRate {
+                let null_count = metric_u64(Some(&value));
+                if row_count == 0 {
+                    Value::Null
+                } else {
+                    Value::Number(
+                        Number::from_f64(null_count as f64 / row_count as f64)
+                            .unwrap_or_else(|| Number::from(0)),
+                    )
+                }
+            } else {
+                value
+            };
+            push_metric(
+                &mut metrics,
+                specification.column,
+                specification.kind,
+                Some(value),
+                specification.provenance,
+            );
+        }
+        statements.push(ProfileSqlEvidence {
+            columns: columns.iter().map(|column| column.name.clone()).collect(),
+            metric_kinds,
+            sql,
+        });
     }
 
-    enforce_snapshot_budget(&mut metrics)?;
+    for column in &request.columns {
+        add_unavailable_metrics(column, &mut metrics);
+        let type_upper = column.data_type.to_ascii_uppercase();
+        let identifier = quote_identifier(&column.name)?;
+        if supports_value_lists(&type_upper) {
+            let (sql, common, truncated) =
+                query_common_values(connection, &qualified, &identifier)?;
+            push_metric(
+                &mut metrics,
+                column,
+                ProfileMetricKind::CommonValues,
+                Some(Value::Array(common)),
+                MetricProvenance::Exact,
+            );
+            if let Some(metric) = metrics.last_mut() {
+                metric.truncated = truncated;
+            }
+            statements.push(ProfileSqlEvidence {
+                columns: vec![column.name.clone()],
+                metric_kinds: vec![ProfileMetricKind::CommonValues],
+                sql,
+            });
+        } else {
+            unavailable(
+                &mut metrics,
+                column,
+                ProfileMetricKind::CommonValues,
+                "Common values are unavailable for this column type.",
+            );
+        }
+        let (sql, representative, truncated) =
+            query_representative_values(connection, &qualified, &identifier)?;
+        push_metric(
+            &mut metrics,
+            column,
+            ProfileMetricKind::RepresentativeValues,
+            Some(Value::Array(representative)),
+            MetricProvenance::Sampled,
+        );
+        if let Some(metric) = metrics.last_mut() {
+            metric.truncated = truncated;
+        }
+        statements.push(ProfileSqlEvidence {
+            columns: vec![column.name.clone()],
+            metric_kinds: vec![ProfileMetricKind::RepresentativeValues],
+            sql,
+        });
+    }
 
-    // Detect a catalog change that occurred while the multi-statement profile ran.
     let after = catalog::inspect(connection)?;
     if catalog_revision(&after.objects, &after.columns) != request.catalog_revision {
         return Err(EngineError::ProfileCatalogStale);
     }
-    Ok(ProfileSnapshot {
+    let mut snapshot = ProfileSnapshot {
         project_id: request.project_id,
         target: request.target,
         catalog_revision: request.catalog_revision,
@@ -409,68 +513,133 @@ pub fn execute_profile(
             .unwrap_or_default()
             .as_millis() as u64,
         metrics,
-    })
+        statements,
+    };
+    enforce_snapshot_budget(&mut snapshot)?;
+    Ok(snapshot)
 }
 
-fn profile_column(
-    connection: &Connection,
-    qualified: &str,
-    column: &ProfileColumn,
-    mode: ProfileMode,
-    row_count: u64,
-    metrics: &mut Vec<ProfileMetric>,
-) -> Result<(), EngineError> {
-    let identifier = quote_identifier(&column.name)?;
-    let null_value = query_value(
-        connection,
-        &format!("SELECT count(*) FILTER (WHERE {identifier} IS NULL) FROM {qualified}"),
-    )?;
-    let null_count = metric_u64(Some(&null_value));
-    push_metric(
-        metrics,
-        column,
-        ProfileMetricKind::NullCount,
-        Some(null_value),
-        MetricProvenance::Exact,
-    );
-    push_metric(
-        metrics,
-        column,
-        ProfileMetricKind::NullRate,
-        Some(if row_count == 0 {
-            Value::Null
-        } else {
-            Value::Number(
-                Number::from_f64(null_count as f64 / row_count as f64)
-                    .unwrap_or_else(|| Number::from(0)),
-            )
-        }),
-        MetricProvenance::Exact,
-    );
+struct ScalarMetricSpec<'a> {
+    column: &'a ProfileColumn,
+    kind: ProfileMetricKind,
+    provenance: MetricProvenance,
+    expression: String,
+    display_as_text: bool,
+}
 
-    let type_upper = column.data_type.to_ascii_uppercase();
-    if supports_distinct(&type_upper) {
-        let exact_distinct = mode == ProfileMode::Exact || type_upper == "BOOLEAN";
-        let distinct = if exact_distinct {
-            format!("count(DISTINCT {identifier})")
-        } else {
-            format!("approx_count_distinct({identifier})")
-        };
-        push_metric(
-            metrics,
+fn compile_scalar_batch<'a>(
+    qualified: &str,
+    columns: &'a [ProfileColumn],
+    mode: ProfileMode,
+) -> Result<(String, Vec<ScalarMetricSpec<'a>>), EngineError> {
+    let mut specifications = Vec::new();
+    for column in columns {
+        let identifier = quote_identifier(&column.name)?;
+        specifications.push(ScalarMetricSpec {
             column,
-            ProfileMetricKind::DistinctCount,
-            Some(query_value(
-                connection,
-                &format!("SELECT {distinct} FROM {qualified}"),
-            )?),
-            if exact_distinct {
-                MetricProvenance::Exact
+            kind: ProfileMetricKind::NullCount,
+            provenance: MetricProvenance::Exact,
+            expression: format!("count(*) FILTER (WHERE {identifier} IS NULL)"),
+            display_as_text: false,
+        });
+        specifications.push(ScalarMetricSpec {
+            column,
+            kind: ProfileMetricKind::NullRate,
+            provenance: MetricProvenance::Exact,
+            expression: format!("count(*) FILTER (WHERE {identifier} IS NULL)"),
+            display_as_text: false,
+        });
+
+        let type_upper = column.data_type.to_ascii_uppercase();
+        if supports_distinct(&type_upper) {
+            let exact = mode == ProfileMode::Exact || type_upper == "BOOLEAN";
+            specifications.push(ScalarMetricSpec {
+                column,
+                kind: ProfileMetricKind::DistinctCount,
+                provenance: if exact {
+                    MetricProvenance::Exact
+                } else {
+                    MetricProvenance::Approximate
+                },
+                expression: if exact {
+                    format!("count(DISTINCT {identifier})")
+                } else {
+                    format!("approx_count_distinct({identifier})")
+                },
+                display_as_text: false,
+            });
+        }
+        if is_numeric(&type_upper) {
+            for (kind, expression) in [
+                (ProfileMetricKind::Minimum, format!("min({identifier})")),
+                (ProfileMetricKind::Maximum, format!("max({identifier})")),
+                (ProfileMetricKind::Average, format!("avg({identifier})")),
+            ] {
+                specifications.push(ScalarMetricSpec {
+                    column,
+                    kind,
+                    provenance: MetricProvenance::Exact,
+                    expression,
+                    display_as_text: true,
+                });
+            }
+        } else if is_text(&type_upper) {
+            for (kind, expression) in [
+                (
+                    ProfileMetricKind::TextLengthMinimum,
+                    format!("min(length({identifier}))"),
+                ),
+                (
+                    ProfileMetricKind::TextLengthMaximum,
+                    format!("max(length({identifier}))"),
+                ),
+                (
+                    ProfileMetricKind::TextLengthAverage,
+                    format!("avg(length({identifier}))"),
+                ),
+            ] {
+                specifications.push(ScalarMetricSpec {
+                    column,
+                    kind,
+                    provenance: MetricProvenance::Exact,
+                    expression,
+                    display_as_text: false,
+                });
+            }
+        } else if is_temporal(&type_upper) {
+            for (kind, expression) in [
+                (ProfileMetricKind::Minimum, format!("min({identifier})")),
+                (ProfileMetricKind::Maximum, format!("max({identifier})")),
+            ] {
+                specifications.push(ScalarMetricSpec {
+                    column,
+                    kind,
+                    provenance: MetricProvenance::Exact,
+                    expression,
+                    display_as_text: true,
+                });
+            }
+        }
+    }
+    let projections = specifications
+        .iter()
+        .map(|specification| {
+            if specification.display_as_text {
+                format!("CAST({} AS VARCHAR)", specification.expression)
             } else {
-                MetricProvenance::Approximate
-            },
-        );
-    } else {
+                specification.expression.clone()
+            }
+        })
+        .collect::<Vec<_>>();
+    Ok((
+        format!("SELECT {} FROM {qualified}", projections.join(", ")),
+        specifications,
+    ))
+}
+
+fn add_unavailable_metrics(column: &ProfileColumn, metrics: &mut Vec<ProfileMetric>) {
+    let type_upper = column.data_type.to_ascii_uppercase();
+    if !supports_distinct(&type_upper) {
         unavailable(
             metrics,
             column,
@@ -479,64 +648,14 @@ fn profile_column(
         );
     }
     if is_numeric(&type_upper) {
-        for (kind, expression) in [
-            (ProfileMetricKind::Minimum, format!("min({identifier})")),
-            (ProfileMetricKind::Maximum, format!("max({identifier})")),
-            (ProfileMetricKind::Average, format!("avg({identifier})")),
-        ] {
-            push_metric(
-                metrics,
-                column,
-                kind,
-                Some(query_display(connection, qualified, &expression)?),
-                MetricProvenance::Exact,
-            );
-        }
         unavailable_text_lengths(metrics, column);
     } else if is_text(&type_upper) {
-        for (kind, expression) in [
-            (
-                ProfileMetricKind::TextLengthMinimum,
-                format!("min(length({identifier}))"),
-            ),
-            (
-                ProfileMetricKind::TextLengthMaximum,
-                format!("max(length({identifier}))"),
-            ),
-            (
-                ProfileMetricKind::TextLengthAverage,
-                format!("avg(length({identifier}))"),
-            ),
-        ] {
-            push_metric(
-                metrics,
-                column,
-                kind,
-                Some(query_value(
-                    connection,
-                    &format!("SELECT {expression} FROM {qualified}"),
-                )?),
-                MetricProvenance::Exact,
-            );
-        }
         unavailable_range(
             metrics,
             column,
             "Numeric/temporal summaries are unavailable for text columns.",
         );
     } else if is_temporal(&type_upper) {
-        for (kind, expression) in [
-            (ProfileMetricKind::Minimum, format!("min({identifier})")),
-            (ProfileMetricKind::Maximum, format!("max({identifier})")),
-        ] {
-            push_metric(
-                metrics,
-                column,
-                kind,
-                Some(query_display(connection, qualified, &expression)?),
-                MetricProvenance::Exact,
-            );
-        }
         unavailable(
             metrics,
             column,
@@ -552,59 +671,25 @@ fn profile_column(
         );
         unavailable_text_lengths(metrics, column);
     }
-
-    if supports_value_lists(&type_upper) {
-        let (common, common_truncated) = query_common_values(connection, qualified, &identifier)?;
-        push_metric(
-            metrics,
-            column,
-            ProfileMetricKind::CommonValues,
-            Some(Value::Array(common)),
-            MetricProvenance::Exact,
-        );
-        if let Some(metric) = metrics.last_mut() {
-            metric.truncated = common_truncated;
-        }
-    } else {
-        unavailable(
-            metrics,
-            column,
-            ProfileMetricKind::CommonValues,
-            "Common values are unavailable for this column type.",
-        );
-    }
-    let (representative, representative_truncated) =
-        query_representative_values(connection, qualified, &identifier)?;
-    push_metric(
-        metrics,
-        column,
-        ProfileMetricKind::RepresentativeValues,
-        Some(Value::Array(representative)),
-        MetricProvenance::Sampled,
-    );
-    if let Some(metric) = metrics.last_mut() {
-        metric.truncated = representative_truncated;
-    }
-    Ok(())
 }
 
-fn enforce_snapshot_budget(metrics: &mut [ProfileMetric]) -> Result<(), EngineError> {
-    if serde_json::to_vec(&*metrics)?.len() <= MAX_PROFILE_SNAPSHOT_BYTES {
+fn enforce_snapshot_budget(snapshot: &mut ProfileSnapshot) -> Result<(), EngineError> {
+    if serde_json::to_vec(&*snapshot)?.len() <= MAX_PROFILE_SNAPSHOT_BYTES {
         return Ok(());
     }
-    for index in (0..metrics.len()).rev() {
+    for index in (0..snapshot.metrics.len()).rev() {
         if matches!(
-            metrics[index].kind,
+            snapshot.metrics[index].kind,
             ProfileMetricKind::RepresentativeValues | ProfileMetricKind::CommonValues
-        ) && metrics[index].value.is_some()
+        ) && snapshot.metrics[index].value.is_some()
         {
-            metrics[index].value = None;
-            metrics[index].unavailable_reason = Some(
+            snapshot.metrics[index].value = None;
+            snapshot.metrics[index].unavailable_reason = Some(
                 "Value list omitted to keep the profile response within its bounded payload."
                     .into(),
             );
-            metrics[index].truncated = true;
-            if serde_json::to_vec(&*metrics)?.len() <= MAX_PROFILE_SNAPSHOT_BYTES {
+            snapshot.metrics[index].truncated = true;
+            if serde_json::to_vec(&*snapshot)?.len() <= MAX_PROFILE_SNAPSHOT_BYTES {
                 return Ok(());
             }
         }
@@ -618,7 +703,7 @@ fn query_common_values(
     connection: &Connection,
     qualified: &str,
     identifier: &str,
-) -> Result<(Vec<Value>, bool), EngineError> {
+) -> Result<(String, Vec<Value>, bool), EngineError> {
     let safe_chars = MAX_PROFILE_VALUE_BYTES / 4;
     let sql = format!(
         "SELECT left(CAST({identifier} AS VARCHAR), {safe_chars}) AS value, count(*) AS frequency, length(CAST({identifier} AS VARCHAR)) > {safe_chars} AS truncated FROM {qualified} WHERE {identifier} IS NOT NULL GROUP BY {identifier} ORDER BY frequency DESC, value ASC LIMIT {MAX_PROFILE_VALUES}"
@@ -643,6 +728,7 @@ fn query_common_values(
     let rows = rows.collect::<Result<Vec<_>, _>>()?;
     let truncated = rows.iter().any(|(_, truncated)| *truncated);
     Ok((
+        sql,
         rows.into_iter().map(|(value, _)| value).collect(),
         truncated,
     ))
@@ -652,7 +738,7 @@ fn query_representative_values(
     connection: &Connection,
     qualified: &str,
     identifier: &str,
-) -> Result<(Vec<Value>, bool), EngineError> {
+) -> Result<(String, Vec<Value>, bool), EngineError> {
     let safe_chars = MAX_PROFILE_VALUE_BYTES / 4;
     let sql = format!(
         "SELECT left(CAST({identifier} AS VARCHAR), {safe_chars}), length(CAST({identifier} AS VARCHAR)) > {safe_chars} FROM {qualified} WHERE {identifier} IS NOT NULL LIMIT {MAX_PROFILE_VALUES}"
@@ -667,20 +753,24 @@ fn query_representative_values(
     let rows = rows.collect::<Result<Vec<_>, _>>()?;
     let truncated = rows.iter().any(|(_, truncated)| *truncated);
     Ok((
+        sql,
         rows.into_iter().map(|(value, _)| value).collect(),
         truncated,
     ))
 }
 
-fn query_display(
+fn query_values(
     connection: &Connection,
-    qualified: &str,
-    expression: &str,
-) -> Result<Value, EngineError> {
-    query_value(
-        connection,
-        &format!("SELECT CAST({expression} AS VARCHAR) FROM {qualified}"),
-    )
+    sql: &str,
+    count: usize,
+) -> Result<Vec<Value>, EngineError> {
+    connection
+        .query_row(sql, [], |row| {
+            (0..count)
+                .map(|index| row.get::<_, DuckValue>(index).map(safe_value))
+                .collect::<Result<Vec<_>, _>>()
+        })
+        .map_err(Into::into)
 }
 
 fn query_value(connection: &Connection, sql: &str) -> Result<Value, EngineError> {
@@ -908,12 +998,43 @@ mod tests {
     }
 
     #[test]
+    fn registry_rejects_a_second_active_profile_for_the_same_session() {
+        let first_connection = Connection::open_in_memory().unwrap();
+        first_connection
+            .execute_batch("CREATE TABLE \"odd table\"(id INTEGER, label VARCHAR)")
+            .unwrap();
+        let revision = catalog::inspect(&first_connection).unwrap().revision;
+        let registry = Arc::new(ProfileRegistry::new());
+        registry.register_queued_for_test("session-1", "first", request(revision.clone()));
+        let error = registry
+            .execute(
+                "session-1",
+                "second",
+                request(revision),
+                first_connection.try_clone().unwrap(),
+            )
+            .unwrap_err();
+        assert!(matches!(error, EngineError::ProfileBusy));
+    }
+
+    #[test]
     fn bounded_profile_marks_provenance_and_values() {
         let connection = Connection::open_in_memory().unwrap();
         connection.execute_batch("CREATE TABLE \"odd table\"(id INTEGER, label VARCHAR); INSERT INTO \"odd table\" VALUES (1, 'one'), (2, NULL), (2, 'two');").unwrap();
         let revision = catalog::inspect(&connection).unwrap().revision;
         let snapshot = execute_profile(&connection, request(revision)).unwrap();
         assert_eq!(snapshot.metrics[0].value, Some(Value::from(3)));
+        assert_eq!(snapshot.statements.len(), 6);
+        assert_eq!(
+            snapshot.statements[0].metric_kinds,
+            [ProfileMetricKind::RowCount]
+        );
+        assert_eq!(snapshot.statements[1].columns, ["id", "label"]);
+        assert!(snapshot.statements[1].sql.contains("approx_count_distinct"));
+        assert!(snapshot
+            .statements
+            .iter()
+            .all(|statement| !statement.sql.is_empty()));
         let distinct = snapshot
             .metrics
             .iter()
@@ -942,6 +1063,62 @@ mod tests {
                 .len()
                 <= MAX_PROFILE_VALUES
         );
+    }
+
+    #[test]
+    fn scalar_statements_are_batched_in_groups_of_twenty_five_columns() {
+        let connection = Connection::open_in_memory().unwrap();
+        let definitions = (0..26)
+            .map(|index| format!("column_{index} INTEGER"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        connection
+            .execute_batch(&format!("CREATE TABLE wide ({definitions})"))
+            .unwrap();
+        let catalog = catalog::inspect(&connection).unwrap();
+        let object = catalog
+            .objects
+            .iter()
+            .find(|object| object.name == "wide")
+            .unwrap();
+        let request = ProfileRequest {
+            project_id: "project-1".into(),
+            target: ProfileTarget {
+                database: object.database.clone(),
+                schema: object.schema.clone(),
+                name: object.name.clone(),
+                kind: object.kind.clone(),
+            },
+            columns: catalog
+                .columns
+                .iter()
+                .filter(|column| {
+                    column.database == object.database
+                        && column.schema == object.schema
+                        && column.object == object.name
+                })
+                .map(|column| ProfileColumn {
+                    name: column.name.clone(),
+                    data_type: column.data_type.clone(),
+                })
+                .collect(),
+            catalog_revision: catalog.revision,
+            mode: ProfileMode::Approximate,
+        };
+        let snapshot = execute_profile(&connection, request).unwrap();
+        let scalar = snapshot
+            .statements
+            .iter()
+            .filter(|statement| {
+                statement
+                    .metric_kinds
+                    .contains(&ProfileMetricKind::NullCount)
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(scalar.len(), 2);
+        assert_eq!(scalar[0].columns.len(), MAX_PROFILE_SCALAR_BATCH_COLUMNS);
+        assert_eq!(scalar[1].columns.len(), 1);
+        assert_eq!(snapshot.statements.len(), 1 + 2 + (2 * 26));
     }
 
     #[test]

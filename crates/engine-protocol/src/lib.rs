@@ -18,6 +18,7 @@ pub const MAX_ENGINE_MEMORY_MIB: u64 = 262_144;
 pub const MIN_ENGINE_THREADS: u16 = 1;
 pub const MAX_ENGINE_THREADS: u16 = 256;
 pub const MAX_PROFILE_COLUMNS: usize = 100;
+pub const MAX_PROFILE_SCALAR_BATCH_COLUMNS: usize = 25;
 pub const MAX_PROFILE_VALUES: usize = 20;
 pub const MAX_PROFILE_VALUE_BYTES: usize = 64 * 1024;
 pub const MAX_PROFILE_SNAPSHOT_BYTES: usize = 256 * 1024;
@@ -230,6 +231,14 @@ pub struct ProfileMetric {
     pub truncated: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProfileSqlEvidence {
+    pub columns: Vec<String>,
+    pub metric_kinds: Vec<ProfileMetricKind>,
+    pub sql: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProfileSnapshot {
@@ -239,6 +248,7 @@ pub struct ProfileSnapshot {
     pub mode: ProfileMode,
     pub observed_at_unix_ms: u64,
     pub metrics: Vec<ProfileMetric>,
+    pub statements: Vec<ProfileSqlEvidence>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -1029,6 +1039,16 @@ mod tests {
         let wire = serde_json::to_value(&request).unwrap();
         assert_eq!(wire["mode"], "approximate");
         assert_eq!(wire["target"]["kind"], "table");
+        let evidence = ProfileSqlEvidence {
+            columns: vec!["order id".into()],
+            metric_kinds: vec![ProfileMetricKind::NullCount, ProfileMetricKind::NullRate],
+            sql: "SELECT count(*) FILTER (WHERE \"order id\" IS NULL) FROM \"orders\"".into(),
+        };
+        assert_eq!(
+            serde_json::from_value::<ProfileSqlEvidence>(serde_json::to_value(&evidence).unwrap())
+                .unwrap(),
+            evidence
+        );
         assert_eq!(
             serde_json::from_value::<ProfileRequest>(wire).unwrap(),
             request

@@ -60,6 +60,18 @@ const succeeded: ProfileStatus = {
     catalogRevision: "catalog-1",
     mode: "approximate",
     observedAtUnixMs: 1_700_000_000_000,
+    statements: [
+      {
+        columns: [],
+        metricKinds: ["row_count"],
+        sql: 'SELECT count(*) FROM "retail"."main"."orders"',
+      },
+      {
+        columns: ["note"],
+        metricKinds: ["null_count", "distinct_count"],
+        sql: 'SELECT count(*) FILTER (WHERE "note" IS NULL), approx_count_distinct("note") FROM "retail"."main"."orders"',
+      },
+    ],
     metrics: [
       {
         column: null,

@@ -903,6 +903,15 @@ fn profile_protocol_is_bounded_truthful_stale_safe_and_leaves_no_result_artifact
     assert_eq!(status["state"], "succeeded");
     assert_eq!(status["snapshot"]["metrics"][0]["kind"], "row_count");
     assert_eq!(status["snapshot"]["metrics"][0]["value"], 1000);
+    let statements = status["snapshot"]["statements"].as_array().unwrap();
+    assert_eq!(statements.len(), 6);
+    assert_eq!(statements[0]["metricKinds"][0], "row_count");
+    assert!(statements.iter().all(|statement| statement["sql"]
+        .as_str()
+        .is_some_and(|sql| sql.starts_with("SELECT "))));
+    assert!(statements.iter().any(|statement| statement["sql"]
+        .as_str()
+        .is_some_and(|sql| sql.contains("approx_count_distinct(\"id\")"))));
     assert!(status["snapshot"]["metrics"]
         .as_array()
         .unwrap()

@@ -139,6 +139,12 @@ export interface ProfileMetric {
   truncated: boolean;
 }
 
+export interface ProfileSqlEvidence {
+  columns: string[];
+  metricKinds: ProfileMetricKind[];
+  sql: string;
+}
+
 export interface ProfileSnapshot {
   projectId: string;
   target: ProfileTarget;
@@ -146,6 +152,7 @@ export interface ProfileSnapshot {
   mode: ProfileMode;
   observedAtUnixMs: number;
   metrics: ProfileMetric[];
+  statements: ProfileSqlEvidence[];
 }
 
 export interface ProfileStatus {
