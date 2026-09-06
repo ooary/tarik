@@ -278,16 +278,10 @@ button:active {
   gap: 9px;
 }
 
-.brand-mark {
-  display: grid;
-  width: 24px;
-  height: 24px;
-  place-items: center;
-  border-radius: var(--radius-control);
-  color: var(--accent-contrast);
-  background: var(--accent-solid);
-  font-size: 13px;
-  font-weight: 800;
+.brand-logo {
+  width: 26px;
+  height: 26px;
+  object-fit: contain;
 }
 
 .brand-name {
@@ -829,6 +823,10 @@ button:disabled {
   grid-template-rows: 38px 42px minmax(140px, 1fr) 4px var(--bottom-height);
   background: var(--surface-editor);
   overflow: hidden;
+}
+
+.query-workspace[hidden] {
+  display: none !important;
 }
 
 .query-tabs {

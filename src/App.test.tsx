@@ -26,6 +26,8 @@ import {
   inspectProjectCatalog,
   inspectSourceFile,
   linkParquetSource,
+  listLatestQualityRuns,
+  listQualityChecks,
   listRecentProjects,
   listSources,
   loadQuerySession,
@@ -76,6 +78,8 @@ vi.mock("./lib/commands", () => ({
   inspectProjectCatalog: vi.fn(),
   inspectSourceFile: vi.fn(),
   linkParquetSource: vi.fn(),
+  listLatestQualityRuns: vi.fn(),
+  listQualityChecks: vi.fn(),
   listRecentProjects: vi.fn(),
   listSources: vi.fn(),
   loadQuerySession: vi.fn(),
@@ -108,6 +112,14 @@ const sourceInspection = {
 };
 
 describe("Tarik workbench shell", () => {
+  it("uses the packaged Tarik logo in the navigation bar", () => {
+    render(<App />);
+    expect(screen.getByRole("main").querySelector(".brand-logo")).toHaveAttribute(
+      "src",
+      expect.stringContaining("tarik-logo"),
+    );
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     runtimeInfoMock.mockReset();
@@ -146,6 +158,8 @@ describe("Tarik workbench shell", () => {
     vi.mocked(inspectProjectCatalog).mockResolvedValue({ objects: [], columns: [] });
     vi.mocked(loadQuerySession).mockResolvedValue(null);
     vi.mocked(saveQuerySession).mockResolvedValue(undefined);
+    vi.mocked(listQualityChecks).mockResolvedValue([]);
+    vi.mocked(listLatestQualityRuns).mockResolvedValue([]);
     vi.mocked(listRecentProjects).mockResolvedValue([]);
     vi.mocked(listSources).mockResolvedValue([]);
     vi.mocked(cancelSourceOperation).mockResolvedValue(true);
@@ -474,6 +488,7 @@ describe("Tarik workbench shell", () => {
       'section[aria-label="SQL workspace"]',
     );
     expect(preservedSqlWorkspace).toHaveAttribute("hidden");
+    expect(window.getComputedStyle(preservedSqlWorkspace!).display).toBe("none");
     expect(executeProfile).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Back to query editor" }));
     await waitFor(() => expect(row).toHaveFocus());
@@ -537,6 +552,146 @@ describe("Tarik workbench shell", () => {
     expect(await screen.findByRole("menuitem", { name: "Profile data" })).toHaveAttribute(
       "data-disabled",
     );
+    fireEvent.keyDown(document.querySelector('[aria-label="orders_link view"]')!, {
+      key: "p",
+      altKey: true,
+    });
+    expect(screen.queryByRole("region", { name: "Profile orders_link" })).not.toBeInTheDocument();
+  });
+
+  it("does not apply an unqualified source record to a same-named object outside main", async () => {
+    vi.mocked(getActiveProject).mockResolvedValue({
+      id: "project-1",
+      name: "Local analysis",
+      duckdbPath: "/data/project.duckdb",
+    });
+    vi.mocked(inspectProjectCatalog).mockResolvedValue({
+      revision: "catalog-1",
+      objects: [
+        {
+          database: "project",
+          schema: "archive",
+          name: "orders",
+          kind: "table",
+          estimatedRowCount: 8,
+        },
+      ],
+      columns: [
+        {
+          database: "project",
+          schema: "archive",
+          object: "orders",
+          name: "id",
+          dataType: "BIGINT",
+          position: 0,
+          nullable: false,
+        },
+      ],
+    });
+    vi.mocked(listSources).mockResolvedValue([
+      {
+        id: "source-main",
+        projectId: "project-1",
+        displayName: "orders",
+        kind: "linked_parquet",
+        state: "missing",
+        sourcePath: "/data/missing.parquet",
+        duckdbName: "orders",
+        options: {},
+        createdAt: "1",
+        updatedAt: "1",
+      },
+    ]);
+    render(<App />);
+
+    const row = await screen.findByRole("treeitem", { name: "orders table" });
+    fireEvent.keyDown(row, { key: "p", altKey: true });
+    expect(await screen.findByRole("region", { name: "Profile orders" })).toBeInTheDocument();
+    expect(screen.getByText("DuckDB object")).toBeInTheDocument();
+  });
+
+  it("does not guess source identity when two databases expose the same main object", async () => {
+    vi.mocked(getActiveProject).mockResolvedValue({
+      id: "project-1",
+      name: "Local analysis",
+      duckdbPath: "/data/project.duckdb",
+    });
+    vi.mocked(inspectProjectCatalog).mockResolvedValue({
+      revision: "catalog-1",
+      objects: [
+        {
+          database: "project",
+          schema: "main",
+          name: "orders",
+          kind: "table",
+          estimatedRowCount: 8,
+        },
+        {
+          database: "attached",
+          schema: "main",
+          name: "orders",
+          kind: "table",
+          estimatedRowCount: 5,
+        },
+      ],
+      columns: [
+        {
+          database: "project",
+          schema: "main",
+          object: "orders",
+          name: "id",
+          dataType: "BIGINT",
+          position: 0,
+          nullable: false,
+        },
+        {
+          database: "attached",
+          schema: "main",
+          object: "orders",
+          name: "id",
+          dataType: "BIGINT",
+          position: 0,
+          nullable: false,
+        },
+      ],
+    });
+    vi.mocked(listSources).mockResolvedValue([
+      {
+        id: "source-main",
+        projectId: "project-1",
+        displayName: "orders",
+        kind: "linked_parquet",
+        state: "missing",
+        sourcePath: "/data/missing.parquet",
+        duckdbName: "orders",
+        options: {},
+        createdAt: "1",
+        updatedAt: "1",
+      },
+    ]);
+    render(<App />);
+
+    const rows = await screen.findAllByRole("treeitem", { name: "orders table" });
+    fireEvent.keyDown(rows[0], { key: "p", altKey: true });
+    expect(await screen.findByRole("region", { name: "Profile orders" })).toBeInTheDocument();
+    expect(screen.getByText("DuckDB object")).toBeInTheDocument();
+  });
+
+  it("removes the mounted SQL workspace from layout while Quality checks is open", async () => {
+    vi.mocked(getActiveProject).mockResolvedValue({
+      id: "project-1",
+      name: "Local analysis",
+      duckdbPath: "/data/project.duckdb",
+    });
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /Quality checks/ }));
+    expect(
+      await screen.findByRole("region", { name: "Quality checks workspace" }),
+    ).toBeInTheDocument();
+    const sqlWorkspace = document.querySelector<HTMLElement>('section[aria-label="SQL workspace"]');
+    expect(sqlWorkspace).toHaveAttribute("hidden");
+    expect(window.getComputedStyle(sqlWorkspace!).display).toBe("none");
   });
 
   it("deletes a table from the project and refreshes Explorer", async () => {

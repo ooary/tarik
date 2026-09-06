@@ -8,6 +8,7 @@ import {
 } from "@phosphor-icons/react";
 import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useRef, useState } from "react";
+import tarikLogo from "./assets/tarik-logo.png";
 import "./App.css";
 import {
   ConfirmationDialog,
@@ -537,7 +538,7 @@ function App() {
     trigger: HTMLElement | null = null,
   ) {
     if (!project || !catalog.revision) return;
-    const source = sources.find((candidate) => candidate.duckdbName === object.name) ?? null;
+    const source = sourceForCatalogObject(sources, catalog.objects, object);
     const rowTrigger = trigger?.closest<HTMLElement>(".catalog-object-row");
     if (rowTrigger) profileTriggerRef.current = rowTrigger;
     setProfileHandoff(null);
@@ -555,10 +556,43 @@ function App() {
     window.requestAnimationFrame(() => profileTriggerRef.current?.focus());
   }
 
+  async function refreshProfileSetup() {
+    if (!project || !profileIntent) return;
+    const [nextCatalog, nextSources] = await Promise.all([
+      inspectProjectCatalog(),
+      listSources(project.id),
+    ]);
+    const nextObject = nextCatalog.objects.find(
+      (candidate) =>
+        candidate.database === profileIntent.object.database &&
+        candidate.schema === profileIntent.object.schema &&
+        candidate.name === profileIntent.object.name &&
+        candidate.kind === profileIntent.object.kind,
+    );
+    setCatalog(nextCatalog);
+    setSources(nextSources);
+    if (!nextObject || !nextCatalog.revision) {
+      throw new Error("catalog.stale: This table or view is no longer available.");
+    }
+    const nextSource = sourceForCatalogObject(nextSources, nextCatalog.objects, nextObject);
+    setProfileIntent({
+      projectId: project.id,
+      object: { ...nextObject },
+      source: nextSource ? { ...nextSource, options: { ...nextSource.options } } : null,
+      catalogRevision: nextCatalog.revision,
+    });
+  }
+
   function beginProfileCheck(prefill: ProfileCheckPrefill) {
     setProfileHandoff(prefill);
     setProfileIntent(null);
     setChecksOpen(true);
+  }
+
+  function openProfileSql(sql: string, title: string) {
+    setProfileIntent(null);
+    setProfileHandoff(null);
+    queryWorkspaceActionsRef.current?.openPreview(sql, title);
   }
 
   function closeChecks() {
@@ -574,8 +608,7 @@ function App() {
 
   function removeCatalogObject(object: ProjectCatalog["objects"][number]) {
     if (!project) return;
-    const sourceMetadata =
-      sources.find((source) => source.duckdbName === object.name) ?? null;
+    const sourceMetadata = sourceForCatalogObject(sources, catalog.objects, object);
     if (object.kind === "view" && sourceMetadata?.kind === "linked_parquet") {
       removeSource(sourceMetadata);
       return;
@@ -670,7 +703,7 @@ function App() {
           >
             <ListIcon aria-hidden="true" size={17} weight="regular" />
           </button>
-          <span className="brand-mark" aria-hidden="true">T</span>
+          <img alt="" aria-hidden="true" className="brand-logo" src={tarikLogo} />
           <span className="brand-name">Tarik</span>
         </div>
 
@@ -796,8 +829,10 @@ function App() {
                         column.schema === object.schema &&
                         column.object === object.name,
                     ).length;
-                    const sourceMetadata = sources.find(
-                      (source) => source.duckdbName === object.name,
+                    const sourceMetadata = sourceForCatalogObject(
+                      sources,
+                      catalog.objects,
+                      object,
                     );
                     const cachedRows =
                       typeof sourceMetadata?.options.rowCount === "number"
@@ -821,7 +856,7 @@ function App() {
                       },
                       {
                         label: "Profile data",
-                        disabled: !catalog.revision || sourceMetadata?.state === "missing",
+                        disabled: !canProfileCatalogObject(catalog.revision, sourceMetadata),
                         onSelect: () => openProfile(object),
                       },
                       {
@@ -862,7 +897,9 @@ function App() {
                           onKeyDown={(event) => {
                             if (event.altKey && event.key.toLowerCase() === "p") {
                               event.preventDefault();
-                              openProfile(object, event.currentTarget);
+                              if (canProfileCatalogObject(catalog.revision, sourceMetadata)) {
+                                openProfile(object, event.currentTarget);
+                              }
                             }
                           }}
                           aria-keyshortcuts="Alt+P"
@@ -1000,12 +1037,13 @@ function App() {
             object={profileIntent.object}
             onClose={closeProfile}
             onCreateCheck={beginProfileCheck}
+            onOpenSql={openProfileSql}
+            onRefresh={refreshProfileSetup}
             openedCatalogRevision={profileIntent.catalogRevision}
             project={project}
             source={profileIntent.source}
             sourceChanged={!sameSourceIdentity(
-              sources.find((candidate) => candidate.duckdbName === profileIntent.object.name) ??
-                null,
+              sourceForCatalogObject(sources, catalog.objects, profileIntent.object),
               profileIntent.source,
             )}
           />
@@ -1145,6 +1183,29 @@ function App() {
       </footer>
     </main>
   );
+}
+
+function sourceForCatalogObject(
+  sources: SourceRecord[],
+  objects: ProjectCatalog["objects"],
+  object: ProjectCatalog["objects"][number],
+): SourceRecord | null {
+  // Existing source metadata predates qualified catalog identity. Tarik creates
+  // imported tables and linked views unqualified in main. Associate it only
+  // when main.<name> resolves to one database, never by name alone.
+  if (object.schema !== "main") return null;
+  const matches = objects.filter(
+    (candidate) => candidate.schema === "main" && candidate.name === object.name,
+  );
+  if (matches.length !== 1 || matches[0].database !== object.database) return null;
+  return sources.find((source) => source.duckdbName === object.name) ?? null;
+}
+
+function canProfileCatalogObject(
+  catalogRevision: string | undefined,
+  source: SourceRecord | null,
+): boolean {
+  return Boolean(catalogRevision && source?.state !== "missing");
 }
 
 function sameSourceIdentity(current: SourceRecord | null, opened: SourceRecord | null): boolean {
