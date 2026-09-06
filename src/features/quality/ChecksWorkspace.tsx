@@ -273,6 +273,12 @@ export function ChecksWorkspace({
         </button>
       </header>
 
+      {operationError && (
+        <div className="check-operation-note" role="status">
+          {operationError}
+        </div>
+      )}
+
       <div className="checks-body">
         <aside aria-label="Saved quality checks" className="checks-list-pane">
           <label className="checks-search">
@@ -404,11 +410,6 @@ export function ChecksWorkspace({
                     {validation.map((message) => (
                       <span key={message}>{message}</span>
                     ))}
-                  </div>
-                )}
-                {operationError && (
-                  <div className="check-operation-note" role="status">
-                    {operationError}
                   </div>
                 )}
               </div>

@@ -232,6 +232,18 @@ describe("ChecksWorkspace", () => {
     expect(runQualityCheck).not.toHaveBeenCalled();
   });
 
+  it("prominently confirms a started saved check until the Runs workspace arrives", async () => {
+    const saved = definition();
+    vi.mocked(listQualityChecks).mockResolvedValue([saved]);
+    renderWorkspace();
+    fireEvent.click(await screen.findByRole("button", { name: "Run Order id required" }));
+    const notice = await screen.findByText(/Started “Order id required”/);
+    expect(notice.closest(".check-operation-note")).toHaveAttribute("role", "status");
+    expect(notice.closest(".check-operation-note")).toHaveTextContent(
+      "Run details appear in the Runs workspace.",
+    );
+  });
+
   it("requires confirmation before running a saved custom SQL check", async () => {
     const custom = definition({ kind: "custom_sql", sql: "SELECT * FROM orders WHERE id < 0" });
     vi.mocked(listQualityChecks).mockResolvedValue([custom]);

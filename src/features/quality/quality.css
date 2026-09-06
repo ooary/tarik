@@ -345,8 +345,7 @@
   gap: 6px !important;
 }
 
-.check-validation,
-.check-operation-note {
+.check-validation {
   display: grid;
   gap: 3px;
   margin: 0 12px 12px;
@@ -359,9 +358,19 @@
 }
 
 .check-operation-note {
-  color: var(--text-secondary);
-  border-color: var(--border-control);
-  background: var(--surface-control);
+  display: grid;
+  min-height: 44px;
+  align-content: center;
+  gap: 3px;
+  margin: 0;
+  border-bottom: 1px solid var(--border-default);
+  border-left: 3px solid var(--accent-solid);
+  padding: 11px 14px;
+  color: var(--text-primary);
+  background: var(--accent-soft);
+  font-size: 13px;
+  font-weight: 620;
+  line-height: 1.45;
 }
 
 .check-sql-pane {
