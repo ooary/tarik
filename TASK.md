@@ -2176,6 +2176,13 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
     - Show bounded history and simple outcome/duration trends without retaining or reconstructing historical row payloads. Clearing history does not delete definitions, projects, sources, or completed exports.
   - Acceptance: users can distinguish data failure from engine failure, inspect bounded examples, understand the expectation, correct the source/check, rerun explicitly, and verify a later pass without losing prior aggregate evidence.
   - Tests: mixed suite states, observed/expected wording, paged failure rows, truncation/NULL fidelity, immutable rerun, definition revision mismatch, restart restoration, missing-link repair, sidecar recovery, history retention/clear isolation, keyboard/focus, and zero residual preview cache.
+  - Implementation sequence:
+    - Add restart-safe `QualityRunDetail` compiled from the persisted aggregate run plus immutable revision; never persist failing rows.
+    - Rerun a selected historical run against its own revision, with custom SQL reconfirmation and explicit historical/current revision labels.
+    - Recompile historical failure SQL for an explicitly labeled current-data preview, add dedicated release, cap coordinator terminal records at 256 and tracked previews at 8, and keep one UI-owned preview.
+    - Add `Definitions | Runs` inside Quality Checks. A run switches to Runs, shows suite progress/status/elapsed/cancel, and refreshes bounded history without page navigation.
+    - Replace viewport/absolute SQL layout with container-responsive panes and explicit Checks/Definition/SQL narrow tabs.
+  - Manual gate: keep the combined T6 UI candidate local and uncommitted until the user reviews the real Tauri app and explicitly approves it.
   - Commit: `feat(quality): explain check failures and recovery`
 
 - [ ] **E14-T7 Review the complete beginner data-trust workflow**
@@ -2189,6 +2196,8 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: a beginner can explain what the profile measured, why a check passed or failed, what SQL established the result, and how to recover—without developer help, hidden execution, false exactness, data mutation, or unbounded memory/disk growth.
   - Tests: full frontend/Rust/docs/package gates plus profile/check golden workflow, fresh/schema-7 migration, real sidecar restart, Windows/Linux filesystem paths, large-table memory, repeated suite retention, cancellation/residue, and manual review checklist.
   - Commit: `docs(review): add beginner data trust checklist`
+  - Fixture: `tests/fixtures/e14/data-trust.sql`, `tests/fixtures/e14/expected-results.md`
+  - Manual gate: implementation and automated evidence may be completed locally, but T7 stays open until the user explicitly signs off the real-Tauri workflow. E13-T6 Windows acceptance remains separately open and blocks a final cross-platform claim.
   - Review: `docs/review/E14-PROFILES-QUALITY.md`
 
 **Explicitly deferred beyond E14:** Join/grain coaching and transformation-pipeline DAGs may be planned after E14 review. Generic AI chat, cloud integrations, automatic data repair, and silent SQL rewriting are not part of this EPIC.

@@ -40,8 +40,11 @@ X → DesignGraph<A, E, R>
 - `NullPolicy = fail_on_null | pass_on_null` where the check type permits a choice.
 - `QualityCheckDefinition`, immutable `CheckRevision`, and aggregate-only `CheckRun` retain project and revision identity.
 - `CheckOutcome = pass | fail | error | cancelled`.
-- `FailurePreviewRequest(runId, revisionId)` produces an ephemeral existing `ResultId`. It never collects all failures.
-- Named errors: `CatalogStale`, `SourceMissing`, `SessionMissing`, `ProfileBusy`, `ProfileInvalid`, `MetricUnsupported`, `CheckInvalid`, `SqlMutating`, `HistoryWriteFailed`, `Cancelled`.
+- `QualityRunDetail(run, checkName, revisionNumber, currentRevisionNumber, revision, countSql, failureSql, isLatestRevision)`: restart-safe evidence reconstructed from the persisted aggregate run and its immutable typed revision. SQL compilation is deterministic, so the detail contains the exact revision-bound count and failure statements without persisting another SQL copy.
+- `SuitePresentation(runIds 0..200, startedAt, statusCounts)`: desktop-owned progress for one explicit suite submission. Each run remains independently durable and cancellable.
+- `FailurePreviewRequest(projectId, runId)` produces an ephemeral existing `ResultId` by recompiling the run's immutable revision. It is labeled as a current-data preview, never as historical failing rows, and never collects all failures.
+- `RecoveryAction = edit_check | profile_target | repair_link | open_sql | retry_after_restart`: deterministic navigation only. It never mutates data or automatically executes SQL.
+- Named errors: `CatalogStale`, `SourceMissing`, `SessionMissing`, `ProfileBusy`, `ProfileInvalid`, `MetricUnsupported`, `CheckInvalid`, `SqlMutating`, `RunMissing`, `RevisionMissing`, `PreviewBusy`, `HistoryWriteFailed`, `Cancelled`.
 
 ### Metric applicability and provenance
 
@@ -148,10 +151,28 @@ Count terminal status (T) → finalize CheckRun exactly once (1) → render obse
 ├─ A: pass/fail is a valid assertion result; error means not evaluated
 └─ A: session remains usable after pass/fail/error/cancel
 
-Failed run (1) → explicit failure preview request (1) → existing bounded ResultId pages (N)
-│ R: immutable revision SQL, 500-row pages, 12-page desktop LRU
-├─ E: missing revision/non-failed run ↯escape(preview refused)
-└─ A: preview released on close/supersede/restart/shutdown
+Persisted run id (1) → load aggregate run + immutable revision (1) → compile run detail (1) → render evidence (1)
+│ R: SQLite metadata, deterministic Rust compiler, current definition revision number
+├─ E: RunMissing | RevisionMissing ↯escape(history changed; refresh bounded list)
+├─ A: historical run remains bound to its own revision after definition edits and restart
+└─ A: SQL evidence is reconstructed but not executed
+
+Historical rerun (1) → resolve the selected run's revision (1) → explicit custom confirmation when needed (1) → submit that revision (1)
+│ R: active project/session, immutable revision, QualityCoordinator
+├─ E: custom confirmation declined ↯escape(no execution)
+└─ A: new aggregate run references the selected historical revision, not the latest definition
+
+Failed persisted run (1) → explicit current-data failure preview request (1) → compile immutable revision SQL (1) → existing bounded ResultId pages (N)
+│ R: 500-row pages, 12-page desktop LRU, one UI-owned preview at a time
+├─ E: missing revision/non-failed run/preview limit ↯escape(preview refused)
+├─ A: label = Current-data preview using revision N
+└─ A: dedicated release on close/supersede; no historical row-fidelity claim
+
+Run one | suite submission (1) → switch Definitions to Runs (1) → non-overlapping status polls (T) → terminal detail/history refresh (1)
+│ R: text-plus-color states, 1 Hz elapsed display, bounded 200-check suite
+├─ E: one run error ↯escape(explain error; other suite runs remain visible)
+├─ E: status transport failure ⟳retry; preserve last truthful state
+└─ A: queued/running/passed/failed/error/cancelled counts and per-check outcomes
 ```
 
 ### Recovery and lifecycle
@@ -165,13 +186,21 @@ catalog/source changes (N)
 project close | sidecar restart | shutdown (N)
 ├─ cancel active profile/check/preview work
 ├─ release result pages and cloned connections
-├─ preserve definitions, revisions, and aggregate terminal history
+├─ prune the coordinator to at most 256 terminal execution records and 8 tracked previews
+├─ preserve definitions, revisions, deterministic SQL evidence, and aggregate terminal history
 └─ lose ephemeral Profile values and failure rows by design
+
+terminal run | missing object | missing column | missing linked file | engine loss (N)
+├─ valid assertion failure: explain observed failures versus expected zero and offer Preview/Profile/Open SQL
+├─ catalog/type mismatch: offer Edit check or Profile target
+├─ linked-source error: offer Repair link through the existing source flow
+├─ engine interruption/loss: offer explicit rerun after recovery
+└─ every action navigates or prepares evidence; none executes or repairs automatically
 ```
 
 ## CARDINALITY
 
-Explorer actions (N) · Profile open (1 per intent) · setup edits (N) · Profile submission (1 per run) · active profile (at most 1 per session) · status polls (T) · row-count statements (1) · scalar batches (N, at most ceil(columns/25)) · value-list statements (N, at most 2 per column) · evidence records (N, same statement bound) · definition revisions (1 per save) · suite jobs (N ordered) · terminal history row (1 per started check) · preview pages (N bounded).
+Explorer actions (N) · Profile open (1 per intent) · setup edits (N) · Profile submission (1 per run) · active profile (at most 1 per session) · status polls (T) · row-count statements (1) · scalar batches (N, at most ceil(columns/25)) · value-list statements (N, at most 2 per column) · evidence records (N, same statement bound) · definition revisions (1 per save) · suite submission (1, at most 200 ordered run ids) · suite jobs (N ordered) · status polls (T, non-overlapping) · terminal history row (1 per started check) · history page (N, 25 per desktop request and 100 maximum backend) · coordinator terminal records (N, at most 256) · tracked previews (N, at most 8 backend and one UI-owned) · preview pages (N bounded at 500 rows per page).
 
 ## BOUNDARIES
 
@@ -181,7 +210,9 @@ Explorer actions (N) · Profile open (1 per intent) · setup edits (N) · Profil
 - Profile SQL evidence 🔒 sidecar-generated exact executed SQL. It is data-free, response-bounded, and never logged.
 - Custom check SQL 🔒 exactly one read-only result-producing statement; DDL, DML, COPY, ATTACH, INSTALL, and external/mutating effects are rejected.
 - SQLite 🔒 bounded project-scoped definitions, immutable revisions, and aggregate facts only.
-- Failure rows 🔒 existing Arrow page format and desktop safe-value decoding; never profile IPC or SQLite.
+- Run detail request 🔒 active project plus persisted run ownership; the backend resolves revision identity and compiles SQL rather than accepting SQL from the UI.
+- Historical rerun request 🔒 persisted run identity to immutable revision; the UI cannot substitute a latest revision or statement.
+- Failure rows 🔒 persisted failed-run identity to deterministic revision SQL, then existing Arrow page format and desktop safe-value decoding; never profile IPC or SQLite.
 - Logs 🔒 stable IDs, codes, states, and durations only. No SQL, accepted values, metric values, examples, or failing rows.
 
 ## BEHAVIOR
@@ -190,7 +221,9 @@ Explorer actions (N) · Profile open (1 per intent) · setup edits (N) · Profil
 - ⛈ cancellation wraps active analytical work through DuckDB `InterruptHandle`.
 - ⛈ provenance teaching wraps every present metric and check observation.
 - ⛈ accessibility wraps workspaces: real button/list/table semantics, keyboard-complete actions, focus restoration, text plus color states, and no tooltip-only meaning.
-- ⛈ responsive composition uses the Profile container width. At narrow widths, Explorer may collapse and Evidence becomes a tab/drawer; teaching content remains reachable.
+- ⛈ responsive composition uses each workspace container width, never viewport media queries. Checks authoring shows all three panes when space permits and switches to explicit Checks, Definition, and SQL tabs when narrow. Runs uses bounded run-list and detail surfaces with the same narrow-width rule.
+- ⛈ run polling is non-overlapping. A transient transport error preserves the last truthful run state and retries; terminal states trigger one bounded metadata refresh.
+- ⛈ current-data preview language wraps every historical preview. No UI path calls ephemeral rows historical evidence.
 - ⛈ structured logging is bounded and redacted.
 
 ## SCOPE
@@ -200,8 +233,10 @@ Explorer actions (N) · Profile open (1 per intent) · setup edits (N) · Profil
 - Deadline helper acquire@worker claim → signal/release@terminal.
 - ProfileSnapshot values/evidence acquire@success → release@workspace close/project change; never persisted.
 - CheckRevision acquire@save → retain@history references → delete only through bounded metadata policy.
-- CheckRun acquire@start → finalize exactly-once@terminal → release@retention/clear history.
-- Failure ResultId acquire@explicit preview → release@close|supersede|cache clear|restart|shutdown.
+- CheckRun acquire@start → finalize exactly-once@terminal → retain aggregate@bounded history → release@retention/clear history.
+- Coordinator execution record acquire@submission → retain while active plus bounded terminal reopening → prune oldest terminal@over 256.
+- SuitePresentation acquire@explicit suite run → release@new suite/workspace close/project change; persisted component runs remain in history.
+- Failure ResultId acquire@explicit current-data preview → release@close|supersede|dedicated release|cache clear|restart|shutdown.
 
 ## TEST LAYERS
 
@@ -213,11 +248,13 @@ R = {
 - Sidecar lifecycle tests for busy exclusion, queued/running/terminal state, cancel, deadline, catalog staleness, missing links, and zero result artifacts.
 - App tests proving pointer and Alt+P use the same eligibility predicate and legacy source metadata never crosses schema identity.
 - Profile tests for no-auto-run, 12-column default, searchable selection, transient poll recovery, non-duplicated terminal errors, column grouping, value/count lists, SQL Copy/Open without execution, check handoff, focus, and narrow container behavior.
-- Check tests for all variants, live catalog validation, immutable SQL/revisions, explicit custom confirmation, run outcomes, preview paging/release, and recovery actions.
-- Manual real-Tauri review in light, dark, and 680×520 before any E14 UI correction is committed or pushed.
+- Check tests for all variants, live catalog validation, immutable SQL/revisions, explicit custom confirmation, run outcomes, durable run detail, historical revision rerun, restart-safe current-data preview, preview paging/release, coordinator bounds, and recovery actions.
+- A deterministic local data-trust fixture containing NULL, duplicate, range, accepted-value, stale-date, and unmatched-parent failures plus explicit repair SQL and expected outcomes.
+- Golden workflow automation proving fail → bounded preview → release → repair → pass while preserving the original aggregate run.
+- Manual real-Tauri review in light, dark, system, and 680x520 before the T6/T7 UI candidate is committed or pushed. Windows packaged review remains a separate open gate under E13-T6.
 
 }; production and tests use the same graph with R substituted.
 
 ## VERDICT
 
-The E14-T1 through T5 implementation was reconstructed on September 6, 2026. Persistence, check compilation, cancellation, bounded previews, and no-auto-run boundaries substantially match. The original graph did not match the dedicated Profile registry or the per-column statement cardinality, and T4/T5 automated tests did not establish visual approval. Remediation must make the statement bound and immutable SQL evidence true, fix object/source and keyboard eligibility bugs, replace the flat Profile metric table with the column/metrics/evidence composition, and obtain explicit manual approval before a UI commit or push. E14-T6 remains blocked on those remediation gates. E13-T6 Windows acceptance also remains open and is still required before E14 final acceptance.
+The Profile remediation matches the graph and received explicit real-Tauri approval on September 6, 2026. The Checks authoring baseline has temporary approval, with its responsive layout correction intentionally combined with T6. The pre-T6 implementation does not yet match the run graph: reopening depends on an unbounded in-memory coordinator record, historical previews fail after restart, preview release has no dedicated quality command, and no Runs presentation exists. T6 must close those mismatches, and T7 must add the deterministic workflow evidence and review packet. Automated evidence may establish implementation completeness but cannot self-approve the real-Tauri visual/manual gate. E13-T6 Windows acceptance remains open and prevents a final cross-platform E14 acceptance claim.
