@@ -56,6 +56,7 @@ interface QueryWorkspaceProps {
   catalog: ProjectCatalog;
   bottomOpen: boolean;
   bottomPanelHeight: number;
+  hidden?: boolean;
   onQuerySucceeded?: () => void | Promise<void>;
   onSetBottomHeight: (height: number) => void;
   onToggleBottom: () => void;
@@ -69,6 +70,7 @@ export const QueryWorkspace = forwardRef<QueryWorkspaceHandle, QueryWorkspacePro
       catalog,
       bottomOpen,
       bottomPanelHeight,
+      hidden = false,
       onQuerySucceeded,
       onSetBottomHeight,
       onToggleBottom,
@@ -279,7 +281,12 @@ export const QueryWorkspace = forwardRef<QueryWorkspaceHandle, QueryWorkspacePro
     }, [bottomPanelHeight]);
 
     return (
-      <section ref={sectionRef} aria-label="SQL workspace" className="query-workspace">
+      <section
+        ref={sectionRef}
+        aria-label="SQL workspace"
+        className="query-workspace"
+        hidden={hidden}
+      >
         <div className="query-tabs" role="tablist" aria-label="Query tabs">
           {tabs.map((tab, index) => {
             const close = () => {

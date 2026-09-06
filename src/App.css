@@ -175,6 +175,39 @@ button:active {
   pointer-events: auto;
 }
 
+.profile-handoff {
+  position: fixed;
+  z-index: 18;
+  right: 14px;
+  bottom: 38px;
+  display: grid;
+  width: min(430px, calc(100vw - 28px));
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 10px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-control);
+  padding: 10px;
+  color: var(--text-primary);
+  background: var(--surface-raised);
+  box-shadow: 0 12px 36px rgb(8 13 10 / 22%);
+}
+
+.profile-handoff > div {
+  display: grid;
+  gap: 3px;
+}
+
+.profile-handoff span,
+.profile-handoff small {
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+.profile-handoff small {
+  color: var(--text-muted);
+}
+
 .shutdown-recovery {
   position: fixed;
   z-index: 19;
@@ -742,6 +775,13 @@ button:disabled {
   min-height: 26px;
   width: 26px;
   opacity: 0.62;
+}
+
+.catalog-object-row:focus-visible {
+  color: var(--text-primary);
+  background: var(--surface-hover);
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
 }
 
 .tree-row:hover .tree-row-actions,

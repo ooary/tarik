@@ -2071,7 +2071,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Commit: `feat(quality): run cancellable data quality suites`
   - Notes: Added deterministic safely quoted SQL for all eight check types, explicit NULL-policy compilation, sidecar `quality.validate_read_only` bind validation for custom SQL, ordered per-check suite observation boundaries, a dedicated desktop quality state machine, exactly-once aggregate terminal history, and explicit immutable failure previews through existing bounded result pages. Count artifacts are always released; preview jobs are tracked for cancellation/resources/shutdown and never auto-run. Real-sidecar tests cover pass/fail → preview → release → repair → pass and the SQL/count/preview matrix.
 
-- [ ] **E14-T4 Add a beginner-focused Profile workspace**
+- [x] **E14-T4 Add a beginner-focused Profile workspace**
   - Depends on: E14-T1
   - Owns: Explorer Profile action, profile workspace, provenance/cost language, accessibility, and component tests
   - Deliverables:
@@ -2084,6 +2084,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: a beginner can profile a table, identify one concrete issue, state whether each number is exact/approximate/sampled, cancel a slow scan, and reach a prefilled but unexecuted check.
   - Tests: no-auto-run, empty/loading/progress/success/partial-unavailable/error/cancel/stale states, metric provenance, unsupported types, bounded expansion, context scope, keyboard/focus, theme/minimum viewport, and profile-to-check handoff.
   - Commit: `feat(profile): add beginner data profile workspace`
+  - Notes: Added Profile data to supported table/view menus plus an `Alt+P` Explorer action, with immutable project/object/catalog/source capture and focus restoration. Opening Profile never scans; explicit Run/Cancel drives the typed bounded profile lifecycle with non-overlapping polling and cancellation on exit. The dense metric table labels Exact/Approximate/Sampled values, distinguishes absent metrics as not applicable with a reason, hides bounded common/sample values until expansion, exposes copy actions and truncation, and explains NULL/distinct/range/distribution semantics. Requests freeze at 100 selected columns and controls freeze in flight. Catalog/source drift refuses rerun until the workspace is reopened. Supported observations produce a typed, review-only `QualityCheckDraft` handoff without metadata writes or execution. Query workspace state remains mounted and hidden while Profile is open. Verified by 34 command tests, 178 UI tests, lint (only two pre-existing warnings), typecheck, formatting/docs checks, and production build.
 
 - [ ] **E14-T5 Add guided quality-check authoring and SQL teaching**
   - Depends on: E14-T2, E14-T3, E14-T4

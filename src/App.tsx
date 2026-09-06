@@ -22,6 +22,10 @@ import { formatCompactCount } from "./features/sources/format";
 import { ImportDialog, type SourceAction } from "./features/sources/ImportDialog";
 import { NewTableDialog } from "./features/sources/NewTableDialog";
 import { EngineResourcesDialog } from "./features/settings/EngineResourcesDialog";
+import {
+  ProfileWorkspace,
+  type ProfileCheckPrefill,
+} from "./features/profile/ProfileWorkspace";
 import { SupportIncidentNotice } from "./app/SupportIncidentNotice";
 import {
   createWorkbenchPreferencesRepository,
@@ -91,6 +95,13 @@ type AppTextIntent =
   | { kind: "open-project"; duckdbPath: string; value: string }
   | { kind: "rename-project"; project: RecentProject; value: string };
 
+type ProfileIntent = {
+  projectId: string;
+  object: ProjectCatalog["objects"][number];
+  source: SourceRecord | null;
+  catalogRevision: string;
+};
+
 type AppConfirmIntent =
   | { kind: "remove-source"; projectId: string; source: SourceRecord }
   | {
@@ -148,6 +159,9 @@ function App() {
   const [confirmIntent, setConfirmIntent] = useState<AppConfirmIntent | null>(null);
   const [interactionBusy, setInteractionBusy] = useState(false);
   const [interactionError, setInteractionError] = useState<string | null>(null);
+  const [profileIntent, setProfileIntent] = useState<ProfileIntent | null>(null);
+  const [profileHandoff, setProfileHandoff] = useState<ProfileCheckPrefill | null>(null);
+  const profileTriggerRef = useRef<HTMLElement | null>(null);
   const shutdownInFlight = useRef(false);
   const [preferences, setPreferences] = useState<WorkbenchPreferences>(defaultWorkbenchPreferences);
   const { bottomPanelOpen: bottomOpen, sidebarOpen } = preferences;
@@ -515,6 +529,33 @@ function App() {
     setConfirmIntent({ kind: "remove-source", projectId: project.id, source });
   }
 
+  function openProfile(
+    object: ProjectCatalog["objects"][number],
+    trigger: HTMLElement | null = null,
+  ) {
+    if (!project || !catalog.revision) return;
+    const source = sources.find((candidate) => candidate.duckdbName === object.name) ?? null;
+    const rowTrigger = trigger?.closest<HTMLElement>(".catalog-object-row");
+    if (rowTrigger) profileTriggerRef.current = rowTrigger;
+    setProfileHandoff(null);
+    setProfileIntent({
+      projectId: project.id,
+      object: { ...object },
+      source: source ? { ...source, options: { ...source.options } } : null,
+      catalogRevision: catalog.revision,
+    });
+  }
+
+  function closeProfile() {
+    setProfileIntent(null);
+    setProfileHandoff(null);
+    window.requestAnimationFrame(() => profileTriggerRef.current?.focus());
+  }
+
+  function beginProfileCheck(prefill: ProfileCheckPrefill) {
+    setProfileHandoff(prefill);
+  }
+
   function removeCatalogObject(object: ProjectCatalog["objects"][number]) {
     if (!project) return;
     const sourceMetadata =
@@ -709,7 +750,7 @@ function App() {
 
           </div>
 
-          <div className="source-tree">
+          <div className="source-tree" role="tree">
             <div className="tree-section-title">Project catalog</div>
             {project ? (
               <>
@@ -751,6 +792,11 @@ function App() {
                         onSelect: () => queryWorkspaceActionsRef.current?.insertSql(qualifiedName),
                       },
                       {
+                        label: "Profile data",
+                        disabled: !catalog.revision || sourceMetadata?.state === "missing",
+                        onSelect: () => openProfile(object),
+                      },
+                      {
                         label: "Preview rows",
                         onSelect: () =>
                           queryWorkspaceActionsRef.current?.openPreview(
@@ -772,10 +818,30 @@ function App() {
                       },
                     ];
                     return (
-                      <div
-                        className="tree-row tree-row-child catalog-object-row"
+                      <ContextMenu
+                        items={items}
                         key={`${object.database}.${object.schema}.${object.name}`}
+                        label={`${object.name} catalog actions`}
                       >
+                        <div
+                          className="tree-row tree-row-child catalog-object-row"
+                          onContextMenu={(event) => {
+                            profileTriggerRef.current = event.currentTarget;
+                          }}
+                          onFocusCapture={(event) => {
+                            profileTriggerRef.current = event.currentTarget;
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.altKey && event.key.toLowerCase() === "p") {
+                              event.preventDefault();
+                              openProfile(object, event.currentTarget);
+                            }
+                          }}
+                          aria-keyshortcuts="Alt+P"
+                          aria-label={`${object.name} ${object.kind}`}
+                          role="treeitem"
+                          tabIndex={0}
+                        >
                         <SourceIcon kind="table" />
                         <span title={`${object.schema}.${object.name}`}>{object.name}</span>
                         <span className="row-meta-group">
@@ -791,7 +857,8 @@ function App() {
                             </button>
                           }
                         />
-                      </div>
+                        </div>
+                      </ContextMenu>
                     );
                   })
                 )}
@@ -891,6 +958,22 @@ function App() {
         </aside>
 
         <div aria-hidden="true" className="sidebar-resize-handle" onPointerDown={resizeSidebar} />
+        {profileIntent && project?.id === profileIntent.projectId && (
+          <ProfileWorkspace
+            catalog={catalog}
+            object={profileIntent.object}
+            onClose={closeProfile}
+            onCreateCheck={beginProfileCheck}
+            openedCatalogRevision={profileIntent.catalogRevision}
+            project={project}
+            source={profileIntent.source}
+            sourceChanged={!sameSourceIdentity(
+              sources.find((candidate) => candidate.duckdbName === profileIntent.object.name) ??
+                null,
+              profileIntent.source,
+            )}
+          />
+        )}
         <QueryWorkspace
           bottomOpen={bottomOpen}
           bottomPanelHeight={preferences.bottomPanelHeight}
@@ -900,6 +983,7 @@ function App() {
           onSetBottomHeight={(height) => updatePreferences({ bottomPanelHeight: height })}
           onToggleBottom={() => updatePreferences({ bottomPanelOpen: !bottomOpen })}
           effectiveTheme={effectiveTheme}
+          hidden={Boolean(profileIntent && project?.id === profileIntent.projectId)}
           projectId={project?.id ?? ""}
           ref={queryWorkspaceActionsRef}
         />
@@ -969,6 +1053,29 @@ function App() {
         />
       )}
 
+      {profileHandoff && (
+        <aside aria-label="Prefilled quality check" className="profile-handoff" role="status">
+          <div>
+            <strong>Check draft ready for review</strong>
+            <span>
+              {profileHandoff.draft.name} · {profileHandoff.draft.options.kind.split("_").join(" ")}
+            </span>
+            <small>
+              Nothing was saved or run. The guided Checks builder will require review before either
+              action.
+            </small>
+          </div>
+          <button
+            aria-label="Dismiss profile check handoff"
+            className="icon-button"
+            onClick={() => setProfileHandoff(null)}
+            type="button"
+          >
+            ×
+          </button>
+        </aside>
+      )}
+
       {shutdownError && (
         <div className="shutdown-recovery" role="alertdialog" aria-label="Draft could not be saved">
           <strong>Tarik could not save the latest draft</strong>
@@ -999,6 +1106,18 @@ function App() {
         <span className="status-bar-right"><EngineResourcesDialog key={resourceStatusKey} statusKey={resourceStatusKey} /><span>UTF-8</span></span>
       </footer>
     </main>
+  );
+}
+
+function sameSourceIdentity(current: SourceRecord | null, opened: SourceRecord | null): boolean {
+  if (!current || !opened) return current === opened;
+  return (
+    current.id === opened.id &&
+    current.projectId === opened.projectId &&
+    current.kind === opened.kind &&
+    current.state === opened.state &&
+    current.sourcePath === opened.sourcePath &&
+    current.duckdbName === opened.duckdbName
   );
 }
 

@@ -12,6 +12,7 @@ import {
   createProject,
   createTable,
   dropCatalogObject,
+  executeProfile,
   getActiveProject,
   getEngineStatus,
   getEngineResources,
@@ -19,6 +20,7 @@ import {
   getRuntimeInfo,
   getTabExecution,
   getLogInfo,
+  getProfileStatus,
   getWorkbenchPreferences,
   importSourceTable,
   inspectProjectCatalog,
@@ -48,6 +50,7 @@ vi.mock("@tauri-apps/api/event", () => ({
 }));
 
 vi.mock("./lib/commands", () => ({
+  cancelProfile: vi.fn(),
   cancelSourceOperation: vi.fn(),
   clearCache: vi.fn(),
   chooseDuckDbFile: vi.fn(),
@@ -58,6 +61,7 @@ vi.mock("./lib/commands", () => ({
   createProject: vi.fn(),
   createTable: vi.fn(),
   dropCatalogObject: vi.fn(),
+  executeProfile: vi.fn(),
   getActiveProject: vi.fn(),
   getEngineStatus: vi.fn(),
   getEngineResources: vi.fn(),
@@ -66,6 +70,7 @@ vi.mock("./lib/commands", () => ({
   getRuntimeInfo: vi.fn(),
   getTabExecution: vi.fn(),
   getLogInfo: vi.fn(),
+  getProfileStatus: vi.fn(),
   getWorkbenchPreferences: vi.fn(),
   importSourceTable: vi.fn(),
   inspectProjectCatalog: vi.fn(),
@@ -130,6 +135,14 @@ describe("Tarik workbench shell", () => {
       maximumThreads: 256,
     });
     vi.mocked(getTabExecution).mockResolvedValue(null);
+    vi.mocked(executeProfile).mockResolvedValue({
+      profileId: "profile-1",
+      state: "queued",
+      durationMs: 0,
+      snapshot: null,
+      error: null,
+    });
+    vi.mocked(getProfileStatus).mockResolvedValue(null);
     vi.mocked(inspectProjectCatalog).mockResolvedValue({ objects: [], columns: [] });
     vi.mocked(loadQuerySession).mockResolvedValue(null);
     vi.mocked(saveQuerySession).mockResolvedValue(undefined);
@@ -417,6 +430,113 @@ describe("Tarik workbench shell", () => {
     expect(screen.getByTitle("Estimated: 1,200 rows")).toBeInTheDocument();
     expect(chooseDuckDbFile).toHaveBeenCalled();
     expect(openProject).toHaveBeenCalledWith("Existing", "/data/existing.duckdb");
+  });
+
+  it("opens Profile from supported Explorer menu and keyboard actions without scanning", async () => {
+    vi.mocked(getActiveProject).mockResolvedValue({
+      id: "project-1",
+      name: "Local analysis",
+      duckdbPath: "/data/project.duckdb",
+    });
+    vi.mocked(inspectProjectCatalog).mockResolvedValue({
+      revision: "catalog-1",
+      objects: [
+        {
+          database: "project",
+          schema: "main",
+          name: "orders",
+          kind: "table",
+          estimatedRowCount: 3,
+        },
+      ],
+      columns: [
+        {
+          database: "project",
+          schema: "main",
+          object: "orders",
+          name: "id",
+          dataType: "BIGINT",
+          position: 0,
+          nullable: false,
+        },
+      ],
+    });
+    render(<App />);
+
+    const row = await screen.findByRole("treeitem", { name: "orders table" });
+    fireEvent.pointerDown(screen.getByRole("button", { name: "orders table actions" }), {
+      button: 0,
+      ctrlKey: false,
+    });
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Profile data" }));
+    expect(await screen.findByRole("region", { name: "Profile orders" })).toBeInTheDocument();
+    const preservedSqlWorkspace = document.querySelector<HTMLElement>(
+      'section[aria-label="SQL workspace"]',
+    );
+    expect(preservedSqlWorkspace).toHaveAttribute("hidden");
+    expect(executeProfile).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Back to query editor" }));
+    await waitFor(() => expect(row).toHaveFocus());
+    expect(screen.getByRole("region", { name: "SQL workspace" })).toBe(preservedSqlWorkspace);
+
+    fireEvent.keyDown(row, { key: "p", altKey: true });
+    expect(await screen.findByRole("region", { name: "Profile orders" })).toBeInTheDocument();
+    expect(executeProfile).not.toHaveBeenCalled();
+  });
+
+  it("does not offer Profile for a missing linked source", async () => {
+    vi.mocked(getActiveProject).mockResolvedValue({
+      id: "project-1",
+      name: "Local analysis",
+      duckdbPath: "/data/project.duckdb",
+    });
+    vi.mocked(inspectProjectCatalog).mockResolvedValue({
+      revision: "catalog-1",
+      objects: [
+        {
+          database: "project",
+          schema: "main",
+          name: "orders_link",
+          kind: "view",
+          estimatedRowCount: null,
+        },
+      ],
+      columns: [
+        {
+          database: "project",
+          schema: "main",
+          object: "orders_link",
+          name: "id",
+          dataType: "BIGINT",
+          position: 0,
+          nullable: true,
+        },
+      ],
+    });
+    vi.mocked(listSources).mockResolvedValue([
+      {
+        id: "source-2",
+        projectId: "project-1",
+        displayName: "orders_link",
+        kind: "linked_parquet",
+        state: "missing",
+        sourcePath: "/data/missing.parquet",
+        duckdbName: "orders_link",
+        options: {},
+        createdAt: "1",
+        updatedAt: "1",
+      },
+    ]);
+    render(<App />);
+
+    await screen.findByRole("treeitem", { name: "orders_link view" });
+    fireEvent.pointerDown(screen.getByRole("button", { name: "orders_link table actions" }), {
+      button: 0,
+      ctrlKey: false,
+    });
+    expect(await screen.findByRole("menuitem", { name: "Profile data" })).toHaveAttribute(
+      "data-disabled",
+    );
   });
 
   it("deletes a table from the project and refreshes Explorer", async () => {
