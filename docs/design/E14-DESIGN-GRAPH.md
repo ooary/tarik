@@ -2,244 +2,222 @@
 
 ## Design read
 
-Reading this as a dense local SQL workbench for beginner data engineers: profiles are teaching instruments, not dashboards. Every number must say what it measured, how it was measured, and what SQL proves it.
+Reading this as a dense local SQL workbench for beginner data engineers. Profiles are teaching instruments, not dashboards. Every number must say what it measured, how it was measured, and what SQL produced it.
 
 - `DESIGN_VARIANCE: 3`
 - `MOTION_INTENSITY: 2`
 - `VISUAL_DENSITY: 8`
-- Profile/check surfaces are calm dense tables on existing semantic tokens; no dashboard cards, no decorative charts, no gauges
-- Teaching rule: every metric and check outcome carries a provenance label (Exact / Approximate / Sampled) and a plain-language meaning; unavailable metrics are absent with a reason, never shown as zero
-- SQL rule: generated SQL is always visible, copyable, and openable in a new tab; copying or opening never executes anything; edits in the opened tab never alter the saved definition
+- Use the existing Tarik tokens, controls, typography, focus treatment, and one accent.
+- Use column navigation, metric groups, and progressive disclosure. Do not use decorative charts, gauges, dashboard cards, or a flat metric dump.
+- Generated profile/check SQL is visible, copyable, and openable without execution. Editing opened SQL never alters the profile snapshot or saved check.
+- E14 UI implementation remains unapproved until the user reviews the real Tauri app in light, dark, and minimum-viewport states.
 
-PROBLEM: Let beginners answer "What is in this data?", "Can I trust it?", and "What SQL proves it?" through explicit, local, cancellable profiles and reusable read-only quality checks.
+## PROBLEM
+
+Let beginners move through one explicit local data-trust loop: profile data, understand an observation, inspect its SQL evidence, create a reviewed check, run it, inspect bounded failures, repair, and rerun.
 
 X → DesignGraph<A, E, R>
 │ │ │ │
-│ │ │ └─ R: React feature state, SQLite, typed Tauri commands, sidecar job registry, DuckDB aggregate SQL, bounded result pages
-│ │ └──── E: stale catalog, missing links, unsupported types, oversized definitions, mutation attempts, cancellation, engine loss, history double-writes
-│ └─────── A: ProfileRequest, ProfileMetric, CheckDefinition, CheckRevision, CheckRun, FailurePreview
+│ │ │ └─ R: React workbench state, typed Tauri commands, SQLite, DuckDB sidecar, bounded profile/check registries, result paging
+│ │ └──── E: stale object, missing source, unsupported metric, invalid check, unsafe SQL, cancellation, engine loss, history conflict
+│ └─────── A: ProfileIntent, ProfileRequest, ProfileSnapshot, ProfileSqlEvidence, CheckRevision, CheckRun, FailurePreview
 │
 └─ nodes = functions, edges = data flow
 
 ## SHAPES
 
-- IDs: `ProjectId`, `SourceId`, `CatalogObjectId(database,schema,name,kind)`, `CheckId`, `CheckRevisionId`, `RunId`, `ResultId`
-- Identity snapshots:
-  - `CatalogRevision` — content-derived identity (object name, kind, column names/types) captured at request time; mismatch on return is staleness, not partial success
-  - `ProfileRequest(projectId, sessionId, object, selectedColumns ≤100, catalogRevision, mode)`
-  - `ProfileMetric(name, typedValue, provenance, absentReason?, observationNote?)`
-  - `ProfileSnapshot(object, catalogRevision, metrics, observedAt, durationMs, mode)`
-  - `MetricProvenance = exact | approximate | sampled`
-- Quality definitions (SQLite, project-scoped):
-  - `CheckType = not_empty | not_null | unique | accepted_values | range | relationship | freshness | custom_sql`
-  - `NullPolicy = fail_on_null | pass_on_null` (per-type defaults below)
-  - `QualityCheckDefinition(checkId, projectId, name, type, target, typedOptions, nullPolicy, severity = info|warning|critical, enabled, createdAt)`
-  - `CheckRevision(revisionId, immutable definition copy, supersededAt?)` — every update creates a new revision; runs reference the revision actually executed
-  - `CheckRun(runId, checkId, revisionId, outcome, failureCount, durationMs, observedAt, errorCode?)`
-  - `CheckOutcome = pass | fail | error | cancelled`
-- Failure previews: `FailurePreviewRequest(runId, revisionId)` → existing `ResultId`, 500-row Arrow pages, desktop 12-page LRU; never a full failure collection
-- Errors: `CatalogStale`, `SourceMissing`, `SessionMissing`, `EngineUnavailable`, `ProfileInvalid`, `MetricUnsupported`, `CheckInvalid`, `CheckStale`, `SqlMutating`, `HistoryWriteFailed`, `Cancelled` — all surfaced as stable codes; none fabricate partial success
+- IDs: `ProjectId`, `CatalogObjectId(database,schema,name,kind)`, `ProfileId`, `CheckId`, `CheckRevisionId`, `RunId`, `ResultId`.
+- `CatalogRevision`: content-derived catalog identity captured when Profile opens and submitted unchanged when it runs.
+- `ProfileIntent(projectId, object, sourceSnapshot?, openedCatalogRevision)`: opening it performs no scan.
+- `ProfileRequest(projectId, target, selectedColumns 1..100, catalogRevision, distinctMode)`.
+- `DistinctMode = approximate | exact`: this choice changes distinct-count SQL only.
+- `ProfileMetric(column?, kind, typedValue?, provenance, unavailableReason?, truncated)`.
+- `ProfileSqlEvidence(columns, metricKinds, sql)`: immutable exact SQL text executed for those metrics. Evidence values contain SQL only, never returned data.
+- `ProfileSnapshot(target, catalogRevision, metrics, statements, observedAt, distinctMode)`.
+- `MetricProvenance = exact | approximate | sampled`.
+- `ProfileState = queued | running | succeeded | failed | cancelled`.
+- `CheckType = not_empty | not_null | unique | accepted_values | range | relationship | freshness | custom_sql`.
+- `NullPolicy = fail_on_null | pass_on_null` where the check type permits a choice.
+- `QualityCheckDefinition`, immutable `CheckRevision`, and aggregate-only `CheckRun` retain project and revision identity.
+- `CheckOutcome = pass | fail | error | cancelled`.
+- `FailurePreviewRequest(runId, revisionId)` produces an ephemeral existing `ResultId`. It never collects all failures.
+- Named errors: `CatalogStale`, `SourceMissing`, `SessionMissing`, `ProfileBusy`, `ProfileInvalid`, `MetricUnsupported`, `CheckInvalid`, `SqlMutating`, `HistoryWriteFailed`, `Cancelled`.
 
-### Metric applicability matrix
+### Metric applicability and provenance
 
-Provenance defaults; `—` means the metric is absent with `absentReason`, never zero.
+| Metric                            | bool        | numeric                         | text                            | date/timestamp                  | binary/complex |
+| --------------------------------- | ----------- | ------------------------------- | ------------------------------- | ------------------------------- | -------------- |
+| Row count                         | Exact       | Exact                           | Exact                           | Exact                           | Exact          |
+| NULL count/rate                   | Exact       | Exact                           | Exact                           | Exact                           | Exact          |
+| Distinct count                    | Exact       | Approximate by default or Exact | Approximate by default or Exact | Approximate by default or Exact | Unavailable    |
+| Minimum/maximum                   | Unavailable | Exact                           | Use text length                 | Exact                           | Unavailable    |
+| Average                           | Unavailable | Exact                           | Unavailable                     | Unavailable                     | Unavailable    |
+| Text lengths                      | Unavailable | Unavailable                     | Exact                           | Unavailable                     | Unavailable    |
+| Common values, at most 20         | Exact       | Exact                           | Exact                           | Exact                           | Unavailable    |
+| Representative values, at most 20 | Sampled     | Sampled                         | Sampled                         | Sampled                         | Sampled        |
 
-| Metric                     | bool              | numeric                               | text                | date/timestamp      | binary  | list/struct |
-| -------------------------- | ----------------- | ------------------------------------- | ------------------- | ------------------- | ------- | ----------- |
-| Row count (table-level)    | exact             | exact                                 | exact               | exact               | exact   | exact       |
-| NULL count / rate          | exact             | exact                                 | exact               | exact               | exact   | exact       |
-| Distinct count             | exact (≤2 values) | approximate default, exact on request | approximate default | approximate default | —       | —           |
-| Min / max value            | —                 | exact                                 | — (use length)      | exact               | —       | —           |
-| Numeric summary (avg)      | —                 | exact                                 | —                   | —                   | —       | —           |
-| Text length min/max/avg    | —                 | —                                     | exact               | —                   | —       | —           |
-| Temporal range (min/max)   | —                 | —                                     | —                   | exact               | —       | —           |
-| Common values (top 20)     | exact             | exact                                 | exact               | exact               | —       | —           |
-| Representative values (20) | sampled           | sampled                               | sampled             | sampled             | sampled | sampled     |
+An unsupported metric carries one reason. The UI omits unsupported metric groups and offers the reason through the selected-column details; it never renders a misleading zero.
 
-Bounds: ≤100 columns per request, ≤20 common values per column, ≤20 representative values per column; every displayed value passes the existing safe-value truncation policy.
+### Check semantics
 
-### Check semantics and NULL policy defaults
-
-| Type            | Passes when                               | Default NULL policy | Rationale                                                             |
-| --------------- | ----------------------------------------- | ------------------- | --------------------------------------------------------------------- |
-| not_empty       | table/view has ≥1 row                     | (no columns)        | table-level fact                                                      |
-| not_null        | zero rows have NULL in column             | NULL always fails   | the check is the NULL policy                                          |
-| unique          | no value combination occurs >1            | pass_on_null        | matches SQL UNIQUE treating NULLs as distinct; `fail_on_null` offered |
-| accepted_values | every value is in the accepted list       | fail_on_null        | a NULL is a value the user did not accept; `pass_on_null` offered     |
-| range           | every value within min/max (numeric/date) | pass_on_null        | a NULL is absent, not out of range; `fail_on_null` offered            |
-| relationship    | every non-null child key exists in parent | pass_on_null        | optional keys stay optional; `fail_on_null` offered                   |
-| freshness       | latest max(col) is within threshold       | pass_on_null        | an all-NULL column is `CheckInvalid`, not a failure                   |
-| custom_sql      | statement returns zero failing rows       | (user SQL)          | validated read-only, exactly one statement                            |
-
-Canonical generated SQL shapes (identifiers pass only through the central quoting boundary; options are typed, never concatenated UI text):
-
-```sql
--- not_empty
-SELECT count(*) AS row_total FROM "tbl";
--- not_null (failure count; preview mirrors the WHERE)
-SELECT count(*) FROM "tbl" WHERE "col" IS NULL;
--- unique
-SELECT count(*) FROM (SELECT "k1","k2" FROM "tbl" GROUP BY ALL HAVING count(*) > 1) AS duplicates;
--- accepted_values (fail_on_null shown)
-SELECT count(*) FROM "tbl" WHERE "col" IS NULL OR "col" NOT IN (?, ?);
--- range
-SELECT count(*) FROM "tbl" WHERE "col" < ? OR "col" > ?;
--- relationship
-SELECT count(*) FROM "child" c LEFT JOIN "parent" p ON c."key" = p."key"
- WHERE c."key" IS NOT NULL AND p."key" IS NULL;
--- freshness (value compared against threshold at recorded observation time)
-SELECT max("col") AS latest FROM "tbl";
-```
-
-Custom SQL: exactly one read-only statement; rejected before execution with `SqlMutating` if it parses as DDL, DML, `COPY`, `ATTACH`, `INSTALL`, or any mutating/external effect, through the existing sidecar validation layer.
+| Type            | Passes when                                   | Default NULL behavior         |
+| --------------- | --------------------------------------------- | ----------------------------- |
+| not_empty       | table/view has at least one row               | no column policy              |
+| not_null        | zero rows contain NULL in the column          | NULL always fails             |
+| unique          | no selected value tuple occurs more than once | NULL passes by default        |
+| accepted_values | every tested value is in the accepted list    | NULL fails by default         |
+| range           | every tested value stays inside typed bounds  | NULL passes by default        |
+| relationship    | each tested child key exists in the parent    | NULL passes by default        |
+| freshness       | latest value is inside the threshold          | all-NULL is invalid, not pass |
+| custom_sql      | the read-only statement returns zero rows     | defined by user SQL           |
 
 ## GRAPH
 
-### Profile execution (async, bounded, cancellable)
+### Open and run Profile
 
 ```text
-Explorer Profile action (N) → open workspace, NO scan (1) → user selects columns + mode + reviews cost (N)
-│ R: CatalogSnapshot, SourceRecord                │ R: cost disclosure (exact distinct = full scan+hash, approximate = bounded HyperLogLog)
-│ E: unsupported object kind ↯escape(action absent)
-│ 🔒 live catalog DOM → captured CatalogObjectId + CatalogRevision
-                                                            ↓
-                                            start profile (1) → typed Tauri command (1)
-                                            │ R: project/session identity
-                                            ├─ E: no project/session ↯escape(action disabled)
-                                            └─ 🔒 request JSON → ProfileRequest
-                                                            ↓
-                                            sidecar profile job queued in the SAME per-session FIFO registry (1)
-                                            │ R: JobRegistry (no new concurrency machinery; cannot starve query/export cancellation)
-                                            ├─ E: session missing ↯escape(SessionMissing)
-                                            └─ A: job id; desktop polls status (existing pattern)
-                                                            ↓
-                                            claim job → clone session connection (1) → verify catalog identity (1)
-                                            │ R: SessionManager
-                                            └─ E: CatalogStale | SourceMissing ↯escape(terminal error, no partial metrics)
-                                                            ↓
-                                            execute bounded aggregate statement set (N ≤ 1 + columns/25)
-                                            │ R: DuckDB connection, typed metric SQL
-                                            │ A: single-row aggregates only; rows never cross IPC as data
-                                            ├─ E: DuckDB failure ↯escape(terminal error with stable code)
-                                            ├─ E: cancel via InterruptHandle ↯escape(CheckOutcome=cancelled, zero residue)
-                                            └─ profile cursor/cache state release on success|error|cancel|close|restart|shutdown (T)
-                                                            ↓
-                                            assemble ProfileSnapshot ≤ ~256 KiB (1)
-                                            │ R: metric applicability matrix, truncation policy
-                                            ├─ A: every metric carries provenance + observation time
-                                            └─ A: unsupported metrics absent with reason, never zero
-                                                            ↓
-                                            desktop renders dense metric table (T); values copyable, never logged
+Explorer object action (N) → resolve full object identity (1) → capture ProfileIntent (1) → open Profile, NO scan (1)
+│ R: active project, CatalogSnapshot, main-schema SourceRecord mapping
+├─ E: unsupported kind ↯escape(action absent)
+├─ E: missing linked source ↯escape(action disabled for pointer and keyboard)
+└─ 🔒 live catalog/source state → immutable intent
+
+Profile setup (N) → choose 1..100 columns + distinct mode (N) → review local scan cost (1) → Run (1)
+│ R: default first min(12, column count), searchable selector, no implicit execution
+├─ E: stale catalog/source ↯escape(refresh setup, still no scan)
+└─ 🔒 form state → ProfileRequest
+
+ProfileRequest (1) → typed Tauri boundary (1) → dedicated ProfileRegistry enqueue (1)
+│ R: active session, one active profile/session, terminal retention 32
+├─ E: query/export/profile active ↯escape(ProfileBusy)
+├─ E: invalid bounds/identity ↯escape(ProfileInvalid)
+└─ A: ProfileId returned immediately; desktop polls non-overlapping
+
+Profile worker claim (1) → verify full target/column identity (1) → execute bounded statements (N) → verify catalog again (1)
+│ R: one cloned DuckDB connection, InterruptHandle, five-minute deadline
+├─ E: CatalogStale | SourceMissing ↯escape(failed, no partial snapshot)
+├─ E: cancel/timeout ↯escape(cancelled or stable deadline error)
+└─ A: scalar summaries plus bounded value lists
+
+Executed statements (N) → collect ProfileSqlEvidence (N) → assemble bounded ProfileSnapshot (1)
+│ R: central identifier quoting, typed compiler, 256 KiB response budget, 64 KiB value truncation
+├─ A: one row-count statement
+├─ A: at most ceil(selected columns / 25) scalar aggregate statements
+├─ A: at most one common-value and one representative-value statement per selected column
+├─ A: total statement bound = 1 + ceil(N/25) + 2N for N selected columns
+├─ A: every present metric has Exact, Approximate, or Sampled provenance
+└─ A: every statement is immutable evidence; values are omitted before SQL evidence if payload reduction is needed
+
+ProfileSnapshot (1) → column navigator (N) → selected-column metric groups (N) → selected evidence inspector (T)
+│ R: compact workbench composition, container-responsive layout
+├─ A: common values render as value/count rows, representative values as bounded examples
+├─ A: Copy/Open SQL never executes and never mutates the snapshot
+├─ A: Create check produces an unsaved draft only
+└─ E: polling transport failure ⟳retry; later success clears transient error
 ```
 
-The profile job is one job whose cancellation cancels the whole profile. Metric SQL is compiled per column type from trusted typed options; common values (`GROUP BY` top-20) are exact for the scanned table; representative values (`LIMIT 20` without ordering guarantees) are labeled Sampled.
+A dedicated profile registry is intentional. It owns profile-specific bounded status and never writes Arrow result artifacts. Dispatch enforces mutual exclusion with query and export jobs, so Profile cannot create competing DuckDB scans. The registry admits one active profile per session and retains at most 32 terminal records. A deadline helper may interrupt the one running profile; it does not execute analytical work.
 
-### Check definition lifecycle (SQLite, migration 0008)
+### Define and run checks
 
 ```text
-create/update check (N) → validate typed definition (1) → write definition + new CheckRevision (1)
-│ R: QualityRepository, project-scoped tables, FK + explicit cascade
-│ E: duplicate name | missing/stale target | type-incompatible thresholds | accepted-value limit | key arity/type | freshness unit ↯escape(inline error, input retained)
-│ E: SQLite failure ↯escape(command error, nothing persisted)
-│ 🔒 form JSON → typed CheckDefinition (bounded sizes: checks/project, accepted-value entries+bytes, composite-key columns, custom-SQL bytes ≤ saved-query SQL bound)
-│
-└─ runs continue to identify the revision actually executed; updating never rewrites history
+Profile observation | New check (N) → typed unsaved draft (1) → validate live catalog and options (1)
+│ R: catalog-backed controls, explicit NULL behavior
+├─ E: stale/missing/type/limit error ↯escape(inline error, draft retained)
+└─ 🔒 form JSON → bounded QualityCheckDraft
+
+QualityCheckDraft (1) → Rust compile preview (1) → bind validate (1) → visible count/failure SQL (1)
+│ R: central quoting, sidecar read-only validation for custom SQL
+├─ E: mutation/external effect ↯escape(SqlMutating)
+└─ A: Copy/Open SQL never executes
+
+Save (1) → SQLite definition + immutable revision transaction (1)
+│ R: project isolation, retention limits, foreign keys
+├─ E: duplicate/stale/storage failure ↯escape(nothing persisted)
+└─ A: saving never runs the check
+
+Run one | Run enabled suite (N) → resolve immutable revisions in order (1) → submit count jobs (N)
+│ R: existing query JobRegistry FIFO, QualityCoordinator
+├─ E: invalid revision ↯escape(per-check error; suite continues)
+├─ E: custom SQL requires explicit confirmation
+└─ A: each check has its own disclosed observation boundary
+
+Count terminal status (T) → finalize CheckRun exactly once (1) → render observed versus expected (1)
+│ R: SQLite transaction, stable run id
+├─ E: HistoryWriteFailed ↯escape(surfaced without duplicate row)
+├─ A: pass/fail is a valid assertion result; error means not evaluated
+└─ A: session remains usable after pass/fail/error/cancel
+
+Failed run (1) → explicit failure preview request (1) → existing bounded ResultId pages (N)
+│ R: immutable revision SQL, 500-row pages, 12-page desktop LRU
+├─ E: missing revision/non-failed run ↯escape(preview refused)
+└─ A: preview released on close/supersede/restart/shutdown
 ```
 
-Runs persist aggregate facts only: definition/revision, terminal outcome, failure count, duration, observation time, stable error code. No common/sample values, no failing-row payloads, no SQL in history rows (custom SQL lives in the definition it belongs to). Retention is bounded per project with a clear-history command that never deletes definitions, projects, sources, or exports.
-
-### Check and suite execution with exactly-once history
+### Recovery and lifecycle
 
 ```text
-Run one check | Run suite (N) → resolve ordered enabled revisions (1)
-│ R: QualityRepository                │ R: immutable definition snapshots
-│ E: disabled/stale/missing object ↯escape(per-check error row, suite continues)
-│ 🔒 definition → compiled visible SQL (1 per check)
-│                                                    ↓
-│                                    per check: queue job in the SAME per-session FIFO registry (1)
-│                                    │ R: JobRegistry; suite coordinator only sequences submissions
-│                                    ├─ E: custom SQL mutating ↯escape(SqlMutating, before execution)
-│                                    └─ A: single-check runs observe one DuckDB read snapshot; suites disclose per-check observation boundaries — no implied cross-check atomicity
-│                                                    ↓
-│                                    execute count statement / custom statement (1)
-│                                    │ R: cloned connection, parameterized literals
-│                                    ├─ E: DuckDB failure ↯escape(outcome=error + stable code)
-│                                    ├─ E: cancel ↯escape(outcome=cancelled)
-│                                    └─ A: pass/fail decided by exact failing-row count; freshness compares max(col) against threshold at recorded observation time
-│                                                    ↓
-│                                    finalize exactly-once CheckRun (1)
-│                                    │ R: run id, SQLite transaction
-│                                    ├─ E: HistoryWriteFailed ↯escape(surfaced; no duplicate rows on retry)
-│                                    └─ session stays usable after fail/error/cancel
-│                                                    ↓
-│                                    failure preview on explicit request only (N)
-│                                    │ R: existing ResultId paging (500-row pages, 12-page LRU)
-│                                    ├─ E: stale run/revision ↯escape(preview refused)
-│                                    └─ A: the suite never collects all failures; preview released by existing result lifecycle
-```
+catalog/source changes (N)
+├─ open Profile: disable Run and offer Refresh setup; refresh never scans
+├─ running Profile: terminal CatalogStale/SourceMissing, no partial metrics
+└─ check: terminal error with Edit/Profile/Locate/Open SQL actions; none auto-run
 
-### Stale, missing, restart, and shutdown edges
-
-```text
-catalog/source change mid-flight (N)
-│ ├─ profile: identity mismatch at claim or between statements ↯escape(CatalogStale, no partial metrics)
-│ ├─ check: object/column/type missing at claim ↯escape(outcome=error, CheckInvalid, suite continues)
-│ └─ linked Parquet missing at scan ↯escape(SourceMissing; repair stays the existing Locate replacement flow)
-
-sidecrash crash / restart (1)
-│ └─ jobs die with the process; queued/running checks finalize as terminal rows at desktop recovery (existing engine recovery path); previews lost by design, history rows not duplicated
-
-project close / application shutdown (N)
-│ └─ active profile/check jobs cancel through existing shutdown; result cache cleared; no stranded jobs, previews, or duplicate history (T)
+project close | sidecar restart | shutdown (N)
+├─ cancel active profile/check/preview work
+├─ release result pages and cloned connections
+├─ preserve definitions, revisions, and aggregate terminal history
+└─ lose ephemeral Profile values and failure rows by design
 ```
 
 ## CARDINALITY
 
-Profile start (N per user action) · catalog identity capture (1 per request) · job submission (1 per profile/check) · aggregate statements (N, ≤ 1 + ceil(columns/25)) · metrics returned (N ≤ columns × matrix row) · definition writes (N, 1 revision each) · suite submissions (N ordered, 1 job each) · history rows (1 terminal row per started check, exactly once) · failure preview requests (N on demand) · common/representative values (≤20+20 per column) · status polls (T).
+Explorer actions (N) · Profile open (1 per intent) · setup edits (N) · Profile submission (1 per run) · active profile (at most 1 per session) · status polls (T) · row-count statements (1) · scalar batches (N, at most ceil(columns/25)) · value-list statements (N, at most 2 per column) · evidence records (N, same statement bound) · definition revisions (1 per save) · suite jobs (N ordered) · terminal history row (1 per started check) · preview pages (N bounded).
 
 ## BOUNDARIES
 
-- Live catalog/editor DOM 🔒 captured `CatalogObjectId` + `CatalogRevision`; later changes are staleness, never silent re-targeting.
-- Profile/check request JSON 🔒 typed protocol requests validated at Tauri command decoding and again in the sidecar.
-- Metric/check options 🔒 typed Rust structs; generated SQL is produced only from trusted typed values plus the central identifier quoting boundary — never from concatenated UI text.
-- Custom SQL 🔒 one-statement read-only validation before any execution or suite inclusion; explicit user confirmation required before running custom SQL.
-- Definition/history storage 🔒 bounded, project-scoped SQLite rows with FK isolation; malformed/oversized variants rejected before writes; aggregate facts only.
-- Result pages 🔒 existing Arrow IPC page boundary (500 rows/page, 12-page desktop LRU, 64 KiB value truncation, NULL markers) — profiling adds no new data channel.
-- Logs 🔒 stable IDs/codes/durations only; no generated or custom SQL, no metric values, no accepted values, no failing rows.
-- Freshness comparison 🔒 threshold math evaluated in the coordinator against the SQL's returned `max(col)` at a recorded observation time; both SQL and comparison are shown.
+- Catalog and source state 🔒 full `CatalogObjectId` plus catalog revision. Legacy source metadata maps only to objects Tarik creates unqualified in `main`; same-name objects in other schemas receive no source metadata.
+- Profile request JSON 🔒 typed protocol validation in desktop and sidecar, including 1..100 columns.
+- Generated identifiers 🔒 central DuckDB quoting. UI text is never concatenated into metric SQL.
+- Profile SQL evidence 🔒 sidecar-generated exact executed SQL. It is data-free, response-bounded, and never logged.
+- Custom check SQL 🔒 exactly one read-only result-producing statement; DDL, DML, COPY, ATTACH, INSTALL, and external/mutating effects are rejected.
+- SQLite 🔒 bounded project-scoped definitions, immutable revisions, and aggregate facts only.
+- Failure rows 🔒 existing Arrow page format and desktop safe-value decoding; never profile IPC or SQLite.
+- Logs 🔒 stable IDs, codes, states, and durations only. No SQL, accepted values, metric values, examples, or failing rows.
 
 ## BEHAVIOR
 
-- ⛈ accessibility wraps every workspace: table semantics, focus management, screen-reader labels, keyboard-complete flows, light/dark/system legibility, minimum viewport.
-- ⛈ provenance teaching wraps every metric and outcome: Exact/Approximate/Sampled label, plain-language meaning, why approximate can differ, NULL vs empty text, distinct vs unique.
-- ⛈ cost disclosure wraps profile start and exact-distinct opt-in; nothing scans implicitly and opening a workspace never executes.
-- ⛈ submitting guards and at-most-once semantics wrap definition writes, runs, and history finalization.
-- ⛈ cancellation reuses the existing InterruptHandle path; cancelled profiles/checks leave the session usable and zero artifacts.
-- ⛈ structured logging (JSONL, rotated, bounded) records operation, stable codes, durations — never SQL or data.
+- ⛈ explicit execution wraps Profile and checks. Opening, copying, refreshing setup, or opening SQL never scans data.
+- ⛈ cancellation wraps active analytical work through DuckDB `InterruptHandle`.
+- ⛈ provenance teaching wraps every present metric and check observation.
+- ⛈ accessibility wraps workspaces: real button/list/table semantics, keyboard-complete actions, focus restoration, text plus color states, and no tooltip-only meaning.
+- ⛈ responsive composition uses the Profile container width. At narrow widths, Explorer may collapse and Evidence becomes a tab/drawer; teaching content remains reachable.
+- ⛈ structured logging is bounded and redacted.
 
 ## SCOPE
 
-- Catalog identity acquire@request capture → release@return | stale detection.
-- Profile job acquire@start → terminal(success|error|cancelled) → release@all cursor/cache state; re-checked at project close, sidecar restart, shutdown.
-- Check definition revisions acquire@first save → supersede@update → retain forever (bounded count per project, deletable).
-- CheckRun rows acquire@job start (pending intent) → finalize exactly-once@terminal → release@retention/clear-history (definitions unaffected).
-- Failure preview ResultId acquire@explicit preview request → release@existing result lifecycle (supersede, close, clear cache, restart).
-- Engine/session scopes are the existing ones; profiling adds no process, connection pool, or worker of its own.
+- ProfileIntent acquire@open → release@close/check handoff/project change.
+- Profile connection acquire@submission → release@success|failure|cancel|close|restart|shutdown.
+- Deadline helper acquire@worker claim → signal/release@terminal.
+- ProfileSnapshot values/evidence acquire@success → release@workspace close/project change; never persisted.
+- CheckRevision acquire@save → retain@history references → delete only through bounded metadata policy.
+- CheckRun acquire@start → finalize exactly-once@terminal → release@retention/clear history.
+- Failure ResultId acquire@explicit preview → release@close|supersede|cache clear|restart|shutdown.
 
 ## TEST LAYERS
 
 R = {
 
-- Catalog fixtures: empty tables, all-NULL columns, mixed NULL/type edge cases, quoted/reserved identifiers, boolean/decimal/float-NaN/text-Unicode/long values, date/timestamp, binary, list/struct.
-- Linked sources: Parquet present, moved mid-run, repaired via Locate replacement.
-- Protocol: typed request/response serde, bounds enforcement (100 columns, 20+20 values, payload size), stale rejection.
-- Sidecar: real DuckDB — golden profile metrics on a fixed fixture with expected exact/approximate/sampled labels; check SQL golden cases per type and NULL policy; custom mutation sentinels (`INSERT`, `COPY`, `ATTACH`, `INSTALL` rejected).
-- Execution: queued/running/pass/fail/error/cancel transitions, suite order, per-check observation disclosure, exactly-once history (including retry and crash recovery), preview paging/release/residue.
-- Metadata: fresh migration 0008, schema-7 upgrade, newer-schema refusal, CRUD/revisions, project cascade, retention, malformed JSON, size limits, transaction rollback, Unicode names.
-- Frontend: no-auto-run, empty/loading/progress/partial-unavailable/error/cancel/stale states, provenance labels, profile-to-check prefill without implicit save/run, generated SQL display/copy/open-without-run, keyboard/focus, themes, minimum viewport.
+- Protocol fixtures for request validation, evidence serialization, provenance, and 256 KiB snapshot limits.
+- DuckDB fixtures for empty/all-NULL, numeric, boolean, Unicode text, temporal, binary/complex, quoted identifiers, and 100 columns.
+- Instrumented profile executor proving scalar batch count and total statement bound.
+- Sidecar lifecycle tests for busy exclusion, queued/running/terminal state, cancel, deadline, catalog staleness, missing links, and zero result artifacts.
+- App tests proving pointer and Alt+P use the same eligibility predicate and legacy source metadata never crosses schema identity.
+- Profile tests for no-auto-run, 12-column default, searchable selection, transient poll recovery, non-duplicated terminal errors, column grouping, value/count lists, SQL Copy/Open without execution, check handoff, focus, and narrow container behavior.
+- Check tests for all variants, live catalog validation, immutable SQL/revisions, explicit custom confirmation, run outcomes, preview paging/release, and recovery actions.
+- Manual real-Tauri review in light, dark, and 680×520 before any E14 UI correction is committed or pushed.
 
-}; same graphs, no test-only execution paths.
+}; production and tests use the same graph with R substituted.
 
 ## VERDICT
 
-No profiling or quality-check implementation exists yet; this graph is the target. The E14-T1–T7 implementations must be reconstructed against these nodes and re-diffed here: every metric needs provenance and absent-reason semantics, every check needs visible deterministic SQL with an explicit NULL policy, runs need exactly-once terminal history, previews must ride the existing bounded page lifecycle, and no path may mutate user data, hide execution, present approximation as exactness, or grow desktop memory with table size. E13-T6 Windows acceptance remains open in parallel and is not implied by this design.
+The E14-T1 through T5 implementation was reconstructed on September 6, 2026. Persistence, check compilation, cancellation, bounded previews, and no-auto-run boundaries substantially match. The original graph did not match the dedicated Profile registry or the per-column statement cardinality, and T4/T5 automated tests did not establish visual approval. Remediation must make the statement bound and immutable SQL evidence true, fix object/source and keyboard eligibility bugs, replace the flat Profile metric table with the column/metrics/evidence composition, and obtain explicit manual approval before a UI commit or push. E14-T6 remains blocked on those remediation gates. E13-T6 Windows acceptance also remains open and is still required before E14 final acceptance.

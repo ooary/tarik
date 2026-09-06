@@ -2008,13 +2008,74 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
 
 ## EPIC E14 — Beginner data profiling and quality checks
 
-**Status:** `IN PROGRESS` — user authorized starting E14 on September 5, 2026 (option 2) with E13-T6 native Windows acceptance consciously left open in parallel; E14 must not be called complete while E13-T6 is unresolved.
+**Status:** `REMEDIATION IN PROGRESS` - user authorized correcting E14 on September 6, 2026. T0-T3 need contract corrections, and T4-T5 are implemented but not manually UI-approved. E14-T6 is paused until the remediation gates below pass. E13-T6 native Windows acceptance remains open in parallel, and E14 must not be called complete while it is unresolved.
+
+**Review correction:** Automated tests are not visual acceptance. All E14 UI corrections stay local until the user reviews the real Tauri app and explicitly approves them. Do not push an E14 UI implementation commit before that approval.
 
 **Outcome:** Help beginners answer “What is in this data?”, “Can I trust it?”, and “What SQL proves that?” through explicit, local, cancellable profiles and reusable quality checks. Tarik must teach by showing deterministic SQL and metric provenance rather than hiding behavior behind an AI chat box or silently changing data.
 
 **Product contract:** Profiling and checks are read-only analytical actions. Every metric is labeled **Exact**, **Approximate**, or **Sampled**; unavailable metrics explain why. Generated SQL is visible and may be copied or opened in an editor without execution. Definitions and bounded run summaries live in SQLite, analytical scans run in the DuckDB sidecar, failing-row previews use ephemeral bounded result pages, and logs contain no generated/custom SQL, accepted values, samples, or failing rows.
 
-- [x] **E14-T0 Design profiling and quality-check semantics**
+- [x] **E14-R0 Reconcile the design graph with the implemented execution model**
+  - Depends on: E14-T0 through E14-T5 audit
+  - Owns: `docs/design/E14-DESIGN-GRAPH.md`, E14 task/review truth
+  - Deliverables:
+    - Reconstruct the actual profile/check graph and replace stale pre-implementation claims.
+    - Specify truthful Profile registry ownership, mutual exclusion, statement cardinality, immutable SQL evidence, UI composition, and manual review gates.
+    - Mark T4-T5 as implemented but not visually accepted; block T6 until remediation review.
+  - Acceptance: graph and task tracker describe the same target and explicitly name remaining mismatches.
+  - Tests: Graph Protocol completeness and `npm run docs:check`.
+  - Commit: `docs(e14): reconcile profiling remediation plan`
+  - Notes: Reconstructed E14-T1 through T5 against the graph after the failed visual checkpoint. The reconciled contract keeps a dedicated but session-exclusive Profile registry, defines scalar batching plus the total statement bound, adds immutable executed-SQL evidence, replaces the flat metric dump with a column/metrics/evidence composition, and makes real-Tauri manual approval mandatory before any E14 UI correction is committed or pushed.
+
+- [ ] **E14-R1 Correct Profile execution cardinality and SQL evidence**
+  - Depends on: E14-R0
+  - Owns: profile protocol, DuckDB profile compiler/executor, sidecar lifecycle tests
+  - Deliverables:
+    - Enforce one active Profile per session and retain mutual exclusion with query/export work.
+    - Batch scalar aggregates in groups of at most 25 columns and enforce the total statement bound `1 + ceil(N/25) + 2N`.
+    - Return immutable sidecar-generated SQL evidence for every executed metric statement without logging or persisting it.
+    - Keep cancellation, deadline, catalog recheck, payload, and terminal-retention guarantees.
+  - Acceptance: 100-column profiling has a mechanically tested statement bound, SQL shown later is exactly what ran, and no query/result artifacts are created.
+  - Tests: protocol serde/bounds, DuckDB golden metrics/evidence, statement counter, busy/cancel/stale/restart/residue.
+  - Commit: `fix(profile): bound scans and expose SQL evidence`
+
+- [ ] **E14-R2 Fix Profile entry and lifecycle defects**
+  - Depends on: E14-R0
+  - Owns: Explorer eligibility/source identity, Profile polling/error lifecycle, focused tests
+  - Deliverables:
+    - Use one Profile eligibility predicate for pointer/menu and Alt+P paths.
+    - Prevent legacy unqualified source records from matching same-name objects outside the main schema.
+    - Clear recovered transient polling errors and render each terminal error once.
+    - Provide non-executing refresh/reopen recovery for stale setup.
+  - Acceptance: disabled Profile actions cannot be bypassed, source health cannot cross schema identity, and recovered/terminal errors are truthful.
+  - Tests: missing-source keyboard, duplicate-name schemas, transient polling recovery, single terminal error, focus restoration.
+  - Commit: `fix(profile): align entry and error lifecycle`
+
+- [ ] **E14-R3 Redesign the Profile workbench for manual review**
+  - Depends on: E14-R1, E14-R2
+  - Owns: Profile workspace/component styles/tests and Profile-to-editor SQL handoff
+  - Deliverables:
+    - Compact header and collapsible setup with a deterministic first-12-column default and clearly scoped distinct-count mode.
+    - Searchable column navigator, selected-column metric groups, issue-oriented observations, and bounded value/count presentation.
+    - SQL Evidence inspector with provenance/meaning plus Copy/Open SQL without execution.
+    - Container-responsive desktop/medium/minimum layout, keyboard-complete navigation, and no unbounded flat metric DOM.
+  - Acceptance: automated gates pass and the user manually reviews light, dark, and 680x520 real-Tauri states. Keep changes local until explicit approval.
+  - Tests: no-auto-run, selection/search, metric grouping, values, evidence, copy/open isolation, check handoff, states, keyboard/focus, container/minimum viewport.
+  - Commit after approval only: `fix(profile): redesign profiling workbench`
+
+- [ ] **E14-R4 Review and correct the Checks authoring workspace**
+  - Depends on: E14-R3 manual approval
+  - Owns: Checks workspace layout/copy/accessibility and focused tests
+  - Deliverables:
+    - Audit the real T5 UI against the agreed Expectation, Target, Failure semantics, and SQL proof flow.
+    - Correct density, progressive disclosure, NULL teaching, generated SQL review, and narrow-window behavior.
+    - Preserve no-auto-save/no-auto-run and explicit custom SQL confirmation.
+  - Acceptance: user manually approves the real Tauri Checks flow before its UI correction is committed or pushed.
+  - Tests: all variants, draft retention, SQL copy/open isolation, custom confirmation, keyboard/focus, themes, minimum viewport.
+  - Commit after approval only: `fix(quality): refine guided check authoring`
+
+- [x] **E14-T0 Design profiling and quality-check semantics** - original implementation; superseded by E14-R0 reconciliation
   - Depends on: E4-T3, E6-T4, E8-T4 (E13-T6 approval waived for design only by user option 2 on September 5, 2026; E13-T6 remains required before E14 final acceptance)
   - Owns: `docs/design/E14-DESIGN-GRAPH.md`, domain vocabulary, provenance rules, resource budgets, and privacy boundaries
   - Deliverables:
@@ -2071,7 +2132,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Commit: `feat(quality): run cancellable data quality suites`
   - Notes: Added deterministic safely quoted SQL for all eight check types, explicit NULL-policy compilation, sidecar `quality.validate_read_only` bind validation for custom SQL, ordered per-check suite observation boundaries, a dedicated desktop quality state machine, exactly-once aggregate terminal history, and explicit immutable failure previews through existing bounded result pages. Count artifacts are always released; preview jobs are tracked for cancellation/resources/shutdown and never auto-run. Real-sidecar tests cover pass/fail → preview → release → repair → pass and the SQL/count/preview matrix.
 
-- [x] **E14-T4 Add a beginner-focused Profile workspace**
+- [x] **E14-T4 Add a beginner-focused Profile workspace** - implemented, visual review failed; remediation required by E14-R2/R3
   - Depends on: E14-T1
   - Owns: Explorer Profile action, profile workspace, provenance/cost language, accessibility, and component tests
   - Deliverables:
@@ -2086,7 +2147,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Commit: `feat(profile): add beginner data profile workspace`
   - Notes: Added Profile data to supported table/view menus plus an `Alt+P` Explorer action, with immutable project/object/catalog/source capture and focus restoration. Opening Profile never scans; explicit Run/Cancel drives the typed bounded profile lifecycle with non-overlapping polling and cancellation on exit. The dense metric table labels Exact/Approximate/Sampled values, distinguishes absent metrics as not applicable with a reason, hides bounded common/sample values until expansion, exposes copy actions and truncation, and explains NULL/distinct/range/distribution semantics. Requests freeze at 100 selected columns and controls freeze in flight. Catalog/source drift refuses rerun until the workspace is reopened. Supported observations produce a typed, review-only `QualityCheckDraft` handoff without metadata writes or execution. Query workspace state remains mounted and hidden while Profile is open. Verified by 34 command tests, 178 UI tests, lint (only two pre-existing warnings), typecheck, formatting/docs checks, and production build.
 
-- [x] **E14-T5 Add guided quality-check authoring and SQL teaching**
+- [x] **E14-T5 Add guided quality-check authoring and SQL teaching** - implemented, not manually UI-approved; remediation review required by E14-R4
   - Depends on: E14-T2, E14-T3, E14-T4
   - Owns: Checks workspace, typed builder, generated SQL explanation, definition lifecycle, and accessibility tests
   - Deliverables:
@@ -2100,7 +2161,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Commit: `feat(quality): add guided check builder`
   - Notes: Added a project Checks workspace with bounded searchable definitions, latest-outcome labels, and Run/Edit/Duplicate/Delete actions. The guided builder covers all eight check types with catalog-backed selectors, ordered relationship key mapping, NULL-policy choices with plain-language consequences, and client validation for names, targets, limits, and freshness/range types before any request. Generated count and failure SQL is compiled by the sidecar Rust compiler via the new `preview_quality_check_sql` command — no SQL is generated in the frontend — and is shown with sentence-by-sentence teaching, copy, and Open SQL that never execute. Saves validate the draft against the live catalog (stale objects/columns, relationship type matching, freshness/range compatibility) and bind-validate custom SQL before persistence; opening or editing never executes anything. Profile observations open the builder as an unsaved, unexecuted typed draft; running custom SQL always requires a separate explicit confirmation. Verified by 34 command tests, 40 focused UI tests including all eight variants, backend preview non-execution, stale-target refusal, no-auto-run, and Open-SQL isolation; lint/typecheck/format/docs gates pass with only the two pre-existing warnings.
 
-- [ ] **E14-T6 Present check runs, bounded failures, and learning-oriented recovery**
+- [ ] **E14-T6 Present check runs, bounded failures, and learning-oriented recovery** - blocked on E14-R3 and E14-R4 manual approvals
   - Depends on: E14-T3, E14-T5
   - Owns: suite progress, latest/history views, failure examples, rerun behavior, and recovery UX
   - Deliverables:
