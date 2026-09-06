@@ -3,6 +3,10 @@ use tauri::State;
 
 use super::{
     projects::{ProjectsRepository, RecentProject},
+    quality::{
+        CheckHistoryPage, QualityCheckDefinition, QualityCheckDraft, QualityPruneSummary,
+        QualityRepository,
+    },
     queries::{
         HistoryPruneSummary, HistoryRetentionPolicy, QueriesRepository, QueryFolder,
         QueryHistoryFilter, QueryHistoryPage, SavedQuery, SavedQueryDraft,
@@ -179,6 +183,72 @@ pub fn clear_query_history(
 ) -> Result<HistoryPruneSummary, String> {
     QueriesRepository::new(database.inner().clone())
         .clear_history(&project_id)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn create_quality_check(
+    draft: QualityCheckDraft,
+    database: State<'_, MetadataDb>,
+) -> Result<QualityCheckDefinition, String> {
+    QualityRepository::new(database.inner().clone())
+        .create(&draft)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn update_quality_check(
+    id: String,
+    draft: QualityCheckDraft,
+    database: State<'_, MetadataDb>,
+) -> Result<QualityCheckDefinition, String> {
+    QualityRepository::new(database.inner().clone())
+        .update(&id, &draft)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn list_quality_checks(
+    project_id: String,
+    database: State<'_, MetadataDb>,
+) -> Result<Vec<QualityCheckDefinition>, String> {
+    QualityRepository::new(database.inner().clone())
+        .list(&project_id)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn delete_quality_check(
+    project_id: String,
+    id: String,
+    database: State<'_, MetadataDb>,
+) -> Result<bool, String> {
+    QualityRepository::new(database.inner().clone())
+        .delete(&project_id, &id)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn get_quality_check_history(
+    project_id: String,
+    check_id: Option<String>,
+    offset: u32,
+    limit: u32,
+    database: State<'_, MetadataDb>,
+) -> Result<CheckHistoryPage, String> {
+    QualityRepository::new(database.inner().clone())
+        .history(&project_id, check_id.as_deref(), offset, limit)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn clear_quality_check_history(
+    project_id: String,
+    check_id: Option<String>,
+    database: State<'_, MetadataDb>,
+) -> Result<QualityPruneSummary, String> {
+    QualityRepository::new(database.inner().clone())
+        .clear_history(&project_id, check_id.as_deref())
         .map_err(|error| error.to_string())
 }
 

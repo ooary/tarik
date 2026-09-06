@@ -8,7 +8,7 @@ E11 implementation can enter REVIEW, but E6 final result review, E7 final query-
 - [x] `package.json`, `src-tauri/Cargo.toml`, and `src-tauri/tauri.conf.json` are version `0.1.0`.
 - [x] Rust is pinned to 1.91.0 and Node uses `.node-version`.
 - [x] DuckDB Rust binding is pinned to `1.10505.0` / DuckDB runtime 1.5.5.
-- [x] Engine protocol is version 1; metadata schema is version 7.
+- [x] Engine protocol is version 1; metadata schema is version 8.
 - [x] Working tree is clean before final artifact generation.
 
 ## 2. Automated gates

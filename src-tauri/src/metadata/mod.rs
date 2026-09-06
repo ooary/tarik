@@ -1,6 +1,7 @@
 pub mod commands;
 mod migrations;
 pub mod projects;
+pub mod quality;
 pub mod queries;
 pub mod sessions;
 pub mod settings;
@@ -13,7 +14,7 @@ use std::{
 
 use rusqlite::{Connection, OpenFlags};
 
-pub const LATEST_SCHEMA_VERSION: u32 = 7;
+pub const LATEST_SCHEMA_VERSION: u32 = 8;
 
 #[derive(Debug, thiserror::Error)]
 pub enum MetadataError {
@@ -53,6 +54,17 @@ pub enum MetadataError {
     QueryFolderMissing,
     #[error("invalid history retention: {0}")]
     InvalidHistoryRetention(&'static str),
+    #[error("invalid quality check: {0}")]
+    InvalidQualityCheck(String),
+    #[error("quality check name already exists: {0}")]
+    QualityCheckConflict(String),
+    #[error("quality check was not found")]
+    QualityCheckMissing,
+    #[error("quality check history must be cleared before deleting the definition")]
+    QualityCheckHasHistory,
+    #[allow(dead_code)]
+    #[error("quality check revision was not found")]
+    QualityRevisionMissing,
     #[error(transparent)]
     Sql(#[from] rusqlite::Error),
 }

@@ -2043,7 +2043,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Commit: `feat(profile): add bounded DuckDB data profiling`
   - Notes: Implemented a dedicated typed `ProfileRegistry` with queued/running/terminal status, InterruptHandle cancellation, a five-minute deadline, 32 terminal-record retention, 100-column and 20-value caps, a 256 KiB snapshot budget, 64 KiB-safe displayed values, stable catalog revision checks before/after scanning, and no Arrow/result artifacts. Profile jobs are mutually exclusive with query/export work at the sidecar boundary; resource changes and shutdown include active profiles. Exact/approximate/sampled provenance and explicit unavailable reasons are protocol data, not inferred UI labels.
 
-- [ ] **E14-T2 Persist project-scoped quality definitions and bounded run history**
+- [x] **E14-T2 Persist project-scoped quality definitions and bounded run history**
   - Depends on: E14-T0
   - Owns: metadata migration 0008, repositories, typed Tauri commands, retention, and compatibility tests
   - Deliverables:
@@ -2055,6 +2055,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: definitions and summaries survive restart, never cross projects, upgrade transactionally from schema 7, reject malformed/oversized variants before writes, and remain readable without analytical data.
   - Tests: fresh migration, schema-7 upgrade, newer-schema refusal, CRUD/revisions, project cascade, retention, malformed JSON, size limits, transaction rollback, and Unicode names/options.
   - Commit: `feat(quality): persist check definitions and history`
+  - Notes: Migration 0008 adds project-scoped definitions, immutable JSON revisions, and aggregate-only terminal runs with explicit foreign-key cascades. Validation bounds 200 checks/project, 64-byte names, 16-key composites, 100/32 KiB accepted values, 256 KiB custom SQL, 100 runs/check, and 5,000/project. Custom SQL persistence rejects multiple statements and mutating/external tokens conservatively; T3 revalidates against DuckDB. Run finalization is internal-only, idempotent by matching payload, and rejects conflicting IDs. Definitions with history cannot be deleted until their aggregate history is explicitly cleared, preserving revision identity.
 
 - [ ] **E14-T3 Execute check suites with immutable SQL and bounded failure previews**
   - Depends on: E14-T1, E14-T2

@@ -44,6 +44,11 @@ const MIGRATIONS: &[Migration] = &[
         name: "export_lifecycle",
         sql: include_str!("../../migrations/0007_export_lifecycle.sql"),
     },
+    Migration {
+        version: 8,
+        name: "quality_checks",
+        sql: include_str!("../../migrations/0008_quality_checks.sql"),
+    },
 ];
 
 pub(super) fn migrate(connection: &mut Connection) -> Result<(), MetadataError> {
@@ -97,6 +102,44 @@ mod tests {
             )
             .unwrap();
         assert_eq!(count, 1);
+        let quality_tables: i64 = connection
+            .query_row(
+                "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name LIKE 'quality_check%'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(quality_tables, 3);
+    }
+
+    #[test]
+    fn schema_seven_upgrades_transactionally_to_quality_schema_eight() {
+        let mut connection = Connection::open_in_memory().expect("open memory database");
+        for migration in MIGRATIONS.iter().filter(|migration| migration.version <= 7) {
+            connection.execute_batch(migration.sql).unwrap();
+            connection
+                .pragma_update(None, "user_version", migration.version)
+                .unwrap();
+        }
+        assert_eq!(schema_version(&connection).unwrap(), 7);
+
+        migrate(&mut connection).expect("upgrade schema seven");
+
+        assert_eq!(schema_version(&connection).unwrap(), 8);
+        for table in [
+            "quality_checks",
+            "quality_check_revisions",
+            "quality_check_runs",
+        ] {
+            let exists: bool = connection
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1)",
+                    [table],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert!(exists, "missing migrated table {table}");
+        }
     }
 
     #[test]

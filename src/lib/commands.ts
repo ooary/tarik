@@ -859,6 +859,141 @@ export function clearQueryHistory(
   return invokeCommand<HistoryPruneSummary>("clear_query_history", { projectId });
 }
 
+export type QualityCheckType =
+  | "not_empty"
+  | "not_null"
+  | "unique"
+  | "accepted_values"
+  | "range"
+  | "relationship"
+  | "freshness"
+  | "custom_sql";
+export type QualityNullPolicy = "fail_on_null" | "pass_on_null";
+export type QualitySeverity = "info" | "warning" | "critical";
+export type QualityOutcome = "pass" | "fail" | "error" | "cancelled";
+
+export interface QualityTarget {
+  database: string;
+  schema: string;
+  object: string;
+  columns: string[];
+}
+
+export type QualityCheckOptions =
+  | { kind: "not_empty" }
+  | { kind: "not_null" }
+  | { kind: "unique" }
+  | { kind: "accepted_values"; values: unknown[] }
+  | {
+      kind: "range";
+      minimum: unknown | null;
+      maximum: unknown | null;
+      inclusiveMinimum: boolean;
+      inclusiveMaximum: boolean;
+    }
+  | { kind: "relationship"; parent: QualityTarget; parentColumns: string[] }
+  | { kind: "freshness"; maximumAgeSeconds: number }
+  | { kind: "custom_sql"; sql: string };
+
+export interface QualityCheckDraft {
+  projectId: string;
+  name: string;
+  target: QualityTarget;
+  options: QualityCheckOptions;
+  nullPolicy: QualityNullPolicy;
+  severity: QualitySeverity;
+  enabled: boolean;
+}
+
+export interface QualityCheckDefinition extends QualityCheckDraft {
+  id: string;
+  checkType: QualityCheckType;
+  latestRevisionId: string;
+  revisionNumber: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface QualityCheckRun {
+  id: string;
+  projectId: string;
+  checkId: string;
+  revisionId: string;
+  outcome: QualityOutcome;
+  failureCount: number | null;
+  durationMs: number;
+  observedAt: string;
+  errorCode: string | null;
+  createdAt: string;
+}
+
+export interface QualityCheckHistoryPage {
+  entries: QualityCheckRun[];
+  offset: number;
+  nextOffset: number | null;
+}
+
+export interface QualityPruneSummary {
+  deleted: number;
+  remaining: number;
+}
+
+export function createQualityCheck(
+  draft: QualityCheckDraft,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<QualityCheckDefinition> {
+  return invokeCommand<QualityCheckDefinition>("create_quality_check", { draft });
+}
+
+export function updateQualityCheck(
+  id: string,
+  draft: QualityCheckDraft,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<QualityCheckDefinition> {
+  return invokeCommand<QualityCheckDefinition>("update_quality_check", { id, draft });
+}
+
+export function listQualityChecks(
+  projectId: string,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<QualityCheckDefinition[]> {
+  return invokeCommand<QualityCheckDefinition[]>("list_quality_checks", { projectId });
+}
+
+export function deleteQualityCheck(
+  projectId: string,
+  id: string,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<boolean> {
+  return invokeCommand<boolean>("delete_quality_check", { projectId, id });
+}
+
+export function getQualityCheckHistory(
+  projectId: string,
+  checkId: string | null,
+  offset: number,
+  limit: number,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<QualityCheckHistoryPage> {
+  return invokeCommand<QualityCheckHistoryPage>("get_quality_check_history", {
+    projectId,
+    checkId,
+    offset,
+    limit,
+  });
+}
+
+export function clearQualityCheckHistory(
+  projectId: string,
+  checkId: string | null,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<QualityPruneSummary> {
+  return invokeCommand<QualityPruneSummary>("clear_quality_check_history", {
+    projectId,
+    checkId,
+  });
+}
+
 export type ExportFormat = "csv" | "parquet";
 export type ExportOverwritePolicy = "fail_if_exists" | "replace";
 export type ParquetCompression = "uncompressed" | "snappy" | "gzip" | "zstd";

@@ -306,6 +306,57 @@ test("saved queries and folders use explicit typed commands", async () => {
   assert.deepEqual({ ...calls[3].args }, { projectId: "p1", id: "q1" });
 });
 
+test("quality definitions and bounded history use project-scoped typed commands", async () => {
+  const {
+    createQualityCheck,
+    updateQualityCheck,
+    listQualityChecks,
+    deleteQualityCheck,
+    getQualityCheckHistory,
+    clearQualityCheckHistory,
+  } = await loadCommandsModule();
+  const calls = [];
+  const draft = {
+    projectId: "p1",
+    name: "Order id required",
+    target: { database: "retail", schema: "main", object: "orders", columns: ["id"] },
+    options: { kind: "not_null" },
+    nullPolicy: "fail_on_null",
+    severity: "warning",
+    enabled: true,
+  };
+  const invoke = async (command, args) => {
+    calls.push({ command, args });
+    if (command === "delete_quality_check") return true;
+    if (command === "get_quality_check_history")
+      return { entries: [], offset: 0, nextOffset: null };
+    if (command === "clear_quality_check_history") return { deleted: 0, remaining: 0 };
+    return { id: "check-1", ...draft };
+  };
+
+  await createQualityCheck(draft, invoke);
+  await updateQualityCheck("check-1", draft, invoke);
+  await listQualityChecks("p1", invoke);
+  assert.equal(await deleteQualityCheck("p1", "check-1", invoke), true);
+  await getQualityCheckHistory("p1", "check-1", 0, 20, invoke);
+  await clearQualityCheckHistory("p1", null, invoke);
+  assert.deepEqual(
+    calls.map((call) => call.command),
+    [
+      "create_quality_check",
+      "update_quality_check",
+      "list_quality_checks",
+      "delete_quality_check",
+      "get_quality_check_history",
+      "clear_quality_check_history",
+    ],
+  );
+  assert.deepEqual(
+    { ...calls[4].args },
+    { projectId: "p1", checkId: "check-1", offset: 0, limit: 20 },
+  );
+});
+
 test("history pages use typed project filters", async () => {
   const { listQueryHistoryPage } = await loadCommandsModule();
   const calls = [];
