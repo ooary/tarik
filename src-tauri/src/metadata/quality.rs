@@ -541,6 +541,26 @@ impl QualityRepository {
         })
     }
 
+    pub fn latest_runs(&self, project_id: &str) -> Result<Vec<CheckRun>, MetadataError> {
+        let connection = self.database.connection()?;
+        let mut statement = connection.prepare(
+            "SELECT id, project_id, check_id, revision_id, outcome, failure_count,
+             duration_ms, observed_at, error_code, created_at FROM (
+               SELECT id, project_id, check_id, revision_id, outcome, failure_count,
+                 duration_ms, observed_at, error_code, created_at,
+                 row_number() OVER (
+                   PARTITION BY check_id ORDER BY observed_at DESC, id DESC
+                 ) AS latest_rank
+               FROM quality_check_runs WHERE project_id = ?1
+             ) WHERE latest_rank = 1
+             ORDER BY observed_at DESC, id DESC LIMIT 200",
+        )?;
+        let entries = statement
+            .query_map([project_id], read_run)?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(entries)
+    }
+
     pub fn clear_history(
         &self,
         project_id: &str,
@@ -578,7 +598,9 @@ impl QualityRepository {
     }
 }
 
-fn validate_draft(draft: &QualityCheckDraft) -> Result<QualityCheckDraft, MetadataError> {
+pub(crate) fn validate_draft(
+    draft: &QualityCheckDraft,
+) -> Result<QualityCheckDraft, MetadataError> {
     let mut draft = draft.clone();
     draft.project_id = required(&draft.project_id, "project id is empty")?;
     draft.name = required(&draft.name, "check name is empty")?;

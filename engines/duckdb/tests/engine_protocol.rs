@@ -1160,7 +1160,7 @@ fn resource_change_is_rejected_while_session_work_is_active() {
         "query.cancel",
         json!({ "executionId": "busy-resource-query" }),
     );
-    let _ = poll_terminal(&mut engine, "busy-resource-query");
+    poll_terminal_with_timeout(&mut engine, "busy-resource-query", 900);
     engine.request("session.close", json!({ "sessionId": session_id }));
     engine.child.kill().ok();
     std::fs::remove_dir_all(root).unwrap();

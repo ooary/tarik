@@ -957,6 +957,12 @@ export interface QualityPruneSummary {
 export type QualityExecutionState =
   "queued" | "running" | "passed" | "failed" | "error" | "cancelled";
 
+export interface CompiledQualityCheckPreview {
+  countSql: string;
+  failureSql: string;
+  custom: boolean;
+}
+
 export interface QualityExecutionView {
   runId: string;
   projectId: string;
@@ -976,6 +982,13 @@ export interface QualityFailurePreview {
   revisionId: string;
   sql: string;
   state: ExecutionState;
+}
+
+export function previewQualityCheckSql(
+  draft: QualityCheckDraft,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<CompiledQualityCheckPreview> {
+  return invokeCommand<CompiledQualityCheckPreview>("preview_quality_check_sql", { draft });
 }
 
 export function createQualityCheck(
@@ -1021,6 +1034,13 @@ export function getQualityCheckHistory(
     offset,
     limit,
   });
+}
+
+export function listLatestQualityRuns(
+  projectId: string,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<QualityCheckRun[]> {
+  return invokeCommand<QualityCheckRun[]>("list_latest_quality_runs", { projectId });
 }
 
 export function clearQualityCheckHistory(

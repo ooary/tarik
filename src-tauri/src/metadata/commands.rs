@@ -6,7 +6,7 @@ use tauri::State;
 use super::{
     projects::{ProjectsRepository, RecentProject},
     quality::{
-        CheckHistoryPage, QualityCheckDefinition, QualityCheckDraft, QualityPruneSummary,
+        CheckHistoryPage, CheckRun, QualityCheckDefinition, QualityCheckDraft, QualityPruneSummary,
         QualityRepository,
     },
     queries::{
@@ -192,7 +192,10 @@ pub fn clear_query_history(
 pub fn create_quality_check(
     draft: QualityCheckDraft,
     database: State<'_, MetadataDb>,
+    projects: State<'_, crate::projects::ProjectManager>,
+    quality: State<'_, Arc<crate::quality::QualityCoordinator>>,
 ) -> Result<QualityCheckDefinition, String> {
+    validate_quality_draft(&draft, &projects, &quality)?;
     QualityRepository::new(database.inner().clone())
         .create(&draft)
         .map_err(|error| error.to_string())
@@ -203,10 +206,32 @@ pub fn update_quality_check(
     id: String,
     draft: QualityCheckDraft,
     database: State<'_, MetadataDb>,
+    projects: State<'_, crate::projects::ProjectManager>,
+    quality: State<'_, Arc<crate::quality::QualityCoordinator>>,
 ) -> Result<QualityCheckDefinition, String> {
+    validate_quality_draft(&draft, &projects, &quality)?;
     QualityRepository::new(database.inner().clone())
         .update(&id, &draft)
         .map_err(|error| error.to_string())
+}
+
+fn validate_quality_draft(
+    draft: &QualityCheckDraft,
+    projects: &crate::projects::ProjectManager,
+    quality: &crate::quality::QualityCoordinator,
+) -> Result<(), String> {
+    let active = projects
+        .active()
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| "quality.no_active_project".to_string())?;
+    if active.id != draft.project_id {
+        return Err(format!(
+            "quality.project_mismatch: active project is {}, draft was {}",
+            active.id, draft.project_id
+        ));
+    }
+    let catalog = projects.catalog().map_err(|error| error.to_string())?;
+    quality.preview(draft, &catalog).map(|_| ())
 }
 
 #[tauri::command]
@@ -244,6 +269,16 @@ pub fn get_quality_check_history(
 ) -> Result<CheckHistoryPage, String> {
     QualityRepository::new(database.inner().clone())
         .history(&project_id, check_id.as_deref(), offset, limit)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn list_latest_quality_runs(
+    project_id: String,
+    database: State<'_, MetadataDb>,
+) -> Result<Vec<CheckRun>, String> {
+    QualityRepository::new(database.inner().clone())
+        .latest_runs(&project_id)
         .map_err(|error| error.to_string())
 }
 

@@ -46,7 +46,7 @@ type WorkspaceConfirmIntent =
 
 export interface QueryWorkspaceHandle {
   insertSql(text: string): void;
-  openPreview(sql: string): void;
+  openPreview(sql: string, title?: string): void;
   flushDraft(): Promise<void>;
 }
 
@@ -249,8 +249,8 @@ export const QueryWorkspace = forwardRef<QueryWorkspaceHandle, QueryWorkspacePro
           const separator = active.sql.length > 0 && !active.sql.endsWith(" ") ? " " : "";
           editSql(active.id, `${active.sql}${separator}${text}`);
         },
-        openPreview(sql: string) {
-          addTab(sql);
+        openPreview(sql: string, title?: string) {
+          addTab(sql, title);
         },
         flushDraft() {
           return flush();

@@ -7,7 +7,7 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tarik_engine_protocol::{ExecutionState, ExecutionStatus};
+use tarik_engine_protocol::{CatalogSnapshot, ExecutionState, ExecutionStatus};
 use tauri::State;
 
 use crate::{
@@ -153,6 +153,26 @@ impl QualityCoordinator {
     fn with_poll_interval(mut self, poll_interval: Duration) -> Self {
         self.poll_interval = poll_interval;
         self
+    }
+
+    pub fn preview(
+        &self,
+        draft: &crate::metadata::quality::QualityCheckDraft,
+        catalog: &CatalogSnapshot,
+    ) -> Result<CompiledCheckPreview, String> {
+        let draft =
+            crate::metadata::quality::validate_draft(draft).map_err(|error| error.to_string())?;
+        validate_catalog_target(&draft, catalog)?;
+        let compiled = compile_check(&draft)?;
+        if compiled.custom {
+            self.engine.validate_read_only(&compiled.preview_sql)?;
+            self.engine.validate_read_only(&compiled.count_sql)?;
+        }
+        Ok(CompiledCheckPreview {
+            count_sql: compiled.count_sql,
+            failure_sql: compiled.preview_sql,
+            custom: compiled.custom,
+        })
     }
 
     pub fn run_check(
@@ -648,12 +668,118 @@ impl QualityCoordinator {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct CompiledCheckPreview {
+    pub count_sql: String,
+    pub failure_sql: String,
+    pub custom: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct FailurePreview {
     pub result_id: String,
     pub project_id: String,
     pub revision_id: String,
     pub sql: String,
     pub state: ExecutionState,
+}
+
+fn validate_catalog_target(
+    draft: &crate::metadata::quality::QualityCheckDraft,
+    catalog: &CatalogSnapshot,
+) -> Result<(), String> {
+    validate_target_columns(&draft.target, catalog)?;
+    if let CheckOptions::Relationship {
+        parent,
+        parent_columns,
+    } = &draft.options
+    {
+        validate_target_columns(parent, catalog)?;
+        for (child, parent_name) in draft.target.columns.iter().zip(parent_columns) {
+            let child_type = catalog_type(&draft.target, child, catalog)?;
+            let parent_type = catalog_type(parent, parent_name, catalog)?;
+            if child_type != parent_type {
+                return Err(format!(
+                    "quality.relationship_type_mismatch: {child_type} does not match {parent_type}"
+                ));
+            }
+        }
+    }
+    if matches!(draft.options, CheckOptions::Freshness { .. }) {
+        let data_type = catalog_type(&draft.target, &draft.target.columns[0], catalog)?;
+        let upper = data_type.to_ascii_uppercase();
+        if !upper.starts_with("DATE") && !upper.starts_with("TIME") {
+            return Err("quality.freshness_type: freshness requires DATE or TIMESTAMP".into());
+        }
+    }
+    if matches!(draft.options, CheckOptions::Range { .. }) {
+        let data_type = catalog_type(&draft.target, &draft.target.columns[0], catalog)?;
+        let upper = data_type.to_ascii_uppercase();
+        const RANGE_PREFIXES: &[&str] = &[
+            "TINYINT",
+            "SMALLINT",
+            "INTEGER",
+            "BIGINT",
+            "HUGEINT",
+            "UTINYINT",
+            "USMALLINT",
+            "UINTEGER",
+            "UBIGINT",
+            "UHUGEINT",
+            "FLOAT",
+            "DOUBLE",
+            "REAL",
+            "DECIMAL",
+            "NUMERIC",
+            "DATE",
+            "TIME",
+            "TIMESTAMP",
+        ];
+        if !RANGE_PREFIXES
+            .iter()
+            .any(|prefix| upper.starts_with(prefix))
+        {
+            return Err("quality.range_type: range requires numeric or temporal data".into());
+        }
+    }
+    Ok(())
+}
+
+fn validate_target_columns(
+    target: &QualityTarget,
+    catalog: &CatalogSnapshot,
+) -> Result<(), String> {
+    let exists = catalog.objects.iter().any(|object| {
+        object.database == target.database
+            && object.schema == target.schema
+            && object.name == target.object
+            && matches!(object.kind.as_str(), "table" | "view")
+    });
+    if !exists {
+        return Err("quality.catalog_stale: target table or view is missing".into());
+    }
+    for column in &target.columns {
+        catalog_type(target, column, catalog)?;
+    }
+    Ok(())
+}
+
+fn catalog_type<'a>(
+    target: &QualityTarget,
+    column_name: &str,
+    catalog: &'a CatalogSnapshot,
+) -> Result<&'a str, String> {
+    catalog
+        .columns
+        .iter()
+        .find(|column| {
+            column.database == target.database
+                && column.schema == target.schema
+                && column.object == target.object
+                && column.name == column_name
+        })
+        .map(|column| column.data_type.as_str())
+        .ok_or_else(|| format!("quality.catalog_stale: column {column_name} is missing"))
 }
 
 pub fn compile_check(
@@ -895,6 +1021,17 @@ fn execution_id(run_id: &str) -> String {
 }
 
 #[tauri::command]
+pub fn preview_quality_check_sql(
+    draft: crate::metadata::quality::QualityCheckDraft,
+    quality: State<'_, Arc<QualityCoordinator>>,
+    projects: State<'_, ProjectManager>,
+) -> Result<CompiledCheckPreview, String> {
+    require_project(&draft.project_id, &projects)?;
+    let catalog = projects.catalog().map_err(|error| error.to_string())?;
+    quality.preview(&draft, &catalog)
+}
+
+#[tauri::command]
 pub fn run_quality_check(
     project_id: String,
     check_id: String,
@@ -1073,6 +1210,38 @@ mod tests {
             severity: CheckSeverity::Warning,
             enabled: true,
         }
+    }
+
+    #[test]
+    fn preview_compiles_without_executing() {
+        let database = MetadataDb::open_in_memory().unwrap();
+        let engine = Arc::new(FakeEngine::new(Vec::new(), 0));
+        let coordinator = QualityCoordinator::new(engine.clone(), database);
+        let check = draft(CheckOptions::NotNull, NullPolicy::FailOnNull);
+        let catalog = CatalogSnapshot {
+            revision: "catalog-1".into(),
+            objects: vec![tarik_engine_protocol::CatalogObject {
+                database: "db".into(),
+                schema: "main".into(),
+                name: "odd table".into(),
+                kind: "table".into(),
+                estimated_row_count: None,
+            }],
+            columns: vec![tarik_engine_protocol::CatalogColumn {
+                database: "db".into(),
+                schema: "main".into(),
+                object: "odd table".into(),
+                name: "customer id".into(),
+                data_type: "BIGINT".into(),
+                position: 0,
+                nullable: true,
+            }],
+        };
+        let preview = coordinator.preview(&check, &catalog).unwrap();
+        assert!(preview.count_sql.contains("failure_count"));
+        assert!(preview.failure_sql.contains("IS NULL"));
+        assert!(!preview.custom);
+        assert!(engine.submitted.lock().unwrap().is_empty());
     }
 
     #[test]

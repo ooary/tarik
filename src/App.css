@@ -739,6 +739,18 @@ button:disabled {
   font-weight: 610;
 }
 
+.project-tool-row {
+  margin: 4px 0 8px;
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-raised);
+}
+
+.project-tool-row-active {
+  color: var(--accent-text);
+  border-color: var(--accent-solid);
+  background: var(--accent-soft);
+}
+
 .tree-row-child {
   padding-left: 26px;
 }

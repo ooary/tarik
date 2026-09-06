@@ -2,6 +2,7 @@ import {
   DatabaseIcon,
   DotsThreeIcon,
   FolderOpenIcon,
+  ListChecksIcon,
   ListIcon,
   TableIcon,
 } from "@phosphor-icons/react";
@@ -26,6 +27,7 @@ import {
   ProfileWorkspace,
   type ProfileCheckPrefill,
 } from "./features/profile/ProfileWorkspace";
+import { ChecksWorkspace } from "./features/quality/ChecksWorkspace";
 import { SupportIncidentNotice } from "./app/SupportIncidentNotice";
 import {
   createWorkbenchPreferencesRepository,
@@ -160,6 +162,7 @@ function App() {
   const [interactionBusy, setInteractionBusy] = useState(false);
   const [interactionError, setInteractionError] = useState<string | null>(null);
   const [profileIntent, setProfileIntent] = useState<ProfileIntent | null>(null);
+  const [checksOpen, setChecksOpen] = useState(false);
   const [profileHandoff, setProfileHandoff] = useState<ProfileCheckPrefill | null>(null);
   const profileTriggerRef = useRef<HTMLElement | null>(null);
   const shutdownInFlight = useRef(false);
@@ -554,6 +557,19 @@ function App() {
 
   function beginProfileCheck(prefill: ProfileCheckPrefill) {
     setProfileHandoff(prefill);
+    setProfileIntent(null);
+    setChecksOpen(true);
+  }
+
+  function closeChecks() {
+    setChecksOpen(false);
+    setProfileHandoff(null);
+  }
+
+  function openGeneratedSql(sql: string, title: string) {
+    setChecksOpen(false);
+    setProfileHandoff(null);
+    queryWorkspaceActionsRef.current?.openPreview(sql, title);
   }
 
   function removeCatalogObject(object: ProjectCatalog["objects"][number]) {
@@ -758,6 +774,18 @@ function App() {
                   <SourceIcon kind="database" />
                   <span>{project.name}</span>
                 </div>
+                <button
+                  className={`tree-row project-tool-row ${checksOpen ? "project-tool-row-active" : ""}`}
+                  onClick={() => {
+                    setProfileIntent(null);
+                    setChecksOpen(true);
+                  }}
+                  type="button"
+                >
+                  <ListChecksIcon aria-hidden="true" className="source-icon" size={15} />
+                  <span>Quality checks</span>
+                  <span className="row-meta">Define and run</span>
+                </button>
                 {catalog.objects.length === 0 ? (
                   <p className="tree-empty">No tables or views yet.</p>
                 ) : (
@@ -958,7 +986,15 @@ function App() {
         </aside>
 
         <div aria-hidden="true" className="sidebar-resize-handle" onPointerDown={resizeSidebar} />
-        {profileIntent && project?.id === profileIntent.projectId && (
+        {checksOpen && project ? (
+          <ChecksWorkspace
+            catalog={catalog}
+            onClose={closeChecks}
+            onOpenSql={openGeneratedSql}
+            prefill={profileHandoff}
+            project={project}
+          />
+        ) : profileIntent && project?.id === profileIntent.projectId ? (
           <ProfileWorkspace
             catalog={catalog}
             object={profileIntent.object}
@@ -973,7 +1009,7 @@ function App() {
               profileIntent.source,
             )}
           />
-        )}
+        ) : null}
         <QueryWorkspace
           bottomOpen={bottomOpen}
           bottomPanelHeight={preferences.bottomPanelHeight}
@@ -983,7 +1019,9 @@ function App() {
           onSetBottomHeight={(height) => updatePreferences({ bottomPanelHeight: height })}
           onToggleBottom={() => updatePreferences({ bottomPanelOpen: !bottomOpen })}
           effectiveTheme={effectiveTheme}
-          hidden={Boolean(profileIntent && project?.id === profileIntent.projectId)}
+          hidden={Boolean(
+            checksOpen || (profileIntent && project?.id === profileIntent.projectId),
+          )}
           projectId={project?.id ?? ""}
           ref={queryWorkspaceActionsRef}
         />
@@ -1053,7 +1091,7 @@ function App() {
         />
       )}
 
-      {profileHandoff && (
+      {profileHandoff && !checksOpen && (
         <aside aria-label="Prefilled quality check" className="profile-handoff" role="status">
           <div>
             <strong>Check draft ready for review</strong>

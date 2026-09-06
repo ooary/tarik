@@ -308,11 +308,13 @@ test("saved queries and folders use explicit typed commands", async () => {
 
 test("quality definitions and bounded history use project-scoped typed commands", async () => {
   const {
+    previewQualityCheckSql,
     createQualityCheck,
     updateQualityCheck,
     listQualityChecks,
     deleteQualityCheck,
     getQualityCheckHistory,
+    listLatestQualityRuns,
     clearQualityCheckHistory,
   } = await loadCommandsModule();
   const calls = [];
@@ -334,25 +336,29 @@ test("quality definitions and bounded history use project-scoped typed commands"
     return { id: "check-1", ...draft };
   };
 
+  await previewQualityCheckSql(draft, invoke);
   await createQualityCheck(draft, invoke);
   await updateQualityCheck("check-1", draft, invoke);
   await listQualityChecks("p1", invoke);
   assert.equal(await deleteQualityCheck("p1", "check-1", invoke), true);
   await getQualityCheckHistory("p1", "check-1", 0, 20, invoke);
+  await listLatestQualityRuns("p1", invoke);
   await clearQualityCheckHistory("p1", null, invoke);
   assert.deepEqual(
     calls.map((call) => call.command),
     [
+      "preview_quality_check_sql",
       "create_quality_check",
       "update_quality_check",
       "list_quality_checks",
       "delete_quality_check",
       "get_quality_check_history",
+      "list_latest_quality_runs",
       "clear_quality_check_history",
     ],
   );
   assert.deepEqual(
-    { ...calls[4].args },
+    { ...calls[5].args },
     { projectId: "p1", checkId: "check-1", offset: 0, limit: 20 },
   );
 });
