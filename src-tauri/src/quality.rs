@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, VecDeque},
     sync::{Arc, Mutex},
     thread,
     time::Duration,
@@ -24,6 +24,8 @@ use crate::{
 
 const POLL_INTERVAL: Duration = Duration::from_millis(150);
 const MAX_POLL_FAILURES: u32 = 3;
+const MAX_TERMINAL_EXECUTIONS: usize = 256;
+const MAX_TRACKED_PREVIEWS: usize = 8;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompiledCheck {
@@ -65,6 +67,20 @@ pub struct CheckExecutionView {
     pub observation_scope: &'static str,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QualityRunDetail {
+    pub run: crate::metadata::quality::CheckRun,
+    pub check_name: String,
+    pub revision_number: u32,
+    pub current_revision_number: u32,
+    pub definition: crate::metadata::quality::QualityCheckDraft,
+    pub count_sql: String,
+    pub failure_sql: String,
+    pub custom: bool,
+    pub is_latest_revision: bool,
+}
+
 struct CheckExecutionRecord {
     project_id: String,
     check_id: String,
@@ -73,7 +89,6 @@ struct CheckExecutionRecord {
     failure_count: Option<u64>,
     duration_ms: u64,
     count_sql: String,
-    preview_sql: String,
     error: Option<CheckExecutionError>,
     history_written: bool,
 }
@@ -134,7 +149,8 @@ pub struct QualityCoordinator {
     engine: Arc<dyn QualityEngine>,
     database: MetadataDb,
     executions: Mutex<HashMap<String, CheckExecutionRecord>>,
-    previews: Mutex<Vec<String>>,
+    terminal_order: Mutex<VecDeque<String>>,
+    previews: Mutex<VecDeque<String>>,
     poll_interval: Duration,
 }
 
@@ -144,7 +160,8 @@ impl QualityCoordinator {
             engine,
             database,
             executions: Mutex::new(HashMap::new()),
-            previews: Mutex::new(Vec::new()),
+            terminal_order: Mutex::new(VecDeque::new()),
+            previews: Mutex::new(VecDeque::new()),
             poll_interval: POLL_INTERVAL,
         }
     }
@@ -188,13 +205,67 @@ impl QualityCoordinator {
         let revision = repository
             .revision(project_id, &definition.latest_revision_id)
             .map_err(|error| error.to_string())?;
+        let revision_id = definition.latest_revision_id.clone();
         match revision {
             Some(revision) => match self.submit(definition.clone(), revision) {
                 Ok(view) => Ok(view),
-                Err(error) => self.record_submission_error(definition, error),
+                Err(error) => self.record_submission_error(definition, revision_id, error),
             },
-            None => self.record_submission_error(definition, "quality.revision_missing".into()),
+            None => self.record_submission_error(
+                definition,
+                revision_id,
+                "quality.revision_missing".into(),
+            ),
         }
+    }
+
+    pub fn run_revision(
+        self: &Arc<Self>,
+        project_id: &str,
+        run_id: &str,
+    ) -> Result<CheckExecutionView, String> {
+        let detail = self.run_detail(project_id, run_id)?;
+        let definition = QualityRepository::new(self.database.clone())
+            .get(project_id, &detail.run.check_id)
+            .map_err(|error| error.to_string())?
+            .ok_or_else(|| "quality.check_missing".to_string())?;
+        let revision = QualityRepository::new(self.database.clone())
+            .revision(project_id, &detail.run.revision_id)
+            .map_err(|error| error.to_string())?
+            .ok_or_else(|| "quality.revision_missing".to_string())?;
+        let revision_id = revision.id.clone();
+        match self.submit(definition.clone(), revision) {
+            Ok(view) => Ok(view),
+            Err(error) => self.record_submission_error(definition, revision_id, error),
+        }
+    }
+
+    pub fn run_detail(&self, project_id: &str, run_id: &str) -> Result<QualityRunDetail, String> {
+        let repository = QualityRepository::new(self.database.clone());
+        let run = repository
+            .run(project_id, run_id)
+            .map_err(|error| error.to_string())?
+            .ok_or_else(|| "quality.run_missing".to_string())?;
+        let definition = repository
+            .get(project_id, &run.check_id)
+            .map_err(|error| error.to_string())?
+            .ok_or_else(|| "quality.check_missing".to_string())?;
+        let revision = repository
+            .revision(project_id, &run.revision_id)
+            .map_err(|error| error.to_string())?
+            .ok_or_else(|| "quality.revision_missing".to_string())?;
+        let compiled = compile_check(&revision.definition)?;
+        Ok(QualityRunDetail {
+            check_name: revision.definition.name.clone(),
+            revision_number: revision.revision_number,
+            current_revision_number: definition.revision_number,
+            definition: revision.definition,
+            count_sql: compiled.count_sql,
+            failure_sql: compiled.preview_sql,
+            custom: compiled.custom,
+            is_latest_revision: run.revision_id == definition.latest_revision_id,
+            run,
+        })
     }
 
     pub fn run_suite(
@@ -213,12 +284,22 @@ impl QualityCoordinator {
                 .revision(project_id, &check.latest_revision_id)
                 .map_err(|error| error.to_string())?;
             match revision {
-                Some(revision) => match self.submit(check.clone(), revision) {
-                    Ok(view) => views.push(view),
-                    Err(error) => views.push(self.record_submission_error(check, error)?),
-                },
-                None => views
-                    .push(self.record_submission_error(check, "quality.revision_missing".into())?),
+                Some(revision) => {
+                    let revision_id = revision.id.clone();
+                    match self.submit(check.clone(), revision) {
+                        Ok(view) => views.push(view),
+                        Err(error) => views.push(self.record_submission_error(
+                            check.clone(),
+                            revision_id,
+                            error,
+                        )?),
+                    }
+                }
+                None => views.push(self.record_submission_error(
+                    check.clone(),
+                    check.latest_revision_id,
+                    "quality.revision_missing".into(),
+                )?),
             }
         }
         Ok(views)
@@ -227,6 +308,7 @@ impl QualityCoordinator {
     fn record_submission_error(
         &self,
         definition: QualityCheckDefinition,
+        revision_id: String,
         message: String,
     ) -> Result<CheckExecutionView, String> {
         let run_id = uuid::Uuid::new_v4().to_string();
@@ -238,12 +320,11 @@ impl QualityCoordinator {
                 CheckExecutionRecord {
                     project_id: definition.project_id,
                     check_id: definition.id,
-                    revision_id: definition.latest_revision_id,
+                    revision_id,
                     state: CheckExecutionState::Queued,
                     failure_count: None,
                     duration_ms: 0,
                     count_sql: String::new(),
-                    preview_sql: String::new(),
                     error: None,
                     history_written: false,
                 },
@@ -286,7 +367,6 @@ impl QualityCoordinator {
                     failure_count: None,
                     duration_ms: 0,
                     count_sql: compiled.count_sql.clone(),
-                    preview_sql: compiled.preview_sql,
                     error: None,
                     history_written: false,
                 },
@@ -397,7 +477,7 @@ impl QualityCoordinator {
                 {
                     previews_active = true;
                 }
-                Ok(_) => self.remove_preview(&id),
+                Ok(_) => {}
                 Err(_) => previews_active = true,
             }
         }
@@ -408,73 +488,56 @@ impl QualityCoordinator {
         if !result_id.starts_with("quality-preview-") {
             return Err("quality.preview_invalid".into());
         }
-        let status = self.engine.status(result_id)?;
-        if status.as_ref().is_none_or(|status| {
-            matches!(
-                status.state,
-                ExecutionState::Succeeded | ExecutionState::Failed | ExecutionState::Cancelled
-            )
-        }) {
-            self.remove_preview(result_id);
-        }
-        Ok(status)
+        self.engine.status(result_id)
     }
 
     pub fn cancel_preview(&self, result_id: &str) -> Result<Option<ExecutionStatus>, String> {
         if !result_id.starts_with("quality-preview-") {
             return Err("quality.preview_invalid".into());
         }
-        let status = self.engine.cancel(result_id)?;
-        if status.as_ref().is_none_or(|status| {
-            matches!(
-                status.state,
-                ExecutionState::Succeeded | ExecutionState::Failed | ExecutionState::Cancelled
-            )
-        }) {
-            self.remove_preview(result_id);
-        }
-        Ok(status)
+        self.engine.cancel(result_id)
     }
 
-    pub fn start_failure_preview(&self, run_id: &str) -> Result<FailurePreview, String> {
-        let (project_id, revision_id, sql, state) = {
-            let runs = self
-                .executions
-                .lock()
-                .map_err(|_| "quality execution registry poisoned".to_string())?;
-            let run = runs
-                .get(run_id)
-                .ok_or_else(|| "quality run does not exist".to_string())?;
-            (
-                run.project_id.clone(),
-                run.revision_id.clone(),
-                run.preview_sql.clone(),
-                run.state,
-            )
-        };
-        if state != CheckExecutionState::Failed {
+    pub fn start_failure_preview(
+        &self,
+        project_id: &str,
+        run_id: &str,
+    ) -> Result<FailurePreview, String> {
+        let detail = self.run_detail(project_id, run_id)?;
+        if detail.run.outcome != CheckOutcome::Fail {
             return Err("quality.preview_requires_failed_run".into());
         }
-        if QualityRepository::new(self.database.clone())
-            .revision(&project_id, &revision_id)
-            .map_err(|error| error.to_string())?
-            .is_none()
         {
-            return Err("quality.revision_missing".into());
+            let previews = self
+                .previews
+                .lock()
+                .map_err(|_| "quality preview registry poisoned".to_string())?;
+            if previews.len() >= MAX_TRACKED_PREVIEWS {
+                return Err("quality.preview_limit: release an open failure preview first".into());
+            }
         }
         let result_id = format!("quality-preview-{run_id}-{}", uuid::Uuid::new_v4());
-        self.engine.execute(&result_id, &sql)?;
+        self.engine.execute(&result_id, &detail.failure_sql)?;
         self.previews
             .lock()
             .map_err(|_| "quality preview registry poisoned".to_string())?
-            .push(result_id.clone());
+            .push_back(result_id.clone());
         Ok(FailurePreview {
             result_id,
-            project_id,
-            revision_id,
-            sql,
+            project_id: project_id.into(),
+            revision_id: detail.run.revision_id,
+            sql: detail.failure_sql,
             state: ExecutionState::Queued,
         })
+    }
+
+    pub fn release_preview(&self, result_id: &str) -> Result<(), String> {
+        if !result_id.starts_with("quality-preview-") {
+            return Err("quality.preview_invalid".into());
+        }
+        self.engine.release(result_id)?;
+        self.remove_preview(result_id);
+        Ok(())
     }
 
     fn remove_preview(&self, result_id: &str) {
@@ -660,6 +723,36 @@ impl QualityCoordinator {
                         code: "quality.history".into(),
                         message: error.to_string(),
                     });
+                }
+            }
+            return;
+        }
+        self.remember_terminal(run_id);
+    }
+
+    fn remember_terminal(&self, run_id: &str) {
+        let stale = {
+            let mut order = match self.terminal_order.lock() {
+                Ok(order) => order,
+                Err(_) => return,
+            };
+            order.retain(|id| id != run_id);
+            order.push_back(run_id.into());
+            let excess = order.len().saturating_sub(MAX_TERMINAL_EXECUTIONS);
+            order.drain(..excess).collect::<Vec<_>>()
+        };
+        if stale.is_empty() {
+            return;
+        }
+        if let Ok(mut runs) = self.executions.lock() {
+            for id in stale {
+                if runs.get(&id).is_some_and(|run| {
+                    !matches!(
+                        run.state,
+                        CheckExecutionState::Queued | CheckExecutionState::Running
+                    )
+                }) {
+                    runs.remove(&id);
                 }
             }
         }
@@ -1043,6 +1136,28 @@ pub fn run_quality_check(
 }
 
 #[tauri::command]
+pub fn get_quality_run_detail(
+    project_id: String,
+    run_id: String,
+    quality: State<'_, Arc<QualityCoordinator>>,
+    projects: State<'_, ProjectManager>,
+) -> Result<QualityRunDetail, String> {
+    require_project(&project_id, &projects)?;
+    quality.run_detail(&project_id, &run_id)
+}
+
+#[tauri::command]
+pub fn rerun_quality_revision(
+    project_id: String,
+    run_id: String,
+    quality: State<'_, Arc<QualityCoordinator>>,
+    projects: State<'_, ProjectManager>,
+) -> Result<CheckExecutionView, String> {
+    require_project(&project_id, &projects)?;
+    quality.run_revision(&project_id, &run_id)
+}
+
+#[tauri::command]
 pub fn run_quality_suite(
     project_id: String,
     quality: State<'_, Arc<QualityCoordinator>>,
@@ -1070,10 +1185,13 @@ pub fn cancel_quality_run(
 
 #[tauri::command]
 pub fn start_quality_failure_preview(
+    project_id: String,
     run_id: String,
     quality: State<'_, Arc<QualityCoordinator>>,
+    projects: State<'_, ProjectManager>,
 ) -> Result<FailurePreview, String> {
-    quality.start_failure_preview(&run_id)
+    require_project(&project_id, &projects)?;
+    quality.start_failure_preview(&project_id, &run_id)
 }
 
 #[tauri::command]
@@ -1082,6 +1200,14 @@ pub fn get_quality_failure_preview_status(
     quality: State<'_, Arc<QualityCoordinator>>,
 ) -> Result<Option<ExecutionStatus>, String> {
     quality.preview_status(&result_id)
+}
+
+#[tauri::command]
+pub fn release_quality_failure_preview(
+    result_id: String,
+    quality: State<'_, Arc<QualityCoordinator>>,
+) -> Result<(), String> {
+    quality.release_preview(&result_id)
 }
 
 #[tauri::command]
@@ -1322,7 +1448,7 @@ mod tests {
             std::thread::sleep(Duration::from_millis(2));
         }
         let preview = coordinator
-            .start_failure_preview(&submitted.run_id)
+            .start_failure_preview(&project_id, &submitted.run_id)
             .unwrap();
         assert_eq!(preview.revision_id, check.latest_revision_id);
         assert!(preview.result_id.starts_with("quality-preview-"));
@@ -1330,6 +1456,81 @@ mod tests {
         assert!(coordinator.has_active());
         coordinator.cancel_preview(&preview.result_id).unwrap();
         assert!(*engine.cancel_called.lock().unwrap());
+    }
+
+    #[test]
+    fn persisted_run_detail_preview_and_rerun_use_the_historical_revision_after_restart() {
+        let database = MetadataDb::open_in_memory().unwrap();
+        let (project_id, check) = stored_check(&database);
+        QualityRepository::new(database.clone())
+            .add_run(&CheckRunDraft {
+                id: "historical-run".into(),
+                project_id: project_id.clone(),
+                check_id: check.id.clone(),
+                revision_id: check.latest_revision_id.clone(),
+                outcome: CheckOutcome::Fail,
+                failure_count: Some(2),
+                duration_ms: 9,
+                observed_at: "2026-09-06T12:00:00Z".into(),
+                error_code: None,
+            })
+            .unwrap();
+        let mut changed = draft(CheckOptions::NotNull, NullPolicy::FailOnNull);
+        changed.project_id = project_id.clone();
+        changed.name = "changed check".into();
+        let updated = QualityRepository::new(database.clone())
+            .update(&check.id, &changed)
+            .unwrap();
+        let engine = Arc::new(FakeEngine::new(Vec::new(), 0));
+        let restarted = Arc::new(QualityCoordinator::new(engine.clone(), database));
+
+        let detail = restarted.run_detail(&project_id, "historical-run").unwrap();
+        assert_eq!(detail.revision_number, 1);
+        assert_eq!(detail.current_revision_number, 2);
+        assert!(!detail.is_latest_revision);
+        assert_eq!(detail.check_name, "check");
+        assert_eq!(detail.run.revision_id, check.latest_revision_id);
+
+        let preview = restarted
+            .start_failure_preview(&project_id, "historical-run")
+            .unwrap();
+        assert_eq!(preview.revision_id, check.latest_revision_id);
+        assert_eq!(engine.submitted.lock().unwrap()[0].1, detail.failure_sql);
+        restarted.release_preview(&preview.result_id).unwrap();
+        assert_eq!(
+            engine.released.lock().unwrap().as_slice(),
+            &[preview.result_id]
+        );
+
+        let rerun = restarted
+            .run_revision(&project_id, "historical-run")
+            .unwrap();
+        assert_eq!(rerun.revision_id, check.latest_revision_id);
+        assert_ne!(rerun.revision_id, updated.latest_revision_id);
+        assert_eq!(engine.submitted.lock().unwrap()[1].1, detail.count_sql);
+    }
+
+    #[test]
+    fn coordinator_retains_only_the_bounded_terminal_execution_window() {
+        let database = MetadataDb::open_in_memory().unwrap();
+        let (project_id, check) = stored_check(&database);
+        let coordinator =
+            QualityCoordinator::new(Arc::new(FakeEngine::new(Vec::new(), 0)), database);
+        for index in 0..=MAX_TERMINAL_EXECUTIONS {
+            coordinator
+                .record_submission_error(
+                    check.clone(),
+                    check.latest_revision_id.clone(),
+                    format!("invalid-{index}"),
+                )
+                .unwrap();
+        }
+        let runs = coordinator.executions.lock().unwrap();
+        assert_eq!(runs.len(), MAX_TERMINAL_EXECUTIONS);
+        assert!(runs.values().all(|run| run.project_id == project_id));
+        assert!(runs
+            .values()
+            .all(|run| run.state == CheckExecutionState::Error));
     }
 
     fn real_engine_path() -> std::path::PathBuf {
@@ -1564,7 +1765,7 @@ mod tests {
         let failed = coordinator.status(&submitted.run_id).unwrap();
         assert_eq!(failed.failure_count, Some(2));
         let preview = coordinator
-            .start_failure_preview(&submitted.run_id)
+            .start_failure_preview(&project.id, &submitted.run_id)
             .unwrap();
         let preview_status = (0..400)
             .find_map(|_| {
@@ -1580,7 +1781,7 @@ mod tests {
         assert_eq!(preview_status.result.as_ref().unwrap().row_count, 2);
         let page = engine.result_page(&preview.result_id, 0, 500).unwrap();
         assert_eq!(page["rows"].as_array().unwrap().len(), 2);
-        engine.release_result(&preview.result_id).unwrap();
+        coordinator.release_preview(&preview.result_id).unwrap();
 
         engine
             .execute_query(

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import ts from "typescript";
 import vm from "node:vm";
+import { readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 
 async function loadCommandsModule() {
@@ -363,15 +364,30 @@ test("quality definitions and bounded history use project-scoped typed commands"
   );
 });
 
+test("quality workspace CSS uses container-responsive non-overlapping panes", () => {
+  const css = readFileSync(new URL("../src/features/quality/quality.css", import.meta.url), "utf8");
+  assert.match(css, /container-type:\s*inline-size/);
+  assert.match(css, /@container \(max-width: 930px\)/);
+  assert.match(css, /@container \(max-width: 650px\)/);
+  assert.match(css, /\.checks-body > \[data-pane-active="false"\]/);
+  assert.match(css, /\.quality-runs-body > \[data-runs-pane-active="false"\]/);
+  assert.doesNotMatch(css, /@media \(max-width:/);
+  assert.doesNotMatch(css, /\.check-sql-pane\s*\{[^}]*position:\s*absolute/s);
+  assert.doesNotMatch(css, /\.quality-run-detail-pane\s*\{[^}]*position:\s*absolute/s);
+});
+
 test("quality execution and bounded previews use explicit lifecycle commands", async () => {
   const {
     runQualityCheck,
     runQualitySuite,
+    getQualityRunDetail,
+    rerunQualityRevision,
     getQualityRunStatus,
     cancelQualityRun,
     startQualityFailurePreview,
     getQualityFailurePreviewStatus,
     cancelQualityFailurePreview,
+    releaseQualityFailurePreview,
   } = await loadCommandsModule();
   const calls = [];
   const invoke = async (command, args) => {
@@ -381,21 +397,27 @@ test("quality execution and bounded previews use explicit lifecycle commands", a
 
   await runQualityCheck("p1", "check-1", invoke);
   await runQualitySuite("p1", invoke);
+  await getQualityRunDetail("p1", "run-1", invoke);
+  await rerunQualityRevision("p1", "run-1", invoke);
   await getQualityRunStatus("run-1", invoke);
   await cancelQualityRun("run-1", invoke);
-  await startQualityFailurePreview("run-1", invoke);
+  await startQualityFailurePreview("p1", "run-1", invoke);
   await getQualityFailurePreviewStatus("preview-1", invoke);
   await cancelQualityFailurePreview("preview-1", invoke);
+  await releaseQualityFailurePreview("preview-1", invoke);
   assert.deepEqual(
     calls.map((call) => call.command),
     [
       "run_quality_check",
       "run_quality_suite",
+      "get_quality_run_detail",
+      "rerun_quality_revision",
       "get_quality_run_status",
       "cancel_quality_run",
       "start_quality_failure_preview",
       "get_quality_failure_preview_status",
       "cancel_quality_failure_preview",
+      "release_quality_failure_preview",
     ],
   );
 });

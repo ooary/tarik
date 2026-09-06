@@ -600,6 +600,43 @@ function App() {
     setProfileHandoff(null);
   }
 
+  function profileFromChecks(target: {
+    database: string;
+    schema: string;
+    object: string;
+  }) {
+    const object = catalog.objects.find(
+      (candidate) =>
+        candidate.database === target.database &&
+        candidate.schema === target.schema &&
+        candidate.name === target.object,
+    );
+    if (!object) return;
+    setChecksOpen(false);
+    openProfile(object);
+  }
+
+  async function repairSourceFromChecks(target: {
+    database: string;
+    schema: string;
+    object: string;
+  }) {
+    const object = catalog.objects.find(
+      (candidate) =>
+        candidate.database === target.database &&
+        candidate.schema === target.schema &&
+        candidate.name === target.object,
+    );
+    if (!object) {
+      throw new Error("quality.catalog_stale: The target is no longer in the catalog.");
+    }
+    const source = sourceForCatalogObject(sources, catalog.objects, object);
+    if (!source || source.kind !== "linked_parquet") {
+      throw new Error("quality.source_not_repairable: No linked Parquet source is recorded for this target.");
+    }
+    await repairSource(source);
+  }
+
   function openGeneratedSql(sql: string, title: string) {
     setChecksOpen(false);
     setProfileHandoff(null);
@@ -1028,6 +1065,8 @@ function App() {
             catalog={catalog}
             onClose={closeChecks}
             onOpenSql={openGeneratedSql}
+            onProfileTarget={profileFromChecks}
+            onRepairTarget={repairSourceFromChecks}
             prefill={profileHandoff}
             project={project}
           />

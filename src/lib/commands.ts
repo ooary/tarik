@@ -983,6 +983,18 @@ export interface QualityExecutionView {
   observationScope: "per_check";
 }
 
+export interface QualityRunDetail {
+  run: QualityCheckRun;
+  checkName: string;
+  revisionNumber: number;
+  currentRevisionNumber: number;
+  definition: QualityCheckDraft;
+  countSql: string;
+  failureSql: string;
+  custom: boolean;
+  isLatestRevision: boolean;
+}
+
 export interface QualityFailurePreview {
   resultId: string;
   projectId: string;
@@ -1069,6 +1081,22 @@ export function runQualityCheck(
   return invokeCommand<QualityExecutionView>("run_quality_check", { projectId, checkId });
 }
 
+export function getQualityRunDetail(
+  projectId: string,
+  runId: string,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<QualityRunDetail> {
+  return invokeCommand<QualityRunDetail>("get_quality_run_detail", { projectId, runId });
+}
+
+export function rerunQualityRevision(
+  projectId: string,
+  runId: string,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<QualityExecutionView> {
+  return invokeCommand<QualityExecutionView>("rerun_quality_revision", { projectId, runId });
+}
+
 export function runQualitySuite(
   projectId: string,
   invokeCommand: InvokeCommand = invoke,
@@ -1091,10 +1119,21 @@ export function cancelQualityRun(
 }
 
 export function startQualityFailurePreview(
+  projectId: string,
   runId: string,
   invokeCommand: InvokeCommand = invoke,
 ): Promise<QualityFailurePreview> {
-  return invokeCommand<QualityFailurePreview>("start_quality_failure_preview", { runId });
+  return invokeCommand<QualityFailurePreview>("start_quality_failure_preview", {
+    projectId,
+    runId,
+  });
+}
+
+export function releaseQualityFailurePreview(
+  resultId: string,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<void> {
+  return invokeCommand<void>("release_quality_failure_preview", { resultId });
 }
 
 export function getQualityFailurePreviewStatus(

@@ -582,8 +582,7 @@ impl QualityRepository {
         })
     }
 
-    #[allow(dead_code)]
-    fn run(&self, project_id: &str, id: &str) -> Result<Option<CheckRun>, MetadataError> {
+    pub fn run(&self, project_id: &str, id: &str) -> Result<Option<CheckRun>, MetadataError> {
         self.database
             .connection()?
             .query_row(
