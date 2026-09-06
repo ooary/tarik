@@ -357,6 +357,43 @@ test("quality definitions and bounded history use project-scoped typed commands"
   );
 });
 
+test("quality execution and bounded previews use explicit lifecycle commands", async () => {
+  const {
+    runQualityCheck,
+    runQualitySuite,
+    getQualityRunStatus,
+    cancelQualityRun,
+    startQualityFailurePreview,
+    getQualityFailurePreviewStatus,
+    cancelQualityFailurePreview,
+  } = await loadCommandsModule();
+  const calls = [];
+  const invoke = async (command, args) => {
+    calls.push({ command, args });
+    return { runId: "run-1", resultId: "preview-1", state: "queued" };
+  };
+
+  await runQualityCheck("p1", "check-1", invoke);
+  await runQualitySuite("p1", invoke);
+  await getQualityRunStatus("run-1", invoke);
+  await cancelQualityRun("run-1", invoke);
+  await startQualityFailurePreview("run-1", invoke);
+  await getQualityFailurePreviewStatus("preview-1", invoke);
+  await cancelQualityFailurePreview("preview-1", invoke);
+  assert.deepEqual(
+    calls.map((call) => call.command),
+    [
+      "run_quality_check",
+      "run_quality_suite",
+      "get_quality_run_status",
+      "cancel_quality_run",
+      "start_quality_failure_preview",
+      "get_quality_failure_preview_status",
+      "cancel_quality_failure_preview",
+    ],
+  );
+});
+
 test("history pages use typed project filters", async () => {
   const { listQueryHistoryPage } = await loadCommandsModule();
   const calls = [];

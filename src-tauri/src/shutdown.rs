@@ -14,6 +14,7 @@ use crate::{
     observability::{AppLogger, EventFields, LogLevel},
     profile::ProfileCoordinator,
     projects::ProjectManager,
+    quality::QualityCoordinator,
     query::QueryCoordinator,
     results::ResultStore,
 };
@@ -33,6 +34,7 @@ struct OwnedShutdownResources {
     queries: Arc<QueryCoordinator>,
     exports: Arc<ExportCoordinator>,
     profiles: Arc<ProfileCoordinator>,
+    quality: Arc<QualityCoordinator>,
     results: Arc<ResultStore>,
     projects: ProjectManager,
     engine: Arc<EngineManager>,
@@ -51,6 +53,7 @@ impl ShutdownCoordinator {
         queries: Arc<QueryCoordinator>,
         exports: Arc<ExportCoordinator>,
         profiles: Arc<ProfileCoordinator>,
+        quality: Arc<QualityCoordinator>,
         results: Arc<ResultStore>,
         projects: ProjectManager,
         engine: Arc<EngineManager>,
@@ -63,6 +66,7 @@ impl ShutdownCoordinator {
                 queries,
                 exports,
                 profiles,
+                quality,
                 results,
                 projects,
                 engine,
@@ -130,6 +134,7 @@ pub struct ShutdownReport {
     queries_cancelled: u64,
     exports_cancelled: u64,
     profiles_cancelled: u64,
+    quality_runs_cancelled: u64,
     results_released: u64,
     metadata_checkpointed: bool,
     warnings: Vec<String>,
@@ -139,6 +144,7 @@ struct ShutdownResources<'a> {
     queries: &'a Arc<QueryCoordinator>,
     exports: &'a Arc<ExportCoordinator>,
     profiles: &'a Arc<ProfileCoordinator>,
+    quality: &'a Arc<QualityCoordinator>,
     results: &'a Arc<ResultStore>,
     projects: &'a ProjectManager,
     engine: &'a Arc<EngineManager>,
@@ -152,6 +158,7 @@ fn run_shutdown(resources: ShutdownResources<'_>) -> ShutdownReport {
         queries_cancelled: resources.queries.cancel_all(),
         exports_cancelled: resources.exports.cancel_all(),
         profiles_cancelled: resources.profiles.cancel_all(),
+        quality_runs_cancelled: resources.quality.cancel_all(),
         results_released: 0,
         metadata_checkpointed: false,
         warnings: Vec::new(),
@@ -161,13 +168,15 @@ fn run_shutdown(resources: ShutdownResources<'_>) -> ShutdownReport {
     while Instant::now() < deadline
         && (resources.queries.has_active()
             || resources.exports.has_active()
-            || resources.profiles.has_active())
+            || resources.profiles.has_active()
+            || resources.quality.has_active())
     {
         thread::sleep(JOB_POLL);
     }
     if resources.queries.has_active()
         || resources.exports.has_active()
         || resources.profiles.has_active()
+        || resources.quality.has_active()
     {
         report
             .warnings
@@ -233,6 +242,7 @@ pub async fn complete_shutdown<R: tauri::Runtime>(
             queries_cancelled: 0,
             exports_cancelled: 0,
             profiles_cancelled: 0,
+            quality_runs_cancelled: 0,
             results_released: 0,
             metadata_checkpointed: true,
             warnings: Vec::new(),
@@ -242,6 +252,7 @@ pub async fn complete_shutdown<R: tauri::Runtime>(
     let queries = resources.queries.clone();
     let exports = resources.exports.clone();
     let profiles = resources.profiles.clone();
+    let quality = resources.quality.clone();
     let results = resources.results.clone();
     let projects = resources.projects.clone();
     let engine = resources.engine.clone();
@@ -252,6 +263,7 @@ pub async fn complete_shutdown<R: tauri::Runtime>(
             queries: &queries,
             exports: &exports,
             profiles: &profiles,
+            quality: &quality,
             results: &results,
             projects: &projects,
             engine: &engine,

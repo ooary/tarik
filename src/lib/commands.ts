@@ -42,6 +42,8 @@ export interface ShutdownReport {
   exportsCancelled: number;
   /** Added with profile jobs; optional only for legacy test fixtures. */
   profilesCancelled?: number;
+  /** Added with quality jobs; optional only for legacy test fixtures. */
+  qualityRunsCancelled?: number;
   resultsReleased: number;
   metadataCheckpointed: boolean;
   warnings: string[];
@@ -538,6 +540,20 @@ export interface ExecutionError {
   message: string;
 }
 
+export interface EngineExecutionStatus {
+  executionId: string;
+  state: ExecutionState;
+  durationMs: number;
+  rowsProduced: number | null;
+  rowsAffected: number | null;
+  error: ExecutionError | null;
+  result: {
+    resultId: string;
+    rowCount: number;
+    rowCountExact: boolean;
+  } | null;
+}
+
 export type PlanMode = "explain" | "profile";
 
 export interface PlanNode {
@@ -938,6 +954,30 @@ export interface QualityPruneSummary {
   remaining: number;
 }
 
+export type QualityExecutionState =
+  "queued" | "running" | "passed" | "failed" | "error" | "cancelled";
+
+export interface QualityExecutionView {
+  runId: string;
+  projectId: string;
+  checkId: string;
+  revisionId: string;
+  state: QualityExecutionState;
+  failureCount: number | null;
+  durationMs: number;
+  sql: string;
+  error: ExecutionError | null;
+  observationScope: "per_check";
+}
+
+export interface QualityFailurePreview {
+  resultId: string;
+  projectId: string;
+  revisionId: string;
+  sql: string;
+  state: ExecutionState;
+}
+
 export function createQualityCheck(
   draft: QualityCheckDraft,
   invokeCommand: InvokeCommand = invoke,
@@ -991,6 +1031,60 @@ export function clearQualityCheckHistory(
   return invokeCommand<QualityPruneSummary>("clear_quality_check_history", {
     projectId,
     checkId,
+  });
+}
+
+export function runQualityCheck(
+  projectId: string,
+  checkId: string,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<QualityExecutionView> {
+  return invokeCommand<QualityExecutionView>("run_quality_check", { projectId, checkId });
+}
+
+export function runQualitySuite(
+  projectId: string,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<QualityExecutionView[]> {
+  return invokeCommand<QualityExecutionView[]>("run_quality_suite", { projectId });
+}
+
+export function getQualityRunStatus(
+  runId: string,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<QualityExecutionView | null> {
+  return invokeCommand<QualityExecutionView | null>("get_quality_run_status", { runId });
+}
+
+export function cancelQualityRun(
+  runId: string,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<QualityExecutionView> {
+  return invokeCommand<QualityExecutionView>("cancel_quality_run", { runId });
+}
+
+export function startQualityFailurePreview(
+  runId: string,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<QualityFailurePreview> {
+  return invokeCommand<QualityFailurePreview>("start_quality_failure_preview", { runId });
+}
+
+export function getQualityFailurePreviewStatus(
+  resultId: string,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<EngineExecutionStatus | null> {
+  return invokeCommand<EngineExecutionStatus | null>("get_quality_failure_preview_status", {
+    resultId,
+  });
+}
+
+export function cancelQualityFailurePreview(
+  resultId: string,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<EngineExecutionStatus | null> {
+  return invokeCommand<EngineExecutionStatus | null>("cancel_quality_failure_preview", {
+    resultId,
   });
 }
 

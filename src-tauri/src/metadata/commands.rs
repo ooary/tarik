@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
@@ -222,7 +224,11 @@ pub fn delete_quality_check(
     project_id: String,
     id: String,
     database: State<'_, MetadataDb>,
+    quality: State<'_, Arc<crate::quality::QualityCoordinator>>,
 ) -> Result<bool, String> {
+    if quality.has_active_check(&project_id, &id) {
+        return Err("quality.busy: Finish or cancel the active check before deleting it.".into());
+    }
     QualityRepository::new(database.inner().clone())
         .delete(&project_id, &id)
         .map_err(|error| error.to_string())

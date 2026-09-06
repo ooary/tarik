@@ -606,6 +606,17 @@ fn validate_draft(draft: &QualityCheckDraft) -> Result<QualityCheckDraft, Metada
             if values.is_empty() || values.len() > MAX_ACCEPTED_VALUES {
                 return Err(invalid("accepted-values entry count is out of range"));
             }
+            if values.iter().any(|value| {
+                value.is_null()
+                    || matches!(
+                        value,
+                        serde_json::Value::Array(_) | serde_json::Value::Object(_)
+                    )
+            }) {
+                return Err(invalid(
+                    "accepted values must be non-NULL boolean, number, or text scalars",
+                ));
+            }
             let bytes =
                 serde_json::to_vec(values).map_err(|source| MetadataError::InvalidJson {
                     key: "quality-check:accepted-values".into(),
@@ -617,8 +628,21 @@ fn validate_draft(draft: &QualityCheckDraft) -> Result<QualityCheckDraft, Metada
         }
         CheckOptions::Range {
             minimum, maximum, ..
-        } if minimum.is_none() && maximum.is_none() => {
-            return Err(invalid("range requires a minimum, maximum, or both"));
+        } => {
+            if minimum.is_none() && maximum.is_none() {
+                return Err(invalid("range requires a minimum, maximum, or both"));
+            }
+            if minimum.iter().chain(maximum.iter()).any(|value| {
+                value.is_null()
+                    || matches!(
+                        value,
+                        serde_json::Value::Array(_) | serde_json::Value::Object(_)
+                    )
+            }) {
+                return Err(invalid(
+                    "range bounds must be non-NULL boolean, number, or text scalars",
+                ));
+            }
         }
         CheckOptions::Relationship {
             parent,
@@ -819,14 +843,17 @@ fn normalize_columns(columns: &[String]) -> Result<Vec<String>, MetadataError> {
     if columns.len() > MAX_COMPOSITE_COLUMNS {
         return Err(invalid("too many composite key columns"));
     }
-    let mut normalized = columns
+    let normalized = columns
         .iter()
         .map(|column| required(column, "target column is empty"))
         .collect::<Result<Vec<_>, _>>()?;
-    normalized.sort_by_key(|column| column.to_lowercase());
-    normalized.dedup_by(|left, right| left.eq_ignore_ascii_case(right));
-    if normalized.len() != columns.len() {
-        return Err(invalid("target columns must be unique"));
+    for (index, column) in normalized.iter().enumerate() {
+        if normalized[..index]
+            .iter()
+            .any(|previous| previous.eq_ignore_ascii_case(column))
+        {
+            return Err(invalid("target columns must be unique"));
+        }
     }
     Ok(normalized)
 }

@@ -415,6 +415,14 @@ impl EngineManager {
         })
     }
 
+    pub fn validate_quality_read_only(&self, sql: &str) -> Result<(), String> {
+        self.session_request(
+            "quality.validate_read_only",
+            serde_json::json!({ "sql": sql }),
+        )
+        .map(|_| ())
+    }
+
     /// Parse and bind an immutable SQL revision with DuckDB EXPLAIN. The
     /// sidecar never submits these statements to query execution.
     pub fn validate_query(&self, sql: &str, revision: u64) -> Result<SqlValidation, String> {

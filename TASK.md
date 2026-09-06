@@ -2057,7 +2057,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Commit: `feat(quality): persist check definitions and history`
   - Notes: Migration 0008 adds project-scoped definitions, immutable JSON revisions, and aggregate-only terminal runs with explicit foreign-key cascades. Validation bounds 200 checks/project, 64-byte names, 16-key composites, 100/32 KiB accepted values, 256 KiB custom SQL, 100 runs/check, and 5,000/project. Custom SQL persistence rejects multiple statements and mutating/external tokens conservatively; T3 revalidates against DuckDB. Run finalization is internal-only, idempotent by matching payload, and rejects conflicting IDs. Definitions with history cannot be deleted until their aggregate history is explicitly cleared, preserving revision identity.
 
-- [ ] **E14-T3 Execute check suites with immutable SQL and bounded failure previews**
+- [x] **E14-T3 Execute check suites with immutable SQL and bounded failure previews**
   - Depends on: E14-T1, E14-T2
   - Owns: check SQL compiler, suite coordinator, sidecar jobs, history finalization, and failure-page lifecycle
   - Deliverables:
@@ -2069,6 +2069,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Acceptance: a suite with passing, failing, errored, and cancelled checks records one truthful terminal row per started check, exposes only bounded examples, and does not mutate tables or leak resources.
   - Tests: generated SQL golden cases for every check/NULL policy, composite keys, reserved/quoted names, custom mutation sentinels, pass/fail/error/cancel transitions, suite order/snapshot disclosure, exactly-once history, preview paging/release, sidecar crash recovery, and fixed-workload memory/disk budgets.
   - Commit: `feat(quality): run cancellable data quality suites`
+  - Notes: Added deterministic safely quoted SQL for all eight check types, explicit NULL-policy compilation, sidecar `quality.validate_read_only` bind validation for custom SQL, ordered per-check suite observation boundaries, a dedicated desktop quality state machine, exactly-once aggregate terminal history, and explicit immutable failure previews through existing bounded result pages. Count artifacts are always released; preview jobs are tracked for cancellation/resources/shutdown and never auto-run. Real-sidecar tests cover pass/fail → preview → release → repair → pass and the SQL/count/preview matrix.
 
 - [ ] **E14-T4 Add a beginner-focused Profile workspace**
   - Depends on: E14-T1

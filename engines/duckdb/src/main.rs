@@ -248,6 +248,15 @@ fn dispatch(
             let profile_id = required_string(params, "profileId")?;
             Ok(serde_json::to_value(profiles.cancel(&profile_id)?)?)
         }
+        "quality.validate_read_only" => {
+            let session_id = required_string(params, "sessionId")?;
+            let sql = required_string(params, "sql")?;
+            let statement = sql::validate_quality_read_only(&sql)
+                .map_err(|message| EngineError::QualitySqlUnsafe(message.into()))?;
+            let connection = sessions.get(&session_id)?;
+            connection.prepare(&format!("EXPLAIN (FORMAT JSON) {statement}"))?;
+            Ok(serde_json::json!({ "readOnly": true }))
+        }
         "query.validate" => {
             let session_id = required_string(params, "sessionId")?;
             let sql = required_string(params, "sql")?;

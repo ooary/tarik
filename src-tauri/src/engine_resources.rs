@@ -13,6 +13,7 @@ use crate::{
     metadata::{settings::SettingsRepository, MetadataDb},
     profile::ProfileCoordinator,
     projects::ProjectManager,
+    quality::QualityCoordinator,
     query::QueryCoordinator,
 };
 
@@ -45,6 +46,7 @@ pub struct EngineResourceManager {
     queries: Arc<QueryCoordinator>,
     exports: Arc<ExportCoordinator>,
     profiles: Arc<ProfileCoordinator>,
+    quality: Arc<QualityCoordinator>,
     requested: std::sync::Mutex<EngineResourceSettings>,
 }
 
@@ -55,6 +57,7 @@ impl EngineResourceManager {
         queries: Arc<QueryCoordinator>,
         exports: Arc<ExportCoordinator>,
         profiles: Arc<ProfileCoordinator>,
+        quality: Arc<QualityCoordinator>,
     ) -> Self {
         let requested = load_requested(&database);
         let _ = engine.set_requested_resources(requested.clone());
@@ -64,6 +67,7 @@ impl EngineResourceManager {
             queries,
             exports,
             profiles,
+            quality,
             requested: std::sync::Mutex::new(requested),
         }
     }
@@ -89,9 +93,13 @@ impl EngineResourceManager {
         requested
             .validate()
             .map_err(|error| format!("resources.invalid: {error}"))?;
-        if self.queries.has_active() || self.exports.has_active() || self.profiles.has_active() {
+        if self.queries.has_active()
+            || self.exports.has_active()
+            || self.profiles.has_active()
+            || self.quality.has_active()
+        {
             return Err(
-                "resources.busy: Finish or cancel the active query, profile, or export before applying settings."
+                "resources.busy: Finish or cancel the active query, profile, quality check, or export before applying settings."
                     .into(),
             );
         }

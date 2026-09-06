@@ -37,6 +37,8 @@ pub enum EngineError {
     ProfileBusy,
     #[error("profile exceeded its five-minute execution deadline")]
     ProfileDeadline,
+    #[error("custom quality SQL is not read-only: {0}")]
+    QualitySqlUnsafe(String),
     #[error("export already exists: {0}")]
     ExportExists(String),
     #[error("export does not exist: {0}")]
@@ -120,6 +122,7 @@ impl EngineError {
             Self::ProfileCatalogStale => "profile.catalog_stale",
             Self::ProfileBusy => "profile.busy",
             Self::ProfileDeadline => "profile.deadline",
+            Self::QualitySqlUnsafe(_) => "quality.sql_unsafe",
             Self::ExportExists(_) => "export.exists",
             Self::ExportMissing(_) => "export.missing",
             Self::ExportCancelled => "export.cancelled",

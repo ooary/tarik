@@ -423,6 +423,44 @@ fn query_execute_reaches_terminal_state_and_persists_rows() {
 }
 
 #[test]
+fn quality_read_only_validation_binds_without_executing_or_allowing_external_effects() {
+    let mut engine = spawn_engine();
+    let database = temp_path("quality-validation", ".duckdb");
+    engine.assert_ok(
+        "session.open",
+        json!({
+            "sessionId": "quality-validation",
+            "locator": { "engineId": "duckdb", "payload": { "path": database } }
+        }),
+    );
+    let accepted = engine.assert_ok(
+        "quality.validate_read_only",
+        json!({ "sessionId": "quality-validation", "sql": "WITH failures AS (SELECT 1 WHERE false) SELECT * FROM failures" }),
+    );
+    assert_eq!(accepted["readOnly"], true);
+    for sql in [
+        "SELECT 1; SELECT 2",
+        "DELETE FROM missing",
+        "WITH changed AS (DELETE FROM missing RETURNING *) SELECT * FROM changed",
+        "SELECT * FROM read_parquet('outside.parquet')",
+        "COPY (SELECT 1) TO 'outside.csv'",
+    ] {
+        let response = engine.request(
+            "quality.validate_read_only",
+            json!({ "sessionId": "quality-validation", "sql": sql }),
+        );
+        assert_eq!(response["ok"], false, "unexpectedly accepted {sql}");
+        assert_eq!(response["error"]["code"], "quality.sql_unsafe");
+    }
+    engine.assert_ok(
+        "session.close",
+        json!({ "sessionId": "quality-validation" }),
+    );
+    engine.child.kill().ok();
+    let _ = std::fs::remove_file(database);
+}
+
+#[test]
 fn query_validation_reports_parse_bind_errors_without_executing_mutations() {
     let mut engine = spawn_engine();
     let database = temp_path("validate", ".duckdb");

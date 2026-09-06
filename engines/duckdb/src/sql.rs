@@ -88,6 +88,114 @@ pub fn split_statements(sql: &str) -> Vec<String> {
         .collect()
 }
 
+/// Conservative read-only boundary for custom quality SQL. Strings, quoted
+/// identifiers, and comments are skipped before token classification.
+pub fn validate_quality_read_only(sql: &str) -> Result<String, &'static str> {
+    let statements = split_statements(sql);
+    if statements.len() != 1 {
+        return Err("custom quality SQL must contain exactly one statement");
+    }
+    let statement = statements.into_iter().next().unwrap_or_default();
+    let tokens = lexical_tokens(&statement);
+    if !matches!(tokens.first().map(String::as_str), Some("select" | "with")) {
+        return Err("custom quality SQL must start with SELECT or WITH");
+    }
+    const FORBIDDEN: &[&str] = &[
+        "insert",
+        "update",
+        "delete",
+        "merge",
+        "create",
+        "alter",
+        "drop",
+        "truncate",
+        "copy",
+        "attach",
+        "detach",
+        "install",
+        "load",
+        "pragma",
+        "call",
+        "set",
+        "reset",
+        "vacuum",
+        "checkpoint",
+        "export",
+        "import",
+        "read_csv",
+        "read_csv_auto",
+        "read_parquet",
+        "parquet_scan",
+        "sqlite_scan",
+        "postgres_scan",
+        "httpfs",
+    ];
+    if tokens
+        .iter()
+        .any(|token| FORBIDDEN.contains(&token.as_str()))
+    {
+        return Err("custom quality SQL contains a mutating or external operation");
+    }
+    Ok(statement)
+}
+
+fn lexical_tokens(sql: &str) -> Vec<String> {
+    let bytes = sql.as_bytes();
+    let mut tokens = Vec::new();
+    let mut index = 0usize;
+    while index < bytes.len() {
+        match bytes[index] {
+            b'\'' | b'"' => {
+                let quote = bytes[index];
+                index += 1;
+                while index < bytes.len() {
+                    if bytes[index] == quote && bytes.get(index + 1) == Some(&quote) {
+                        index += 2;
+                    } else if bytes[index] == quote {
+                        index += 1;
+                        break;
+                    } else {
+                        index += 1;
+                    }
+                }
+            }
+            b'-' if bytes.get(index + 1) == Some(&b'-') => {
+                index += 2;
+                while index < bytes.len() && bytes[index] != b'\n' {
+                    index += 1;
+                }
+            }
+            b'/' if bytes.get(index + 1) == Some(&b'*') => {
+                index += 2;
+                let mut depth = 1usize;
+                while index < bytes.len() && depth > 0 {
+                    if bytes[index] == b'/' && bytes.get(index + 1) == Some(&b'*') {
+                        depth += 1;
+                        index += 2;
+                    } else if bytes[index] == b'*' && bytes.get(index + 1) == Some(&b'/') {
+                        depth -= 1;
+                        index += 2;
+                    } else {
+                        index += 1;
+                    }
+                }
+            }
+            byte if byte.is_ascii_alphabetic() || byte == b'_' => {
+                let start = index;
+                index += 1;
+                while index < bytes.len()
+                    && (bytes[index].is_ascii_alphanumeric() || bytes[index] == b'_')
+                {
+                    index += 1;
+                }
+                tokens.push(sql[start..index].to_ascii_lowercase());
+            }
+            _ => index += 1,
+        }
+    }
+    tokens
+}
+
 fn push_trimmed_statement(
     statements: &mut Vec<(std::ops::Range<usize>, String)>,
     sql: &str,
@@ -140,5 +248,28 @@ mod tests {
     #[test]
     fn empty_input_yields_no_statements() {
         assert!(split_statements("  ;  ; -- only comment\n").is_empty());
+    }
+
+    #[test]
+    fn quality_sql_accepts_one_select_and_rejects_hidden_mutation_or_external_reads() {
+        assert!(validate_quality_read_only(
+            "WITH failures AS (SELECT 1 WHERE false) SELECT * FROM failures"
+        )
+        .is_ok());
+        assert!(validate_quality_read_only("SELECT 'delete attach' AS words").is_ok());
+        for sql in [
+            "SELECT 1; SELECT 2",
+            "DELETE FROM t",
+            "WITH changed AS (DELETE FROM t RETURNING *) SELECT * FROM changed",
+            "SELECT * FROM read_parquet('outside.parquet')",
+            "SELECT 1 /* nested /* COPY t TO 'x' */ still comment */",
+        ] {
+            let result = validate_quality_read_only(sql);
+            if sql.contains("nested") {
+                assert!(result.is_ok(), "comments do not become operators");
+            } else {
+                assert!(result.is_err(), "unexpectedly accepted {sql}");
+            }
+        }
     }
 }
