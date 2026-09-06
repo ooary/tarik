@@ -30,6 +30,7 @@ import {
 } from "./features/profile/ProfileWorkspace";
 import { ChecksWorkspace } from "./features/quality/ChecksWorkspace";
 import { SupportIncidentNotice } from "./app/SupportIncidentNotice";
+import { StartupScreen, type StartupPhase } from "./app/StartupScreen";
 import {
   createWorkbenchPreferencesRepository,
   defaultWorkbenchPreferences,
@@ -50,6 +51,7 @@ import {
   getActiveProject,
   getEngineStatus,
   getRuntimeInfo,
+  getStartupStatus,
   getLastSupportIncident,
   getLogInfo,
   getWorkbenchPreferences,
@@ -153,6 +155,8 @@ function App() {
   const [sourceError, setSourceError] = useState<string | null>(null);
   const [projectError, setProjectError] = useState<string | null>(null);
   const [preferencesReady, setPreferencesReady] = useState(false);
+  const [startupPhase, setStartupPhase] = useState<StartupPhase>("storage");
+  const [startupReady, setStartupReady] = useState(false);
   const [logInfo, setLogInfo] = useState<LogInfo | null>(null);
   const [supportIncident, setSupportIncident] = useState<SupportIncident | null>(null);
   const [cacheStatus, setCacheStatus] = useState<string | null>(null);
@@ -203,58 +207,75 @@ function App() {
   useEffect(() => {
     let active = true;
 
-    preferencesRepository
-      .load()
-      .then((stored) => {
-        if (active) setPreferences(stored);
-      })
-      .catch(() => undefined)
-      .finally(() => {
-        if (active) setPreferencesReady(true);
-      });
+    async function initialize() {
+      setStartupPhase("storage");
+      const storageTask = waitForStartupStorage(() => active);
+      const runtimeTask = getRuntimeInfo()
+        .then((info) => {
+          if (active) setRuntime({ kind: "ready", info });
+        })
+        .catch(() => {
+          if (active) setRuntime({ kind: "unavailable" });
+        });
+      const diagnosticsTask = Promise.allSettled([
+        getLogInfo().then((info) => {
+          if (active) setLogInfo(info);
+        }),
+        getLastSupportIncident().then((incident) => {
+          if (active && incident) setSupportIncident(incident);
+        }),
+      ]);
 
-    listRecentProjects()
-      .then((recent) => {
-        if (active) setRecentProjects(recent);
-      })
-      .catch(() => undefined);
+      await storageTask;
+      if (!active) return;
 
-    getActiveProject()
-      .then((activeProject) => {
-        if (!active || !activeProject) return;
-        setProject(activeProject);
-        setEngineState("connected");
-        return Promise.all([inspectProjectCatalog(), listSources(activeProject.id)]).then(
-          ([projectCatalog, projectSources]) => {
-            if (active) {
-              setCatalog(projectCatalog);
-              setSources(projectSources);
-            }
-          },
-        );
-      })
-      .catch(() => undefined);
+      setStartupPhase("preferences");
+      const preferencesTask = preferencesRepository
+        .load()
+        .then((stored) => {
+          if (active) setPreferences(stored);
+        })
+        .catch(() => undefined)
+        .finally(() => {
+          if (active) setPreferencesReady(true);
+        });
 
-    getLogInfo()
-      .then((info) => {
-        if (active) setLogInfo(info);
-      })
-      .catch(() => undefined);
+      await preferencesTask;
+      if (!active) return;
 
-    getLastSupportIncident()
-      .then((incident) => {
-        if (active && incident) setSupportIncident(incident);
-      })
-      .catch(() => undefined);
+      setStartupPhase("projects");
+      const recentTask = listRecentProjects()
+        .then((recent) => {
+          if (active) setRecentProjects(recent);
+        })
+        .catch(() => undefined);
+      const activeProjectTask = getActiveProject()
+        .then(async (activeProject) => {
+          if (!active || !activeProject) return;
+          setProject(activeProject);
+          setEngineState("connected");
+          const [projectCatalog, projectSources] = await Promise.all([
+            inspectProjectCatalog(),
+            listSources(activeProject.id),
+          ]);
+          if (active) {
+            setCatalog(projectCatalog);
+            setSources(projectSources);
+          }
+        })
+        .catch(() => undefined);
 
-    getRuntimeInfo()
-      .then((info) => {
-        if (active) setRuntime({ kind: "ready", info });
-      })
-      .catch(() => {
-        if (active) setRuntime({ kind: "unavailable" });
-      });
+      await Promise.allSettled([recentTask, activeProjectTask]);
+      if (!active) return;
 
+      setStartupPhase("workspace");
+      await Promise.allSettled([runtimeTask, diagnosticsTask]);
+      if (!active) return;
+      setStartupPhase("ready");
+      setStartupReady(true);
+    }
+
+    void initialize();
     return () => {
       active = false;
     };
@@ -542,6 +563,7 @@ function App() {
     const rowTrigger = trigger?.closest<HTMLElement>(".catalog-object-row");
     if (rowTrigger) profileTriggerRef.current = rowTrigger;
     setProfileHandoff(null);
+    setChecksOpen(false);
     setProfileIntent({
       projectId: project.id,
       object: { ...object },
@@ -725,7 +747,9 @@ function App() {
   }
 
   return (
-    <main
+    <>
+      {!startupReady && <StartupScreen phase={startupPhase} />}
+      <main
       className="app-shell"
       data-effective-theme={effectiveTheme}
       data-theme={selectedTheme}
@@ -1220,8 +1244,20 @@ function App() {
         <span className="status-bar-left"><span className={`status-mark status-mark-${engineState}`} aria-hidden="true" /> {engineState === "connected" && project ? `Connected to ${project.name}` : engineState === "connecting" ? "Connecting to DuckDB" : engineState === "standby" ? "DuckDB standby — no project session" : engineState === "recovering" ? "DuckDB stopped — reconnects on the next project operation" : engineState === "failed" ? "DuckDB connection failed" : runtime.kind === "ready" ? "No DuckDB project open" : "Starting Tarik"}</span>
         <span className="status-bar-right"><EngineResourcesDialog key={resourceStatusKey} statusKey={resourceStatusKey} /><span>UTF-8</span></span>
       </footer>
-    </main>
+      </main>
+    </>
   );
+}
+
+async function waitForStartupStorage(isActive: () => boolean): Promise<void> {
+  while (isActive()) {
+    try {
+      if ((await getStartupStatus()).ready) return;
+    } catch {
+      return;
+    }
+    await new Promise((resolve) => window.setTimeout(resolve, 100));
+  }
 }
 
 function sourceForCatalogObject(

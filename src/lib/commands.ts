@@ -242,6 +242,15 @@ export function getRuntimeInfo(invokeCommand: InvokeCommand = invoke): Promise<R
   return invokeCommand<RuntimeInfo>("get_runtime_info");
 }
 
+export interface StartupStatus {
+  ready: boolean;
+  phase: "checking_local_storage" | "ready";
+}
+
+export function getStartupStatus(invokeCommand: InvokeCommand = invoke): Promise<StartupStatus> {
+  return invokeCommand<StartupStatus>("get_startup_status");
+}
+
 export function getLogInfo(invokeCommand: InvokeCommand = invoke): Promise<LogInfo> {
   return invokeCommand<LogInfo>("get_log_info");
 }

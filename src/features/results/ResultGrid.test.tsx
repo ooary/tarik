@@ -62,6 +62,13 @@ describe("ResultGrid interactions", () => {
     expect(onRunAgain).toHaveBeenCalledOnce();
   });
 
+  it("mounts one grid-level context-menu trigger instead of one per cell", async () => {
+    const { container } = render(<ResultGrid resultId="result-1" rowTotal={3} />);
+    await screen.findByText("alpha");
+    expect(container.querySelectorAll("[data-result-context-trigger='true']")).toHaveLength(1);
+    expect(container.querySelectorAll("[data-row][data-column]")).toHaveLength(6);
+  });
+
   it("does not open a Tarik context menu from column headers", async () => {
     render(<ResultGrid resultId="result-1" rowTotal={3} />);
     const header = await screen.findByText("name");

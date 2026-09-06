@@ -13,6 +13,7 @@ mod quality;
 mod query;
 mod results;
 mod shutdown;
+mod startup;
 mod storage;
 
 use std::{
@@ -110,25 +111,8 @@ pub fn run() {
             let database = metadata::MetadataDb::open(directories.data_dir.join("tarik.sqlite"))
                 .map_err(|error| Box::new(error) as Box<dyn std::error::Error>)?;
             let cleanup = Arc::new(storage::CleanupService::new(directories.cache_dir.clone()));
-            let cleanup_summary = cleanup.startup_cleanup();
-            logger.record(
-                if cleanup_summary.warnings.is_empty() {
-                    LogLevel::Info
-                } else {
-                    LogLevel::Warning
-                },
-                "storage",
-                "startup_cleanup",
-                EventFields {
-                    status: Some(if cleanup_summary.warnings.is_empty() {
-                        "succeeded"
-                    } else {
-                        "completed_with_warnings"
-                    }),
-                    message: cleanup_summary.warnings.first().map(String::as_str),
-                    ..EventFields::default()
-                },
-            );
+            let startup = startup::StartupCoordinator::begin(cleanup.clone(), logger.clone())
+                .map_err(|error| Box::new(error) as Box<dyn std::error::Error>)?;
             let result_root = directories.cache_dir.join("results");
             let engine = Arc::new(engine_manager::EngineManager::new(
                 locate_engine_binary(),
@@ -174,6 +158,7 @@ pub fn run() {
             ));
             app.manage(logger);
             app.manage(cleanup);
+            app.manage(startup);
             app.manage(database);
             app.manage(engine);
             app.manage(project_manager);
@@ -222,6 +207,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_runtime_info,
             get_engine_status,
+            startup::get_startup_status,
             engine_resources::get_engine_resources,
             engine_resources::set_engine_resources,
             observability::get_log_info,

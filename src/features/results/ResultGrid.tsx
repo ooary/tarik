@@ -74,9 +74,14 @@ export function ResultGrid({
   const [selection, setSelection] = useState<CellSelection>(emptySelection);
   const [clipboardError, setClipboardError] = useState<string | null>(null);
   const [columnWidths, setColumnWidths] = useState<number[]>([]);
+  const [contextCell, setContextCell] = useState<CellCoordinate | null>(null);
 
   const columns = useMemo(() => parseColumns(page?.columns), [page]);
   const rows = useMemo(() => page?.rows ?? [], [page]);
+  const truncatedCells = useMemo(
+    () => new Set((page?.truncatedCells ?? []).map(([row, column]) => `${row}:${column}`)),
+    [page?.truncatedCells],
+  );
   const columnWidth = useCallback(
     (columnIndex: number) => columnWidths[columnIndex] ?? DEFAULT_COLUMN_WIDTH,
     [columnWidths],
@@ -131,6 +136,7 @@ export function ResultGrid({
     setSelection(emptySelection());
     setClipboardError(null);
     setColumnWidths([]);
+    setContextCell(null);
     getResultPage(resultId, 0)
       .then((next) => {
         if (cancelled) return;
@@ -266,11 +272,29 @@ export function ResultGrid({
   }
 
   function prepareCellContext(cell: CellCoordinate) {
+    setContextCell(cell);
     setActiveRow(cell.row);
     setSelection((current) =>
       current.cells.has(cellKey(cell)) ? current : selectCell(current, cell, "replace"),
     );
   }
+
+  function onGridContextMenu(event: React.MouseEvent<HTMLDivElement>) {
+    const target = event.target instanceof HTMLElement ? event.target : null;
+    const cell = target?.closest<HTMLElement>("[data-row][data-column]");
+    if (!cell) {
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+    const row = Number(cell.dataset.row);
+    const column = Number(cell.dataset.column);
+    if (!Number.isInteger(row) || !Number.isInteger(column)) return;
+    prepareCellContext({ row, column });
+  }
+
+  const contextRow = contextCell ? rows[contextCell.row] : undefined;
+  const contextColumn = contextCell ? columns[contextCell.column] : undefined;
 
   const measuredRows = rowVirtualizer.getVirtualItems();
   const measuredColumns = columnVirtualizer.getVirtualItems();
@@ -350,135 +374,152 @@ export function ResultGrid({
           {load.message}
         </div>
       ) : (
-        <div
-          aria-label="Query results"
-          className="result-grid"
-          onKeyDown={onKeyDown}
-          ref={scrollRef}
-          role="grid"
-          tabIndex={0}
+        <ContextMenu
+          items={[
+            {
+              disabled: !contextCell || !contextRow,
+              label: "Copy cell",
+              onSelect: () => {
+                if (contextCell && contextRow)
+                  writeClipboard(formatValue(contextRow[contextCell.column]));
+              },
+            },
+            {
+              disabled: selection.cells.size === 0,
+              label: "Copy selected cells",
+              onSelect: () => writeClipboard(selectionToTsv(selection, rows)),
+            },
+            {
+              disabled: !contextCell,
+              label: "Copy row",
+              onSelect: () => {
+                if (contextCell) copyRow(contextCell.row);
+              },
+            },
+            { label: "Copy page with headers", onSelect: copyPage },
+            {
+              disabled: !onRunAgain,
+              label: "Run query again",
+              onSelect: () => onRunAgain?.(),
+            },
+          ]}
+          label={
+            contextCell && contextColumn
+              ? `Result cell row ${contextCell.row + 1}, ${contextColumn.name}`
+              : "Result grid actions"
+          }
         >
           <div
-            className="result-grid-inner"
-            style={{
-              height: rowVirtualizer.getTotalSize() + ROW_HEIGHT,
-              position: "relative",
-              width: gridWidth,
-            }}
+            aria-label="Query results"
+            className="result-grid"
+            data-result-context-trigger="true"
+            onContextMenu={onGridContextMenu}
+            onKeyDown={onKeyDown}
+            ref={scrollRef}
+            role="grid"
+            tabIndex={0}
           >
             <div
-              className="result-grid-header"
-              style={{ height: ROW_HEIGHT, position: "relative", width: gridWidth }}
+              className="result-grid-inner"
+              style={{
+                height: rowVirtualizer.getTotalSize() + ROW_HEIGHT,
+                position: "relative",
+                width: gridWidth,
+              }}
             >
-              <span className="result-grid-cell row-number" style={{ width: ROW_NUMBER_WIDTH }}>
-                #
-              </span>
-              {virtualColumns.map((virtualColumn) => {
-                if (virtualColumn.index === 0) return null;
-                const column = columns[virtualColumn.index - 1];
-                if (!column) return null;
+              <div
+                className="result-grid-header"
+                onContextMenu={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                }}
+                style={{ height: ROW_HEIGHT, position: "relative", width: gridWidth }}
+              >
+                <span className="result-grid-cell row-number" style={{ width: ROW_NUMBER_WIDTH }}>
+                  #
+                </span>
+                {virtualColumns.map((virtualColumn) => {
+                  if (virtualColumn.index === 0) return null;
+                  const column = columns[virtualColumn.index - 1];
+                  if (!column) return null;
+                  return (
+                    <span
+                      className="result-grid-cell result-grid-header-cell"
+                      key={`${column.name}-${virtualColumn.index}`}
+                      style={{
+                        left: virtualColumn.start,
+                        position: "absolute",
+                        width: virtualColumn.size,
+                      }}
+                    >
+                      <span className="result-grid-header-label">
+                        {column.name}
+                        <small className="column-type">{column.nativeType}</small>
+                      </span>
+                      <span
+                        aria-label={`Resize ${column.name} column`}
+                        aria-orientation="vertical"
+                        aria-valuemax={MAX_COLUMN_WIDTH}
+                        aria-valuemin={MIN_COLUMN_WIDTH}
+                        aria-valuenow={columnWidth(virtualColumn.index - 1)}
+                        className="result-column-resizer"
+                        onDoubleClick={(event) => {
+                          event.stopPropagation();
+                          setColumnWidth(virtualColumn.index - 1, DEFAULT_COLUMN_WIDTH);
+                        }}
+                        onKeyDown={(event) =>
+                          resizeColumnWithKeyboard(event, virtualColumn.index - 1)
+                        }
+                        onPointerDown={(event) => startColumnResize(event, virtualColumn.index - 1)}
+                        role="separator"
+                        tabIndex={0}
+                      />
+                    </span>
+                  );
+                })}
+              </div>
+              {virtualRows.map((virtualRow) => {
+                const rowIndex = virtualRow.index;
+                const row = rows[rowIndex];
+                if (!row) return null;
                 return (
-                  <span
-                    className="result-grid-cell result-grid-header-cell"
-                    key={`${column.name}-${virtualColumn.index}`}
+                  <div
+                    className={`result-grid-row ${rowIndex === activeRow ? "result-row-active" : ""}`}
+                    key={virtualRow.key}
+                    onClick={() => setActiveRow(rowIndex)}
+                    onDoubleClick={() => copyRow(rowIndex)}
+                    role="row"
                     style={{
-                      left: virtualColumn.start,
+                      height: ROW_HEIGHT,
+                      left: 0,
                       position: "absolute",
-                      width: virtualColumn.size,
+                      top: ROW_HEIGHT + virtualRow.start,
+                      width: gridWidth,
                     }}
                   >
-                    <span className="result-grid-header-label">
-                      {column.name}
-                      <small className="column-type">{column.nativeType}</small>
-                    </span>
-                    <span
-                      aria-label={`Resize ${column.name} column`}
-                      aria-orientation="vertical"
-                      aria-valuemax={MAX_COLUMN_WIDTH}
-                      aria-valuemin={MIN_COLUMN_WIDTH}
-                      aria-valuenow={columnWidth(virtualColumn.index - 1)}
-                      className="result-column-resizer"
-                      onDoubleClick={(event) => {
-                        event.stopPropagation();
-                        setColumnWidth(virtualColumn.index - 1, DEFAULT_COLUMN_WIDTH);
-                      }}
-                      onKeyDown={(event) =>
-                        resizeColumnWithKeyboard(event, virtualColumn.index - 1)
+                    {virtualColumns.map((virtualColumn) => {
+                      if (virtualColumn.index === 0) {
+                        return (
+                          <span
+                            className="result-grid-cell row-number"
+                            key="row-number"
+                            style={{
+                              left: virtualColumn.start,
+                              position: "absolute",
+                              width: virtualColumn.size,
+                            }}
+                          >
+                            {(page?.offset ?? 0) + rowIndex + 1}
+                          </span>
+                        );
                       }
-                      onPointerDown={(event) => startColumnResize(event, virtualColumn.index - 1)}
-                      role="separator"
-                      tabIndex={0}
-                    />
-                  </span>
-                );
-              })}
-            </div>
-            {virtualRows.map((virtualRow) => {
-              const rowIndex = virtualRow.index;
-              const row = rows[rowIndex];
-              if (!row) return null;
-              return (
-                <div
-                  className={`result-grid-row ${rowIndex === activeRow ? "result-row-active" : ""}`}
-                  key={virtualRow.key}
-                  onClick={() => setActiveRow(rowIndex)}
-                  onDoubleClick={() => copyRow(rowIndex)}
-                  role="row"
-                  style={{
-                    height: ROW_HEIGHT,
-                    left: 0,
-                    position: "absolute",
-                    top: ROW_HEIGHT + virtualRow.start,
-                    width: gridWidth,
-                  }}
-                >
-                  {virtualColumns.map((virtualColumn) => {
-                    if (virtualColumn.index === 0) {
+                      const columnIndex = virtualColumn.index - 1;
+                      const column = columns[columnIndex];
+                      if (!column) return null;
+                      const isTruncated = truncatedCells.has(`${rowIndex}:${columnIndex}`);
+                      const coordinate = { row: rowIndex, column: columnIndex };
+                      const selected = selection.cells.has(cellKey(coordinate));
                       return (
-                        <span
-                          className="result-grid-cell row-number"
-                          key="row-number"
-                          style={{
-                            left: virtualColumn.start,
-                            position: "absolute",
-                            width: virtualColumn.size,
-                          }}
-                        >
-                          {(page?.offset ?? 0) + rowIndex + 1}
-                        </span>
-                      );
-                    }
-                    const columnIndex = virtualColumn.index - 1;
-                    const column = columns[columnIndex];
-                    if (!column) return null;
-                    const isTruncated = (page?.truncatedCells ?? []).some(
-                      ([cellRow, cellColumn]) =>
-                        cellRow === rowIndex && cellColumn === virtualColumn.index - 1,
-                    );
-                    const coordinate = { row: rowIndex, column: columnIndex };
-                    const selected = selection.cells.has(cellKey(coordinate));
-                    return (
-                      <ContextMenu
-                        items={[
-                          {
-                            label: "Copy cell",
-                            onSelect: () => writeClipboard(formatValue(row[columnIndex])),
-                          },
-                          {
-                            disabled: selection.cells.size === 0,
-                            label: "Copy selected cells",
-                            onSelect: () => writeClipboard(selectionToTsv(selection, rows)),
-                          },
-                          { label: "Copy row", onSelect: () => copyRow(rowIndex) },
-                          { label: "Copy page with headers", onSelect: copyPage },
-                          {
-                            disabled: !onRunAgain,
-                            label: "Run query again",
-                            onSelect: () => onRunAgain?.(),
-                          },
-                        ]}
-                        label={`Result cell row ${rowIndex + 1}, ${column.name}`}
-                      >
                         <span
                           aria-selected={selected}
                           className={`result-grid-cell result-data-cell ${selected ? "result-cell-selected" : ""} ${row[columnIndex] === null ? "cell-null" : ""}`}
@@ -486,7 +527,6 @@ export function ResultGrid({
                           data-row={rowIndex}
                           key={`${column.name}-${columnIndex}`}
                           onClick={(event) => chooseCell(coordinate, event)}
-                          onContextMenu={() => prepareCellContext(coordinate)}
                           role="gridcell"
                           style={{
                             left: virtualColumn.start,
@@ -497,14 +537,14 @@ export function ResultGrid({
                           {formatValue(row[columnIndex])}
                           {isTruncated ? "..." : ""}
                         </span>
-                      </ContextMenu>
-                    );
-                  })}
-                </div>
-              );
-            })}
+                      );
+                    })}
+                  </div>
+                );
+              })}
+            </div>
           </div>
-        </div>
+        </ContextMenu>
       )}
     </div>
   );

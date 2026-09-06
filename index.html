@@ -9,7 +9,74 @@
   </head>
 
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <main class="boot-shell" role="status" aria-label="Starting Tarik">
+        <div class="boot-panel">
+          <strong>Tarik</strong>
+          <span>Preparing local workspace</span>
+          <div aria-hidden="true"><i></i></div>
+        </div>
+      </main>
+    </div>
+    <style>
+      html,
+      body,
+      #root {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+      }
+      .boot-shell {
+        display: grid;
+        min-height: 100%;
+        place-items: center;
+        color: #202622;
+        background: #e9edeb;
+        font-family:
+          system-ui,
+          -apple-system,
+          "Segoe UI",
+          sans-serif;
+      }
+      .boot-panel {
+        display: grid;
+        width: min(340px, calc(100% - 48px));
+        gap: 9px;
+      }
+      .boot-panel strong {
+        font-size: 18px;
+      }
+      .boot-panel span {
+        color: #68736d;
+        font-size: 13px;
+      }
+      .boot-panel div {
+        height: 3px;
+        overflow: hidden;
+        background: #cdd4d0;
+      }
+      .boot-panel i {
+        display: block;
+        width: 18%;
+        height: 100%;
+        background: #287553;
+      }
+      @media (prefers-color-scheme: dark) {
+        .boot-shell {
+          color: #e4e9e6;
+          background: #111512;
+        }
+        .boot-panel span {
+          color: #929e97;
+        }
+        .boot-panel div {
+          background: #343c37;
+        }
+        .boot-panel i {
+          background: #4d9d77;
+        }
+      }
+    </style>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

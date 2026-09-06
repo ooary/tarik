@@ -183,25 +183,34 @@ impl CacheState {
 }
 
 #[tauri::command]
-pub fn get_result_page(
+pub async fn get_result_page(
     result_id: String,
     offset: u64,
     store: tauri::State<'_, Arc<ResultStore>>,
 ) -> Result<ResultPageView, String> {
-    store.get_page(&result_id, offset)
+    let store = store.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || store.get_page(&result_id, offset))
+        .await
+        .map_err(|error| format!("result.page_task: {error}"))?
 }
 
 #[tauri::command]
-pub fn release_result(
+pub async fn release_result(
     result_id: String,
     store: tauri::State<'_, Arc<ResultStore>>,
 ) -> Result<(), String> {
-    store.release(&result_id)
+    let store = store.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || store.release(&result_id))
+        .await
+        .map_err(|error| format!("result.release_task: {error}"))?
 }
 
 #[tauri::command]
-pub fn release_all_results(store: tauri::State<'_, Arc<ResultStore>>) -> Result<(), String> {
-    store.release_all().map(|_| ())
+pub async fn release_all_results(store: tauri::State<'_, Arc<ResultStore>>) -> Result<(), String> {
+    let store = store.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || store.release_all().map(|_| ()))
+        .await
+        .map_err(|error| format!("result.release_all_task: {error}"))?
 }
 
 #[cfg(test)]

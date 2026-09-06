@@ -7,7 +7,14 @@ import {
   PlusIcon,
   XIcon,
 } from "@phosphor-icons/react";
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import type { EffectiveTheme } from "../../app/preferences";
 import { ConfirmationDialog, ContextMenu, TextEntryDialog } from "../../components/ui";
 import type { ProjectCatalog } from "../../lib/commands";
@@ -111,7 +118,7 @@ export const QueryWorkspace = forwardRef<QueryWorkspaceHandle, QueryWorkspacePro
       activeExecution?.state === "queued" || activeExecution?.state === "running";
     const validation = useSqlValidation(projectId, activeTab?.id, activeTab?.sql, catalog);
 
-    useEffect(() => {
+    useLayoutEffect(() => {
       if (activeTab && !activeExecution) void restore(activeTab.id, activeTab.sql);
     }, [activeExecution, activeTab, restore]);
 

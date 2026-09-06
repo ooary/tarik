@@ -51,6 +51,82 @@ button:active {
   transform: translateY(1px);
 }
 
+.startup-screen {
+  position: fixed;
+  z-index: 100;
+  inset: 0;
+  display: grid;
+  min-height: 100dvh;
+  place-items: center;
+  padding: 24px;
+  color: var(--text-primary);
+  background: var(--surface-app);
+}
+
+body:has(.startup-screen) .app-shell {
+  visibility: hidden;
+}
+
+.startup-screen-panel {
+  display: grid;
+  width: min(380px, 100%);
+  gap: 20px;
+}
+
+.startup-screen-brand {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  font-size: 18px;
+  font-weight: 680;
+  letter-spacing: -0.02em;
+}
+
+.startup-screen-brand img {
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-control);
+}
+
+.startup-screen-copy {
+  display: grid;
+  gap: 5px;
+}
+
+.startup-screen-copy strong {
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.startup-screen-copy span,
+.startup-screen-panel small {
+  color: var(--text-muted);
+}
+
+.startup-progress {
+  height: 3px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--border-default);
+}
+
+.startup-progress > span {
+  display: block;
+  height: 100%;
+  background: var(--accent-solid);
+  transition: width 160ms ease-out;
+}
+
+.startup-screen-panel small {
+  font-size: 11px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .startup-progress > span {
+    transition: none;
+  }
+}
+
 .startup-error {
   display: grid;
   min-height: 100dvh;
@@ -1190,6 +1266,16 @@ tbody tr:hover {
 .result-state .ui-empty-state {
   width: min(460px, 100%);
   text-align: left;
+}
+
+.result-state .ui-empty-state {
+  display: grid;
+  gap: 6px;
+}
+
+.result-state .ui-empty-state span {
+  color: var(--text-muted);
+  line-height: 1.45;
 }
 
 .result-state .ui-inline-error strong {

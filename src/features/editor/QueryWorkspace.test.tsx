@@ -869,7 +869,13 @@ describe("QueryWorkspace", () => {
     await waitFor(() => expect(cancelQuery).toHaveBeenCalledWith("exec-1"));
   });
 
-  it("shows the empty state before any execution", async () => {
+  it("shows the empty state only after execution restoration confirms no result", async () => {
+    let resolveRestore!: (value: null) => void;
+    vi.mocked(getTabExecution).mockReturnValue(
+      new Promise((resolve) => {
+        resolveRestore = resolve;
+      }),
+    );
     render(
       <QueryWorkspace
         bottomOpen
@@ -881,8 +887,30 @@ describe("QueryWorkspace", () => {
       />,
     );
 
+    expect(await screen.findByText("Restoring results")).toBeInTheDocument();
+    expect(screen.queryByText("No results yet")).not.toBeInTheDocument();
+    resolveRestore(null);
     expect(await screen.findByText("No results yet")).toBeInTheDocument();
-    expect(screen.getByText("Run a query to see results here.")).toBeInTheDocument();
+  });
+
+  it("renders the confirmed empty state as separated title and guidance", async () => {
+    render(
+      <QueryWorkspace
+        bottomOpen
+        bottomPanelHeight={292}
+        catalog={catalog}
+        onSetBottomHeight={vi.fn()}
+        onToggleBottom={vi.fn()}
+        projectId="p1"
+      />,
+    );
+
+    const title = await screen.findByText("No results yet");
+    const guidance = screen.getByText("Run a query to see results here.");
+    expect(title).toBeInTheDocument();
+    expect(guidance).toBeInTheDocument();
+    expect(title.parentElement).toHaveClass("ui-empty-state");
+    expect(guidance.parentElement).toBe(title.parentElement);
   });
 
   it("restores the same tab result without showing the initial empty state", async () => {
@@ -905,6 +933,32 @@ describe("QueryWorkspace", () => {
     expect(await screen.findByText("Singapore")).toBeInTheDocument();
     expect(screen.queryByText("No results yet")).not.toBeInTheDocument();
     expect(getTabExecution).toHaveBeenCalledWith("p1", expect.any(String));
+  });
+
+  it("paints query startup before submitting the immutable SQL snapshot", async () => {
+    let frameCount = 0;
+    const frameSpy = vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+      frameCount += 1;
+      queueMicrotask(() => callback(performance.now()));
+      return frameCount;
+    });
+    render(
+      <QueryWorkspace
+        bottomOpen
+        bottomPanelHeight={292}
+        catalog={catalog}
+        onSetBottomHeight={vi.fn()}
+        onToggleBottom={vi.fn()}
+        projectId="p1"
+      />,
+    );
+
+    const callsBeforeRun = vi.mocked(executeQuery).mock.calls.length;
+    fireEvent.click(screen.getByRole("button", { name: /Run query/ }));
+    expect(await screen.findByText("Starting")).toBeInTheDocument();
+    await waitFor(() => expect(frameCount).toBeGreaterThanOrEqual(2));
+    await waitFor(() => expect(executeQuery).toHaveBeenCalledTimes(callsBeforeRun + 1));
+    frameSpy.mockRestore();
   });
 
   it("shows query startup instead of the initial empty state while submitting", async () => {

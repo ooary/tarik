@@ -18,6 +18,7 @@ import {
   getEngineResources,
   getLastSupportIncident,
   getRuntimeInfo,
+  getStartupStatus,
   getTabExecution,
   getLogInfo,
   getProfileStatus,
@@ -70,6 +71,7 @@ vi.mock("./lib/commands", () => ({
   setEngineResources: vi.fn(),
   getLastSupportIncident: vi.fn(),
   getRuntimeInfo: vi.fn(),
+  getStartupStatus: vi.fn(),
   getTabExecution: vi.fn(),
   getLogInfo: vi.fn(),
   getProfileStatus: vi.fn(),
@@ -135,6 +137,7 @@ describe("Tarik workbench shell", () => {
     vi.mocked(setWorkbenchPreferences).mockResolvedValue(undefined);
     vi.mocked(getActiveProject).mockResolvedValue(null);
     vi.mocked(getEngineStatus).mockResolvedValue({ state: "stopped", processId: null });
+    vi.mocked(getStartupStatus).mockResolvedValue({ ready: true, phase: "ready" });
     vi.mocked(getEngineResources).mockResolvedValue({
       requested: { preset: "balanced", memoryLimitMib: 2048, threads: 2 },
       effective: null,
@@ -260,6 +263,26 @@ describe("Tarik workbench shell", () => {
       appVersion: "0.1.0",
       rustTarget: "linux",
     });
+  });
+
+  it("shows truthful startup progress until local initialization settles", async () => {
+    let resolvePreferences!: (value: null) => void;
+    vi.mocked(getWorkbenchPreferences).mockReturnValue(
+      new Promise((resolve) => {
+        resolvePreferences = resolve;
+      }),
+    );
+    render(<App />);
+
+    expect(screen.getByRole("status")).toHaveClass("startup-screen");
+    expect(screen.getByRole("progressbar")).toHaveAttribute("aria-valuenow");
+    expect(
+      screen.getByText(/Checking local storage|Preparing workspace|Loading preferences/),
+    ).toBeInTheDocument();
+
+    resolvePreferences(null);
+    expect(await screen.findByRole("banner")).toBeInTheDocument();
+    expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
   });
 
   it("suppresses the native WebView menu on unsupported chrome", () => {
@@ -497,6 +520,54 @@ describe("Tarik workbench shell", () => {
     fireEvent.keyDown(row, { key: "p", altKey: true });
     expect(await screen.findByRole("region", { name: "Profile orders" })).toBeInTheDocument();
     expect(executeProfile).not.toHaveBeenCalled();
+  });
+
+  it("switches directly from Quality checks to Profile from a table menu", async () => {
+    vi.mocked(getActiveProject).mockResolvedValue({
+      id: "project-1",
+      name: "Local analysis",
+      duckdbPath: "/data/project.duckdb",
+    });
+    vi.mocked(inspectProjectCatalog).mockResolvedValue({
+      revision: "catalog-1",
+      objects: [
+        {
+          database: "project",
+          schema: "main",
+          name: "orders",
+          kind: "table",
+          estimatedRowCount: 3,
+        },
+      ],
+      columns: [
+        {
+          database: "project",
+          schema: "main",
+          object: "orders",
+          name: "id",
+          dataType: "BIGINT",
+          position: 0,
+          nullable: false,
+        },
+      ],
+    });
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /Quality checks/ }));
+    expect(
+      await screen.findByRole("region", { name: "Quality checks workspace" }),
+    ).toBeInTheDocument();
+
+    fireEvent.pointerDown(screen.getByRole("button", { name: "orders table actions" }), {
+      button: 0,
+      ctrlKey: false,
+    });
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Profile data" }));
+
+    expect(await screen.findByRole("region", { name: "Profile orders" })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("region", { name: "Quality checks workspace" }),
+    ).not.toBeInTheDocument();
   });
 
   it("does not offer Profile for a missing linked source", async () => {

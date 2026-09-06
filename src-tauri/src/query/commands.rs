@@ -35,7 +35,7 @@ pub fn validate_query(
 }
 
 #[tauri::command]
-pub fn execute_query(
+pub async fn execute_query(
     project_id: String,
     tab_id: String,
     sql: String,
@@ -53,10 +53,17 @@ pub fn execute_query(
             active.id, project_id
         ));
     }
+    let active_id = active.id;
     let span = logger
         .inner()
-        .operation("query", "submit", Some(active.id.clone()));
-    match coordinator.execute(&active.id, &tab_id, &sql) {
+        .operation("query", "submit", Some(active_id.clone()));
+    let coordinator = coordinator.inner().clone();
+    let submission = tauri::async_runtime::spawn_blocking(move || {
+        coordinator.execute(&active_id, &tab_id, &sql)
+    })
+    .await
+    .map_err(|error| format!("query.submit_task: {error}"))?;
+    match submission {
         Ok(view) => {
             span.succeed();
             Ok(view)

@@ -132,13 +132,17 @@ export function useQueryExecution(
       if (previous && (previous.state === "queued" || previous.state === "running")) {
         return;
       }
-      // Release the superseded result so its page artifacts are reclaimed
-      // before the new execution publishes a fresh one.
-      if (previous?.resultId) {
-        await releaseResult(previous.resultId).catch(() => undefined);
-      }
       setStarting((current) => ({ ...current, [tabId]: true }));
       try {
+        // Let the WebView paint the Starting state before result cleanup or
+        // IPC submission. Two frames guarantee one paint between the click
+        // and work that may wait on a cold engine or a large result directory.
+        await nextPaint();
+        // Release the superseded result so its page artifacts are reclaimed
+        // before the new execution publishes a fresh one.
+        if (previous?.resultId) {
+          await releaseResult(previous.resultId).catch(() => undefined);
+        }
         const view = await executeQuery(projectId, tabId, sql);
         if (stopped.current) return;
         patch(tabId, {
@@ -223,4 +227,12 @@ export function useQueryExecution(
   }, []);
 
   return { executions, restoring, starting, run, restore, cancel, forget };
+}
+
+function nextPaint(): Promise<void> {
+  return new Promise((resolve) => {
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => resolve());
+    });
+  });
 }

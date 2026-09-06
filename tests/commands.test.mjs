@@ -33,6 +33,18 @@ test("getRuntimeInfo invokes the typed Tauri command", async () => {
   assert.deepEqual(result, expected);
 });
 
+test("startup progress reads the backend cleanup lifecycle", async () => {
+  const { getStartupStatus } = await loadCommandsModule();
+  const calls = [];
+  const expected = { ready: false, phase: "checking_local_storage" };
+  const result = await getStartupStatus(async (command, args) => {
+    calls.push({ command, args });
+    return expected;
+  });
+  assert.deepEqual(calls, [{ command: "get_startup_status", args: undefined }]);
+  assert.deepEqual(result, expected);
+});
+
 test("workbench preferences use typed metadata commands", async () => {
   const { getWorkbenchPreferences, setWorkbenchPreferences } = await loadCommandsModule();
   const preference = {
