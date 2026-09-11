@@ -8,8 +8,8 @@ E11 implementation can enter REVIEW, but E6 final result review, E7 final query-
 - [x] `package.json`, `src-tauri/Cargo.toml`, and `src-tauri/tauri.conf.json` are version `0.1.0`.
 - [x] Rust is pinned to 1.91.0 and Node uses `.node-version`.
 - [x] DuckDB Rust binding is pinned to `1.10505.0` / DuckDB runtime 1.5.5.
-- [x] Engine protocol is version 1; metadata schema is version 8.
-- [x] Working tree is clean before final artifact generation.
+- [x] Engine protocol is version 2; metadata schema is version 11; private MCP bridge protocol is version 3.
+- [ ] Working tree is clean before final publication artifact generation. Local review packages may be built from a dirty tree only when `release-manifest.json` records `sourceDirty: true`; they are not publication artifacts.
 
 ## 2. Automated gates
 
@@ -82,6 +82,7 @@ Expected under `target/release-artifacts/`:
 - [x] Portable desktop and AppImage launch under clean XDG directories.
 - [x] All three SHA-256 values verify.
 - [x] Artifacts explicitly state `signed: false`.
+- [ ] Final publication manifest records `sourceDirty: false` and its Git revision matches the tagged source. The E15.1 local review package is expected to record `sourceDirty: true` while postponed UI remains uncommitted.
 - [ ] Install DEB on a clean supported Debian/Ubuntu VM; create/open/query/export/uninstall smoke.
 - [ ] Run AppImage on a second glibc-compatible Linux x86_64 machine.
 - [ ] Confirm package removal preserves XDG data and external files.

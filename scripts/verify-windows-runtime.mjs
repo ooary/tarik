@@ -127,6 +127,7 @@ async function main() {
       evidenceMode,
       recordedAt: new Date().toISOString(),
       gitRevision: manifest.gitRevision,
+      sourceDirty: manifest.sourceDirty,
       machine: {
         os: osCaption.trim(),
         architecture: process.arch,
@@ -141,6 +142,7 @@ async function main() {
         sha256: checksum.digest,
         checksumVerified: true,
         extractedContentsVerified: true,
+        sourceDirty: manifest.sourceDirty,
         signed: manifest.signed,
       },
       prerequisites: {

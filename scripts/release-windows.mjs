@@ -172,6 +172,9 @@ try {
   const archiveDigest = await sha256(archive);
   const archiveBytes = (await stat(archive)).size;
   const revision = (await execFileAsync("git", ["rev-parse", "HEAD"], { cwd: root })).stdout.trim();
+  const sourceDirty = Boolean(
+    (await execFileAsync("git", ["status", "--porcelain"], { cwd: root })).stdout.trim(),
+  );
   await writeFile(path.join(stage, "SHA256SUMS"), `${archiveDigest}  ${archiveName}\n`);
   await writeFile(
     path.join(stage, "release-manifest.json"),
@@ -179,6 +182,7 @@ try {
       portableManifest({
         version,
         revision,
+        sourceDirty,
         archive: archiveName,
         bytes: archiveBytes,
         digest: archiveDigest,

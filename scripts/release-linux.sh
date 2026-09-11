@@ -136,6 +136,7 @@ python3 - "$STAGE" "$VERSION" "$TARGET_TRIPLE" <<'PY'
 import hashlib,json,pathlib,subprocess,sys
 stage=pathlib.Path(sys.argv[1]); version=sys.argv[2]; target=sys.argv[3]
 revision=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()
+source_dirty=bool(subprocess.check_output(['git','status','--porcelain'],text=True).strip())
 artifacts=[]
 for path in sorted(stage.iterdir()):
     if path.is_file() and (path.suffix in {'.deb','.AppImage','.gz'}):
@@ -146,6 +147,7 @@ manifest={
   'version':version,
   'target':target,
   'gitRevision':revision,
+  'sourceDirty':source_dirty,
   'signed':False,
   'checksums':'SHA256SUMS',
   'artifacts':artifacts,

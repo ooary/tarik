@@ -101,13 +101,14 @@ export async function verifyPortableChecksums(root) {
   }
 }
 
-export function portableManifest({ version, revision, archive, bytes, digest }) {
+export function portableManifest({ version, revision, sourceDirty, archive, bytes, digest }) {
   return {
     schemaVersion: 1,
     product: "Tarik",
     version,
     target: WINDOWS_TARGET,
     gitRevision: revision,
+    sourceDirty,
     signed: false,
     portable: true,
     checksums: "SHA256SUMS",

@@ -109,11 +109,13 @@ test("portable manifest records unsigned offline runtime contract", () => {
   const manifest = portableManifest({
     version: "0.1.0",
     revision: "abc123",
+    sourceDirty: true,
     archive: "Tarik-0.1.0-windows-x64-portable.zip",
     bytes: 42,
     digest: "deadbeef",
   });
   assert.equal(manifest.target, "x86_64-pc-windows-msvc");
+  assert.equal(manifest.sourceDirty, true);
   assert.equal(manifest.signed, false);
   assert.equal(manifest.portable, true);
   assert.equal(manifest.compatibility.duckdbVersion, "1.5.5");
@@ -121,6 +123,15 @@ test("portable manifest records unsigned offline runtime contract", () => {
     "Windows 10 or 11 x64",
     "Microsoft Edge WebView2 Runtime",
   ]);
+  const clean = portableManifest({
+    version: "0.1.0",
+    revision: "def456",
+    sourceDirty: false,
+    archive: "Tarik-clean.zip",
+    bytes: 7,
+    digest: "feedface",
+  });
+  assert.equal(clean.sourceDirty, false);
 });
 
 test("Windows release rebuilds Tarik after verifying icon inputs", async () => {
