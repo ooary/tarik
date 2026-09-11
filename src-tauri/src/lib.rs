@@ -1,3 +1,5 @@
+mod agent_access;
+mod agent_bridge;
 mod engine_manager;
 mod engine_resources;
 mod export;
@@ -123,6 +125,30 @@ pub fn run() {
                 directories.data_dir.join("projects"),
                 engine.clone(),
             );
+            let agent_access = Arc::new(agent_access::AgentAccessManager::new(
+                database.clone(),
+                project_manager.clone(),
+                logger.clone(),
+            ));
+            let agent_bridge = Arc::new(agent_bridge::AgentBridge::new(
+                directories.data_dir.join("agent"),
+                agent_access.clone(),
+                logger.clone(),
+            ));
+            if let Err(error) = agent_bridge.start_if_enabled() {
+                let _ = agent_access.set_enabled(false);
+                logger.record(
+                    LogLevel::Warning,
+                    "agent",
+                    "bridge_startup",
+                    EventFields {
+                        status: Some("failed"),
+                        error_code: Some("agent.bridge_startup"),
+                        message: Some(&error),
+                        ..EventFields::default()
+                    },
+                );
+            }
             let coordinator = Arc::new(query::QueryCoordinator::new(
                 engine.clone(),
                 database.clone(),
@@ -146,6 +172,8 @@ pub fn run() {
             ));
             let results_store = Arc::new(results::ResultStore::new(engine.clone()));
             let shutdown = Arc::new(shutdown::ShutdownCoordinator::new(
+                agent_access.clone(),
+                agent_bridge.clone(),
                 coordinator.clone(),
                 export_coordinator.clone(),
                 profile_coordinator.clone(),
@@ -157,6 +185,8 @@ pub fn run() {
                 logger.clone(),
             ));
             app.manage(logger);
+            app.manage(agent_access);
+            app.manage(agent_bridge);
             app.manage(cleanup);
             app.manage(startup);
             app.manage(database);
@@ -207,6 +237,12 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_runtime_info,
             get_engine_status,
+            agent_access::get_agent_access_status,
+            agent_access::set_agent_access_enabled,
+            agent_access::approve_agent_pairing,
+            agent_access::deny_agent_pairing,
+            agent_access::set_agent_project_grant,
+            agent_access::revoke_agent_client,
             startup::get_startup_status,
             engine_resources::get_engine_resources,
             engine_resources::set_engine_resources,

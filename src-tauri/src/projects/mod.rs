@@ -252,6 +252,11 @@ impl ProjectManager {
         Ok(self.lock()?.clone())
     }
 
+    #[cfg(test)]
+    pub(crate) fn set_active_for_test(&self, project: ActiveProject) {
+        *self.active.lock().expect("project test lock") = Some(project);
+    }
+
     pub fn catalog(&self) -> Result<CatalogSnapshot, ProjectError> {
         self.require_active()?;
         self.engine.catalog().map_err(ProjectError::Engine)

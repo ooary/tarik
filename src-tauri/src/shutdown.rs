@@ -8,6 +8,8 @@ use serde::Serialize;
 use tauri::{Emitter, Manager};
 
 use crate::{
+    agent_access::AgentAccessManager,
+    agent_bridge::AgentBridge,
     engine_manager::EngineManager,
     export::ExportCoordinator,
     metadata::MetadataDb,
@@ -31,6 +33,8 @@ enum State {
 }
 
 struct OwnedShutdownResources {
+    agent_access: Arc<AgentAccessManager>,
+    agent_bridge: Arc<AgentBridge>,
     queries: Arc<QueryCoordinator>,
     exports: Arc<ExportCoordinator>,
     profiles: Arc<ProfileCoordinator>,
@@ -50,6 +54,8 @@ pub struct ShutdownCoordinator {
 impl ShutdownCoordinator {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
+        agent_access: Arc<AgentAccessManager>,
+        agent_bridge: Arc<AgentBridge>,
         queries: Arc<QueryCoordinator>,
         exports: Arc<ExportCoordinator>,
         profiles: Arc<ProfileCoordinator>,
@@ -63,6 +69,8 @@ impl ShutdownCoordinator {
         Self {
             state: Mutex::new(State::Idle),
             resources: Some(OwnedShutdownResources {
+                agent_access,
+                agent_bridge,
                 queries,
                 exports,
                 profiles,
@@ -141,6 +149,8 @@ pub struct ShutdownReport {
 }
 
 struct ShutdownResources<'a> {
+    agent_access: &'a Arc<AgentAccessManager>,
+    agent_bridge: &'a Arc<AgentBridge>,
     queries: &'a Arc<QueryCoordinator>,
     exports: &'a Arc<ExportCoordinator>,
     profiles: &'a Arc<ProfileCoordinator>,
@@ -153,6 +163,8 @@ struct ShutdownResources<'a> {
 }
 
 fn run_shutdown(resources: ShutdownResources<'_>) -> ShutdownReport {
+    resources.agent_bridge.stop();
+    resources.agent_access.shutdown();
     let mut report = ShutdownReport {
         phase: "complete",
         queries_cancelled: resources.queries.cancel_all(),
@@ -249,6 +261,8 @@ pub async fn complete_shutdown<R: tauri::Runtime>(
         });
     }
     let resources = coordinator.owned_resources()?;
+    let agent_access = resources.agent_access.clone();
+    let agent_bridge = resources.agent_bridge.clone();
     let queries = resources.queries.clone();
     let exports = resources.exports.clone();
     let profiles = resources.profiles.clone();
@@ -260,6 +274,8 @@ pub async fn complete_shutdown<R: tauri::Runtime>(
     let logger = resources.logger.clone();
     let report = tauri::async_runtime::spawn_blocking(move || {
         run_shutdown(ShutdownResources {
+            agent_access: &agent_access,
+            agent_bridge: &agent_bridge,
             queries: &queries,
             exports: &exports,
             profiles: &profiles,

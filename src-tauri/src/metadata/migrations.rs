@@ -49,6 +49,11 @@ const MIGRATIONS: &[Migration] = &[
         name: "quality_checks",
         sql: include_str!("../../migrations/0008_quality_checks.sql"),
     },
+    Migration {
+        version: 9,
+        name: "agent_access",
+        sql: include_str!("../../migrations/0009_agent_access.sql"),
+    },
 ];
 
 pub(super) fn migrate(connection: &mut Connection) -> Result<(), MetadataError> {
@@ -113,7 +118,7 @@ mod tests {
     }
 
     #[test]
-    fn schema_seven_upgrades_transactionally_to_quality_schema_eight() {
+    fn schema_seven_upgrades_transactionally_to_latest_schema() {
         let mut connection = Connection::open_in_memory().expect("open memory database");
         for migration in MIGRATIONS.iter().filter(|migration| migration.version <= 7) {
             connection.execute_batch(migration.sql).unwrap();
@@ -125,11 +130,13 @@ mod tests {
 
         migrate(&mut connection).expect("upgrade schema seven");
 
-        assert_eq!(schema_version(&connection).unwrap(), 8);
+        assert_eq!(schema_version(&connection).unwrap(), LATEST_SCHEMA_VERSION);
         for table in [
             "quality_checks",
             "quality_check_revisions",
             "quality_check_runs",
+            "agent_clients",
+            "agent_project_grants",
         ] {
             let exists: bool = connection
                 .query_row(
