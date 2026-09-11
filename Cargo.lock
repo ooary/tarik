@@ -4429,6 +4429,7 @@ dependencies = [
  "thiserror 2.0.20",
  "uuid",
  "widestring",
+ "windows-sys 0.61.2",
  "zeroize",
 ]
 

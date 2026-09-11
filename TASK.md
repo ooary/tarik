@@ -2466,6 +2466,7 @@ Blocked
   - Commit: `docs(design): define assisted MCP setup and export delegation`
 
 - [ ] **E15.1-T1 Add host detection and the Connect an agent assistant**
+  - Status: Linux-developed implementation candidate completed September 11, 2026. Rust setup engine is ready to commit; the combined Agent Access/connection-assistant UI remains local and uncommitted for real-Tauri review. Native Windows host detection, current-user ACL/reparse checks, CLI launch/configure/remove, atomic replacement, portable-move repair, WebView2, DPI, accessibility, and process evidence remain required before completion.
   - Depends on: E15.1-T0 approval
   - Owns: host detector, versioned setup adapters, setup-plan UI, bounded process runner, managed-config writer, verification, repair, removal, and receipts
   - Deliverables:
@@ -2480,6 +2481,7 @@ Blocked
   - Tests: zero/one/multiple installations, spoofed executable, version matrix, spaces/Unicode paths, CLI success/failure/timeout/output cap, malformed/conflicting/symlinked config, backup/atomicity/undo, moved portable folder, minimum viewport, keyboard/focus, and native Windows host launches.
   - Commit: `feat(mcp): add agent connection assistant`
   - UI gate: keep the complete assistant local and unpushed until real-Tauri review.
+  - Notes: Added a bounded one-use `AgentSetupManager`; strict current-user executable/config ownership and reparse checks on Windows; direct no-shell Claude Code/Codex adapters; receipt-bound configure/repair/remove; strict real-output parsers; safe Claude Desktop JSON merge; create-new synced backups; atomic replace; three-backup retention; compare-before-rollback recovery; guided fallback; and host-probe isolation. Isolated temporary-home probes captured Claude Code 2.1.231 and Codex 0.149.1 add/get/list contracts without touching real user configuration. Automated gates pass: 10 focused setup regressions, full Cargo workspace/all-target tests and Clippy, 218 UI tests, 37 Node tests, typecheck, production build, formatting, docs, engine check, and diff checks. ESLint retains only two pre-existing warnings. Cross-compiling the desktop to Windows MSVC remains unavailable from this Linux host because the native MSVC/SQLite linker is absent; no native Windows evidence is claimed.
 
 - [ ] **E15.1-T2 Ship portable Tarik usage guidance**
   - Depends on: E15.1-T0 approval, E15.1-T1 host model

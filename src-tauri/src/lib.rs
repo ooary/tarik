@@ -1,5 +1,6 @@
 mod agent_access;
 mod agent_bridge;
+mod agent_setup;
 mod engine_manager;
 mod engine_resources;
 mod export;
@@ -136,6 +137,7 @@ pub fn run() {
                 agent_access.clone(),
                 logger.clone(),
             ));
+            let agent_setup = agent_setup::AgentSetupManager::new(database.clone());
             if let Err(error) = agent_bridge.start_if_enabled() {
                 let _ = agent_access.set_enabled(false);
                 logger.record(
@@ -188,6 +190,7 @@ pub fn run() {
             app.manage(logger);
             app.manage(agent_access);
             app.manage(agent_bridge);
+            app.manage(agent_setup);
             app.manage(cleanup);
             app.manage(startup);
             app.manage(database);
@@ -246,6 +249,9 @@ pub fn run() {
             agent_access::revoke_agent_client,
             agent_access::list_agent_approvals,
             agent_access::decide_agent_approval,
+            agent_setup::get_agent_setup_status,
+            agent_setup::plan_agent_setup,
+            agent_setup::apply_agent_setup,
             startup::get_startup_status,
             engine_resources::get_engine_resources,
             engine_resources::set_engine_resources,
