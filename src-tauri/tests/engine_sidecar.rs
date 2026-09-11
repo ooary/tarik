@@ -41,7 +41,10 @@ fn engine_spawn_session_and_catalog_roundtrip() {
         .map_err(|error| panic!("engine handshake failed: {error}"))
         .unwrap();
     assert_eq!(info.engine_id, "duckdb");
-    assert_eq!(info.protocol_version, 1);
+    assert_eq!(
+        info.protocol_version,
+        tarik_engine_protocol::PROTOCOL_VERSION
+    );
     assert!(info.capabilities.link_parquet);
 
     let database = temp_path("sidecar", ".duckdb");

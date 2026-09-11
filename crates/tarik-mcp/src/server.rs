@@ -17,7 +17,9 @@ use rmcp::{
 };
 use serde::{Deserialize, Serialize};
 use tarik_agent_protocol::{
-    AuthenticationResult, HelloResult, HelloState, MAX_AGENT_PAGE_ROWS, MAX_DISCOVERY_PAGE_ITEMS,
+    AgentCsvExportOptions, AgentExportIntent, AgentParquetCompression, AgentParquetExportOptions,
+    AuthenticationResult, ExportFormat, HelloResult, HelloState, MAX_AGENT_EXPORT_BASE_NAME_BYTES,
+    MAX_AGENT_EXPORT_ROWS_PER_PART, MAX_AGENT_PAGE_ROWS, MAX_DISCOVERY_PAGE_ITEMS,
 };
 use zeroize::Zeroizing;
 
@@ -46,6 +48,85 @@ pub struct EmptyRequest {}
 #[serde(rename_all = "camelCase")]
 pub struct ProjectRequest {
     pub project_id: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ExportFormatInput {
+    Csv,
+    Parquet,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ParquetCompressionInput {
+    Uncompressed,
+    Snappy,
+    Gzip,
+    Zstd,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CsvExportInput {
+    #[schemars(description = "One ASCII delimiter byte other than NUL, quote, CR, or LF")]
+    pub delimiter: String,
+    pub include_header: bool,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ParquetExportInput {
+    pub compression: ParquetCompressionInput,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ExportIntentRequest {
+    pub snapshot_id: String,
+    pub destination_id: String,
+    pub format: ExportFormatInput,
+    #[schemars(length(min = 1, max = 64), pattern(r"^[A-Za-z0-9_-]+$"))]
+    pub base_name: String,
+    #[schemars(range(min = 1, max = 1_000_000))]
+    pub rows_per_part: u64,
+    #[serde(default)]
+    pub csv: Option<CsvExportInput>,
+    #[serde(default)]
+    pub parquet: Option<ParquetExportInput>,
+}
+
+impl From<ExportIntentRequest> for AgentExportIntent {
+    fn from(value: ExportIntentRequest) -> Self {
+        Self {
+            snapshot_id: value.snapshot_id,
+            destination_id: value.destination_id,
+            format: match value.format {
+                ExportFormatInput::Csv => ExportFormat::Csv,
+                ExportFormatInput::Parquet => ExportFormat::Parquet,
+            },
+            base_name: value.base_name,
+            rows_per_part: value.rows_per_part,
+            csv: value.csv.map(|csv| AgentCsvExportOptions {
+                delimiter: csv.delimiter,
+                include_header: csv.include_header,
+            }),
+            parquet: value.parquet.map(|parquet| AgentParquetExportOptions {
+                compression: match parquet.compression {
+                    ParquetCompressionInput::Uncompressed => AgentParquetCompression::Uncompressed,
+                    ParquetCompressionInput::Snappy => AgentParquetCompression::Snappy,
+                    ParquetCompressionInput::Gzip => AgentParquetCompression::Gzip,
+                    ParquetCompressionInput::Zstd => AgentParquetCompression::Zstd,
+                },
+            }),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ExportIdRequest {
+    pub export_id: String,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -281,6 +362,59 @@ impl TarikMcpServer {
         Parameters(request): Parameters<ProjectRequest>,
     ) -> Result<rmcp::model::CallToolResult, rmcp::ErrorData> {
         Ok(self.bridge_call(|bridge| bridge.list_export_destinations(request.project_id)))
+    }
+
+    #[tool(
+        name = "tarik_propose_export",
+        description = "Consume one owned immutable SafeRead snapshot and propose a complete CSV or Parquet export to one opaque Tarik destination. Accepts no SQL, path, URL, COPY, overwrite flag, or arbitrary option string. Within-policy create-new work starts delegated; policy exceptions wait for visible Tarik approval; collisions require fresh critical typed confirmation in Tarik."
+    )]
+    fn propose_export(
+        &self,
+        Parameters(request): Parameters<ExportIntentRequest>,
+    ) -> Result<rmcp::model::CallToolResult, rmcp::ErrorData> {
+        if request.base_name.len() > MAX_AGENT_EXPORT_BASE_NAME_BYTES
+            || request.rows_per_part == 0
+            || request.rows_per_part > MAX_AGENT_EXPORT_ROWS_PER_PART
+        {
+            return Ok(tool_error(
+                "agent.invalid_export_intent",
+                "baseName and rowsPerPart are outside Tarik's guarded export bounds",
+            ));
+        }
+        Ok(self.bridge_call(|bridge| bridge.propose_export(request.into())))
+    }
+
+    #[tool(
+        name = "tarik_export_status",
+        description = "Poll one complete-query export owned by this authenticated MCP connection. Returns exact aggregate counters, bounded relative part names, decision/state, and path-free errors only."
+    )]
+    fn export_status(
+        &self,
+        Parameters(request): Parameters<ExportIdRequest>,
+    ) -> Result<rmcp::model::CallToolResult, rmcp::ErrorData> {
+        Ok(self.bridge_call(|bridge| bridge.export_status(request.export_id)))
+    }
+
+    #[tool(
+        name = "tarik_export_cancel",
+        description = "Request cancellation of one complete-query export owned by this authenticated MCP connection. Poll status until Tarik reports a terminal state."
+    )]
+    fn export_cancel(
+        &self,
+        Parameters(request): Parameters<ExportIdRequest>,
+    ) -> Result<rmcp::model::CallToolResult, rmcp::ErrorData> {
+        Ok(self.bridge_call(|bridge| bridge.export_cancel(request.export_id)))
+    }
+
+    #[tool(
+        name = "tarik_export_release",
+        description = "Release one terminal export ownership record. Completed user files and persisted aggregate history are preserved. Active exports must be cancelled first."
+    )]
+    fn export_release(
+        &self,
+        Parameters(request): Parameters<ExportIdRequest>,
+    ) -> Result<rmcp::model::CallToolResult, rmcp::ErrorData> {
+        Ok(self.bridge_call(|bridge| bridge.export_release(request.export_id)))
     }
 
     #[tool(
@@ -798,13 +932,17 @@ mod tests {
             .iter()
             .map(|tool| tool.name.as_ref())
             .collect::<Vec<_>>();
-        assert_eq!(names.len(), 21);
+        assert_eq!(names.len(), 25);
         for required in [
             "tarik_classify_sql",
             "tarik_describe_relation",
             "tarik_list_catalog",
             "tarik_list_projects",
             "tarik_list_export_destinations",
+            "tarik_propose_export",
+            "tarik_export_status",
+            "tarik_export_cancel",
+            "tarik_export_release",
             "tarik_query_cancel",
             "tarik_query_start",
             "tarik_query_status",
@@ -846,5 +984,26 @@ mod tests {
         );
         assert_eq!(destinations["required"], serde_json::json!(["projectId"]));
         assert!(destinations["properties"].get("path").is_none());
+        let export = &server
+            .tool_router
+            .get("tarik_propose_export")
+            .unwrap()
+            .input_schema;
+        let properties = export["properties"].as_object().unwrap();
+        assert_eq!(properties.len(), 7);
+        for required in [
+            "snapshotId",
+            "destinationId",
+            "format",
+            "baseName",
+            "rowsPerPart",
+        ] {
+            assert!(properties.contains_key(required), "missing {required}");
+        }
+        for forbidden in ["sql", "path", "url", "overwrite", "options"] {
+            assert!(!properties.contains_key(forbidden), "exposed {forbidden}");
+        }
+        assert_eq!(properties["baseName"]["maxLength"], 64);
+        assert_eq!(properties["rowsPerPart"]["maximum"], 1_000_000);
     }
 }

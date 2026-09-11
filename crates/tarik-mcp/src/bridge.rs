@@ -12,9 +12,10 @@ use interprocess::local_socket::{prelude::*, GenericFilePath, Stream};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use tarik_agent_protocol::{
-    AgentExecutionResult, AgentResultPage, ApprovalResult, AuthenticationResult, BridgeAction,
-    BridgeRequest, BridgeResponse, CatalogPageResult, ExportDestinationList, GrantedProjectsResult,
-    HelloResult, RelationDescriptionResult, SqlSnapshotResult, MAX_BRIDGE_MESSAGE_BYTES,
+    AgentExecutionResult, AgentExportIntent, AgentExportReleaseResult, AgentExportView,
+    AgentResultPage, ApprovalResult, AuthenticationResult, BridgeAction, BridgeRequest,
+    BridgeResponse, CatalogPageResult, ExportDestinationList, GrantedProjectsResult, HelloResult,
+    RelationDescriptionResult, SqlSnapshotResult, MAX_BRIDGE_MESSAGE_BYTES,
 };
 use zeroize::Zeroizing;
 
@@ -105,6 +106,37 @@ impl BridgeClient {
         self.request(BridgeAction::ListExportDestinations {
             connection_id: self.connection_id()?,
             project_id,
+        })
+    }
+
+    pub fn propose_export(&mut self, intent: AgentExportIntent) -> Result<AgentExportView, String> {
+        self.request(BridgeAction::ProposeExport {
+            connection_id: self.connection_id()?,
+            intent,
+        })
+    }
+
+    pub fn export_status(&mut self, export_id: String) -> Result<AgentExportView, String> {
+        self.request(BridgeAction::ExportStatus {
+            connection_id: self.connection_id()?,
+            export_id,
+        })
+    }
+
+    pub fn export_cancel(&mut self, export_id: String) -> Result<AgentExportView, String> {
+        self.request(BridgeAction::ExportCancel {
+            connection_id: self.connection_id()?,
+            export_id,
+        })
+    }
+
+    pub fn export_release(
+        &mut self,
+        export_id: String,
+    ) -> Result<AgentExportReleaseResult, String> {
+        self.request(BridgeAction::ExportRelease {
+            connection_id: self.connection_id()?,
+            export_id,
         })
     }
 

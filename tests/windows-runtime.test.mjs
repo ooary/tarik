@@ -153,7 +153,7 @@ function passingReport() {
       peakProcessTreeRssBytes: 300 * 1024 * 1024,
     },
     engine: {
-      handshake: { engineId: "duckdb", protocolVersion: 1 },
+      handshake: { engineId: "duckdb", protocolVersion: 2 },
       mainWindowHandle: 0,
       largeResult: { rows: 100_000, firstPageRows: 500, lastPageRows: 500 },
       resultCacheBytesAfterRelease: 0,

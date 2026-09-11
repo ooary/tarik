@@ -114,7 +114,7 @@ export function portableManifest({ version, revision, archive, bytes, digest }) 
     artifacts: [{ file: archive, bytes, sha256: digest }],
     compatibility: {
       metadataSchemaVersion: 11,
-      engineProtocolVersion: 1,
+      engineProtocolVersion: 2,
       duckdbVersion: "1.5.5",
     },
     runtime: {

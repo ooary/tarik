@@ -77,7 +77,7 @@ tar -C "$STAGE" -czf "$ARCHIVE" "$(basename "$PORTABLE")"
 printf '==> Verify staged sidecar handshake\n'
 printf '%s\n' '{"id":"release","method":"engine.handshake","params":{}}' \
   | "$PORTABLE/tarik-engine-duckdb" \
-  | python3 -c 'import json,sys; d=json.loads(sys.stdin.readline()); assert d["ok"] and d["result"]["protocolVersion"] == 1; print("Release sidecar OK:", d["result"]["engineId"], d["result"]["engineVersion"])'
+  | python3 -c 'import json,sys; d=json.loads(sys.stdin.readline()); assert d["ok"] and d["result"]["protocolVersion"] == 2; print("Release sidecar OK:", d["result"]["engineId"], d["result"]["engineVersion"])'
 
 printf '==> Smoke desktop under clean XDG directories\n'
 SMOKE_ROOT=$(mktemp -d -t tarik-release-smoke-XXXXXX)
@@ -149,7 +149,7 @@ manifest={
   'signed':False,
   'checksums':'SHA256SUMS',
   'artifacts':artifacts,
-  'compatibility':{'metadataSchemaVersion':11,'engineProtocolVersion':1,'duckdbVersion':'1.5.5'},
+  'compatibility':{'metadataSchemaVersion':11,'engineProtocolVersion':2,'duckdbVersion':'1.5.5'},
   'runtime':{'linux':['WebKitGTK 4.1','GTK 3','glibc-compatible x86_64 userspace']},
   'deferredReleaseGates':['E6 final review','E7 final review','E10 manual review']
 }

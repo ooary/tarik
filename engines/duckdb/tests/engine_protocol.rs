@@ -216,7 +216,7 @@ fn handshake_reports_duckdb_capabilities() {
     let mut engine = spawn_engine();
     let result = engine.assert_ok("engine.handshake", json!({}));
     assert_eq!(result["engineId"], "duckdb");
-    assert_eq!(result["protocolVersion"], 1);
+    assert_eq!(result["protocolVersion"], 2);
     assert_eq!(result["capabilities"]["linkParquet"], true);
     assert_eq!(result["capabilities"]["importCsv"], true);
     assert_eq!(result["capabilities"]["dataProfiling"], true);
@@ -1222,6 +1222,42 @@ fn export_protocol_streams_exact_csv_parts_with_bounded_status() {
     let repeat = engine.assert_ok("export.cancel", json!({ "exportId": "x1" }));
     assert_eq!(repeat["state"], "succeeded");
     assert!(output.join("orders-part-00001.csv").is_file());
+
+    engine.child.kill().ok();
+    let _ = std::fs::remove_file(database);
+    let _ = std::fs::remove_dir_all(output);
+}
+
+#[test]
+fn delegated_export_byte_quota_fails_before_publication() {
+    let mut engine = spawn_engine();
+    let database = temp_path("export-quota", ".duckdb");
+    let output = temp_path("export-quota-output", "");
+    std::fs::create_dir(&output).unwrap();
+    engine.assert_ok(
+        "session.open",
+        json!({
+            "sessionId": "eq",
+            "locator": { "engineId": "duckdb", "payload": { "path": database } }
+        }),
+    );
+    engine.assert_ok(
+        "export.execute",
+        json!({
+            "sessionId": "eq",
+            "exportId": "quota-1",
+            "sql": "SELECT i, lpad('x', 100, 'x') AS payload FROM range(0, 10) t(i)",
+            "options": csv_export_options(&output, 10),
+            "maximumTotalBytes": 1,
+        }),
+    );
+    let status = poll_export_terminal(&mut engine, "quota-1", 400);
+    assert_eq!(status["state"], "failed");
+    assert_eq!(status["error"]["code"], "export.quota_exceeded");
+    assert_eq!(status["rowsWritten"], 0);
+    assert_eq!(status["filesWritten"], 0);
+    assert_eq!(status["bytesWritten"], 0);
+    assert_eq!(std::fs::read_dir(&output).unwrap().count(), 0);
 
     engine.child.kill().ok();
     let _ = std::fs::remove_file(database);

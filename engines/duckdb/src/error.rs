@@ -45,6 +45,10 @@ pub enum EngineError {
     ExportMissing(String),
     #[error("export was cancelled")]
     ExportCancelled,
+    #[error("export exceeded its delegated byte quota")]
+    ExportQuotaExceeded,
+    #[error("export publication failed and rollback could not be confirmed: {0}")]
+    ExportRecoveryRequired(String),
     #[error("result does not exist: {0}")]
     ResultMissing(String),
     #[error("invalid query request: {0}")]
@@ -128,6 +132,8 @@ impl EngineError {
             Self::ExportExists(_) => "export.exists",
             Self::ExportMissing(_) => "export.missing",
             Self::ExportCancelled => "export.cancelled",
+            Self::ExportQuotaExceeded => "export.quota_exceeded",
+            Self::ExportRecoveryRequired(_) => "export.recovery_required",
             Self::ResultMissing(_) => "result.missing",
             Self::InvalidQuery(_) => "query.invalid",
             Self::AgentRollbackFailed(_) => "agent.rollback_failed",

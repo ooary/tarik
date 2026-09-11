@@ -133,7 +133,7 @@ try {
   if (
     !handshake.ok ||
     handshake.result?.engineId !== "duckdb" ||
-    handshake.result?.protocolVersion !== 1
+    handshake.result?.protocolVersion !== 2
   ) {
     throw new Error(`bundled engine handshake failed: ${JSON.stringify(handshake)}`);
   }
@@ -165,7 +165,7 @@ try {
   const extractedHandshake = await engineHandshake(
     path.join(extracted, folderName, "tarik-engine-duckdb.exe"),
   );
-  if (!extractedHandshake.ok || extractedHandshake.result?.protocolVersion !== 1) {
+  if (!extractedHandshake.ok || extractedHandshake.result?.protocolVersion !== 2) {
     throw new Error("extracted bundled engine handshake failed");
   }
 

@@ -166,7 +166,7 @@ export function runtimeFailures(report, budgets = WINDOWS_RUNTIME_BUDGETS) {
   }
   if (
     report.engine?.handshake?.engineId !== "duckdb" ||
-    report.engine?.handshake?.protocolVersion !== 1
+    report.engine?.handshake?.protocolVersion !== 2
   ) {
     failures.push("packaged sidecar handshake was invalid");
   }

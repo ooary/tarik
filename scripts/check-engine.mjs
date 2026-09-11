@@ -13,8 +13,8 @@ try {
   if (!response.ok) {
     throw new Error(response.error?.message || "engine returned an empty failure");
   }
-  if (response.result?.protocolVersion !== 1) {
-    throw new Error(`expected protocol 1, found ${response.result?.protocolVersion}`);
+  if (response.result?.protocolVersion !== 2) {
+    throw new Error(`expected protocol 2, found ${response.result?.protocolVersion}`);
   }
   console.log(
     `Engine OK: ${response.result.engineId} ${response.result.engineVersion} protocol ${response.result.protocolVersion}`,

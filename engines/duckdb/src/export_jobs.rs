@@ -36,6 +36,7 @@ struct ExportRecord {
     bytes_written: u64,
     current_part: Option<u64>,
     completed_parts: VecDeque<ExportPartSummary>,
+    maximum_total_bytes: Option<u64>,
     error: Option<ErrorEnvelope>,
 }
 
@@ -98,12 +99,29 @@ impl ExportRegistry {
         connection: Connection,
         options: ExportOptions,
     ) -> Result<(), EngineError> {
+        self.execute_bounded(session_id, export_id, sql, connection, options, None)
+    }
+
+    pub fn execute_bounded(
+        self: &Arc<Self>,
+        session_id: &str,
+        export_id: &str,
+        sql: &str,
+        connection: Connection,
+        options: ExportOptions,
+        maximum_total_bytes: Option<u64>,
+    ) -> Result<(), EngineError> {
         if sql.trim().is_empty() || crate::sql::split_statements(sql).is_empty() {
             return Err(EngineError::InvalidQuery("sql text contains no statements"));
         }
         let options = options
             .validate()
             .map_err(|error| EngineError::ExportInvalid(error.to_string()))?;
+        if maximum_total_bytes == Some(0) {
+            return Err(EngineError::ExportInvalid(
+                "maximum total bytes must be positive".into(),
+            ));
+        }
         let mut inner = self.lock()?;
         if inner.exports.contains_key(export_id) {
             return Err(EngineError::ExportExists(export_id.to_string()));
@@ -126,6 +144,7 @@ impl ExportRegistry {
                 bytes_written: 0,
                 current_part: None,
                 completed_parts: VecDeque::new(),
+                maximum_total_bytes,
                 error: None,
             },
         );
@@ -305,6 +324,23 @@ struct RegistryObserver<'a> {
     export_id: &'a str,
 }
 
+impl RegistryObserver<'_> {
+    fn check_byte_budget(&self, part_bytes: u64) -> Result<(), EngineError> {
+        let inner = self.registry.lock()?;
+        let record = inner
+            .exports
+            .get(self.export_id)
+            .ok_or_else(|| EngineError::ExportMissing(self.export_id.to_string()))?;
+        if record
+            .maximum_total_bytes
+            .is_some_and(|maximum| record.bytes_written.saturating_add(part_bytes) > maximum)
+        {
+            return Err(EngineError::ExportQuotaExceeded);
+        }
+        Ok(())
+    }
+}
+
 impl ExportObserver for RegistryObserver<'_> {
     fn export_id(&self) -> Option<&str> {
         Some(self.export_id)
@@ -329,6 +365,14 @@ impl ExportObserver for RegistryObserver<'_> {
                 record.current_part = Some(current_part);
             }
         }
+    }
+
+    fn check_staged_bytes(&self, stage_bytes: u64) -> Result<(), EngineError> {
+        self.check_byte_budget(stage_bytes)
+    }
+
+    fn before_part_publish(&self, part_bytes: u64) -> Result<(), EngineError> {
+        self.check_byte_budget(part_bytes)
     }
 
     fn part_completed(&self, part: &ExportPartSummary) {

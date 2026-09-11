@@ -6,6 +6,7 @@
 use std::{
     fs,
     path::{Component, Path, PathBuf},
+    sync::Arc,
 };
 
 use serde::{Deserialize, Serialize};
@@ -186,6 +187,28 @@ impl AgentDestinationManager {
         self.repository
             .revoke(destination_id, client_id, project_id)
             .map_err(metadata_error)
+    }
+
+    pub(crate) fn resolve_for_export(
+        &self,
+        client_id: &str,
+        project_id: &str,
+        destination_id: &str,
+    ) -> Result<ExportDestinationRecord, String> {
+        let record = self
+            .repository
+            .find(destination_id)
+            .map_err(metadata_error)?
+            .filter(|record| record.client_id == client_id && record.project_id == project_id)
+            .ok_or_else(destination_missing)?;
+        if !record.enabled {
+            return Err(
+                "agent.destination_disabled: Enable this destination in Tarik before exporting."
+                    .into(),
+            );
+        }
+        self.revalidate_record(&record)?;
+        Ok(record)
     }
 
     /// MCP listing: caller supplies identity only after AgentAccessManager has
@@ -494,7 +517,7 @@ fn reject_remote_filesystem(path: &Path) -> Result<(), String> {
 pub fn list_agent_export_destinations(
     client_id: String,
     project_id: String,
-    manager: tauri::State<'_, AgentDestinationManager>,
+    manager: tauri::State<'_, Arc<AgentDestinationManager>>,
 ) -> Result<ExportDestinationList, String> {
     manager.list_for_desktop(&client_id, &project_id)
 }
@@ -505,7 +528,7 @@ pub fn create_agent_export_destination(
     project_id: String,
     selected_directory: String,
     policy: DestinationPolicyInput,
-    manager: tauri::State<'_, AgentDestinationManager>,
+    manager: tauri::State<'_, Arc<AgentDestinationManager>>,
 ) -> Result<ExportDestinationView, String> {
     manager.create(&client_id, &project_id, &selected_directory, policy)
 }
@@ -516,9 +539,12 @@ pub fn update_agent_export_destination(
     project_id: String,
     destination_id: String,
     policy: DestinationPolicyInput,
-    manager: tauri::State<'_, AgentDestinationManager>,
+    manager: tauri::State<'_, Arc<AgentDestinationManager>>,
+    exports: tauri::State<'_, Arc<crate::agent_exports::AgentExportManager>>,
 ) -> Result<ExportDestinationView, String> {
-    manager.update_policy(&client_id, &project_id, &destination_id, policy)
+    let updated = manager.update_policy(&client_id, &project_id, &destination_id, policy)?;
+    exports.invalidate_destination(&destination_id);
+    Ok(updated)
 }
 
 #[tauri::command]
@@ -527,9 +553,12 @@ pub fn set_agent_export_destination_enabled(
     project_id: String,
     destination_id: String,
     enabled: bool,
-    manager: tauri::State<'_, AgentDestinationManager>,
+    manager: tauri::State<'_, Arc<AgentDestinationManager>>,
+    exports: tauri::State<'_, Arc<crate::agent_exports::AgentExportManager>>,
 ) -> Result<ExportDestinationView, String> {
-    manager.set_enabled(&client_id, &project_id, &destination_id, enabled)
+    let updated = manager.set_enabled(&client_id, &project_id, &destination_id, enabled)?;
+    exports.invalidate_destination(&destination_id);
+    Ok(updated)
 }
 
 #[tauri::command]
@@ -538,14 +567,17 @@ pub fn repair_agent_export_destination(
     project_id: String,
     destination_id: String,
     selected_directory: String,
-    manager: tauri::State<'_, AgentDestinationManager>,
+    manager: tauri::State<'_, Arc<AgentDestinationManager>>,
+    exports: tauri::State<'_, Arc<crate::agent_exports::AgentExportManager>>,
 ) -> Result<ExportDestinationView, String> {
-    manager.repair(
+    let updated = manager.repair(
         &client_id,
         &project_id,
         &destination_id,
         &selected_directory,
-    )
+    )?;
+    exports.invalidate_destination(&destination_id);
+    Ok(updated)
 }
 
 #[tauri::command]
@@ -553,9 +585,14 @@ pub fn revoke_agent_export_destination(
     client_id: String,
     project_id: String,
     destination_id: String,
-    manager: tauri::State<'_, AgentDestinationManager>,
+    manager: tauri::State<'_, Arc<AgentDestinationManager>>,
+    exports: tauri::State<'_, Arc<crate::agent_exports::AgentExportManager>>,
 ) -> Result<bool, String> {
-    manager.revoke(&client_id, &project_id, &destination_id)
+    let revoked = manager.revoke(&client_id, &project_id, &destination_id)?;
+    if revoked {
+        exports.invalidate_destination(&destination_id);
+    }
+    Ok(revoked)
 }
 
 #[cfg(test)]

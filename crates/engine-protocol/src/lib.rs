@@ -7,7 +7,7 @@ use std::{fmt, path::PathBuf};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-pub const PROTOCOL_VERSION: u32 = 1;
+pub const PROTOCOL_VERSION: u32 = 2;
 pub const MAX_EXPORT_BASE_NAME_BYTES: usize = 128;
 pub const MAX_EXPORT_ROWS_PER_PART: u64 = i64::MAX as u64;
 /// Status and history retain only the most recent part summaries; aggregate

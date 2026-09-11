@@ -349,8 +349,19 @@ fn dispatch(
                     .cloned()
                     .ok_or_else(|| EngineError::MissingField("options".into()))?,
             )?;
+            let maximum_total_bytes = params.get("maximumTotalBytes").and_then(Value::as_u64);
             let connection = sessions.get(&session_id)?.try_clone()?;
-            exports.execute(&session_id, &export_id, &sql, connection, options)?;
+            match maximum_total_bytes {
+                Some(maximum) => exports.execute_bounded(
+                    &session_id,
+                    &export_id,
+                    &sql,
+                    connection,
+                    options,
+                    Some(maximum),
+                )?,
+                None => exports.execute(&session_id, &export_id, &sql, connection, options)?,
+            }
             Ok(serde_json::json!({
                 "exportId": export_id,
                 "state": "queued",

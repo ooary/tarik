@@ -6,7 +6,7 @@
 
 The packaged native `tarik-mcp` stdio child connects to the visible Tarik desktop through a user-private Unix socket or current-user-restricted Windows named pipe. Tarik owns pairing, project grants, catalog identity, SQL classification, execution, result artifacts, approval, mutation transactions, and audit.
 
-Supported MCP handshake revisions are `2025-06-18` and `2025-11-25`. The public contract is a static allowlist of 20 tools:
+Supported MCP handshake revisions are `2025-06-18` and `2025-11-25`. At the E15 review baseline, the public contract was a static allowlist of 20 tools:
 
 - status, granted-project listing, bounded catalog listing, and relation description;
 - immutable SQL classification;
@@ -17,7 +17,7 @@ Supported MCP handshake revisions are `2025-06-18` and `2025-11-25`. The public 
 - read-only Quality definitions and aggregate run history;
 - read-only saved-query listing when Modify workspace is explicitly granted.
 
-Broad project, path, source, export, settings, support, history-clear, check CRUD, saved-query CRUD, editor mutation, and failure-preview commands are not mirrored. Unknown or unsupported operations have no route.
+Broad project, path, source, export, settings, support, history-clear, check CRUD, saved-query CRUD, editor mutation, and failure-preview commands were not mirrored in E15. E15.1 later adds only redacted destination listing and four typed guarded complete-query export lifecycle tools; it still exposes no path, raw SQL execution, destination mutation, or MCP approval method. Unknown or unsupported operations have no route.
 
 ## Security evidence
 

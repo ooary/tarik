@@ -6,7 +6,7 @@
 pub mod commands;
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, VecDeque},
     sync::{Arc, Mutex},
     thread,
     time::Duration,
@@ -29,9 +29,21 @@ use crate::{
 
 const POLL_INTERVAL: Duration = Duration::from_millis(150);
 const MAX_POLL_FAILURES: u32 = 3;
+const MAX_ACTIVE_EXPORTS: usize = 8;
+const MAX_TERMINAL_EXPORTS: usize = 256;
 
 pub trait EngineExporter: Send + Sync + 'static {
     fn execute(&self, export_id: &str, sql: &str, options: &ExportOptions) -> Result<(), String>;
+    fn execute_bounded(
+        &self,
+        export_id: &str,
+        sql: &str,
+        options: &ExportOptions,
+        maximum_total_bytes: u64,
+    ) -> Result<(), String> {
+        let _ = maximum_total_bytes;
+        self.execute(export_id, sql, options)
+    }
     fn status(&self, export_id: &str) -> Result<Option<ExportStatus>, String>;
     fn cancel(&self, export_id: &str) -> Result<Option<ExportStatus>, String>;
 }
@@ -94,6 +106,7 @@ pub struct ExportCoordinator {
     engine: Arc<dyn EngineExporter>,
     database: MetadataDb,
     exports: Mutex<HashMap<String, ExportRecord>>,
+    terminal_order: Mutex<VecDeque<String>>,
     poll_interval: Duration,
     cleanup: Option<Arc<CleanupService>>,
 }
@@ -104,6 +117,7 @@ impl ExportCoordinator {
             engine,
             database,
             exports: Mutex::new(HashMap::new()),
+            terminal_order: Mutex::new(VecDeque::new()),
             poll_interval: POLL_INTERVAL,
             cleanup: None,
         }
@@ -126,6 +140,29 @@ impl ExportCoordinator {
         sql: &str,
         options: ExportOptions,
     ) -> Result<ExportView, String> {
+        self.execute_with_budget(project_id, sql, options, None)
+    }
+
+    pub(crate) fn execute_bounded(
+        self: &Arc<Self>,
+        project_id: &str,
+        sql: &str,
+        options: ExportOptions,
+        maximum_total_bytes: u64,
+    ) -> Result<ExportView, String> {
+        if maximum_total_bytes == 0 {
+            return Err("export.invalid_quota: maximum total bytes must be positive".into());
+        }
+        self.execute_with_budget(project_id, sql, options, Some(maximum_total_bytes))
+    }
+
+    fn execute_with_budget(
+        self: &Arc<Self>,
+        project_id: &str,
+        sql: &str,
+        options: ExportOptions,
+        maximum_total_bytes: Option<u64>,
+    ) -> Result<ExportView, String> {
         if sql.trim().is_empty() {
             return Err("export.empty_sql".into());
         }
@@ -141,31 +178,47 @@ impl ExportCoordinator {
             .map_err(|error| format!("export.invalid_options.{}: {error}", error.field()))?;
         let options = validated.to_options();
         let export_id = uuid::Uuid::new_v4().to_string();
+        let mut exports = self
+            .exports
+            .lock()
+            .map_err(|_| "export registry poisoned".to_string())?;
+        if exports
+            .values()
+            .filter(|record| matches!(record.state, ExportState::Queued | ExportState::Running))
+            .count()
+            >= MAX_ACTIVE_EXPORTS
+        {
+            return Err("export.busy: too many exports are active".into());
+        }
         if let Some(cleanup) = self.cleanup.as_ref() {
             cleanup.register_export(&export_id, &options)?;
         }
-        self.exports
-            .lock()
-            .map_err(|_| "export registry poisoned".to_string())?
-            .insert(
-                export_id.clone(),
-                ExportRecord {
-                    project_id: project_id.to_string(),
-                    sql: sql.to_string(),
-                    options: options.clone(),
-                    state: ExportState::Queued,
-                    duration_ms: 0,
-                    rows_written: 0,
-                    files_written: 0,
-                    bytes_written: 0,
-                    current_part: None,
-                    completed_parts: Vec::new(),
-                    error: None,
-                    history_written: false,
-                },
-            );
+        exports.insert(
+            export_id.clone(),
+            ExportRecord {
+                project_id: project_id.to_string(),
+                sql: sql.to_string(),
+                options: options.clone(),
+                state: ExportState::Queued,
+                duration_ms: 0,
+                rows_written: 0,
+                files_written: 0,
+                bytes_written: 0,
+                current_part: None,
+                completed_parts: Vec::new(),
+                error: None,
+                history_written: false,
+            },
+        );
+        drop(exports);
 
-        let submitted = match self.engine.execute(&export_id, sql, &options) {
+        let submission = match maximum_total_bytes {
+            Some(maximum) => self
+                .engine
+                .execute_bounded(&export_id, sql, &options, maximum),
+            None => self.engine.execute(&export_id, sql, &options),
+        };
+        let submitted = match submission {
             Ok(()) => true,
             Err(message) => {
                 self.mark_terminal(
@@ -223,6 +276,28 @@ impl ExportCoordinator {
             .ok()?
             .get(export_id)
             .map(|record| record.view(export_id))
+    }
+
+    pub fn release(&self, export_id: &str) -> Result<bool, String> {
+        let removed = {
+            let mut exports = self
+                .exports
+                .lock()
+                .map_err(|_| "export registry poisoned".to_string())?;
+            let Some(record) = exports.get(export_id) else {
+                return Ok(false);
+            };
+            if matches!(record.state, ExportState::Queued | ExportState::Running) {
+                return Err("export.active: cancel the export before releasing it".into());
+            }
+            exports.remove(export_id).is_some()
+        };
+        if removed {
+            if let Ok(mut order) = self.terminal_order.lock() {
+                order.retain(|id| id != export_id);
+            }
+        }
+        Ok(removed)
     }
 
     pub fn completed_part_path(
@@ -404,8 +479,36 @@ impl ExportCoordinator {
         {
             eprintln!("tarik: could not persist export history: {error}");
         }
-        if let Some(cleanup) = self.cleanup.as_ref() {
-            cleanup.complete_export(export_id);
+        let recovery_required = history.error_code.as_deref() == Some("export.recovery_required");
+        if !recovery_required {
+            if let Some(cleanup) = self.cleanup.as_ref() {
+                cleanup.complete_export(export_id);
+            }
+        }
+        self.remember_terminal(export_id);
+    }
+
+    fn remember_terminal(&self, export_id: &str) {
+        let evicted = {
+            let Ok(mut order) = self.terminal_order.lock() else {
+                return;
+            };
+            order.retain(|id| id != export_id);
+            order.push_back(export_id.to_string());
+            let mut evicted = Vec::new();
+            while order.len() > MAX_TERMINAL_EXPORTS {
+                if let Some(id) = order.pop_front() {
+                    evicted.push(id);
+                }
+            }
+            evicted
+        };
+        if !evicted.is_empty() {
+            if let Ok(mut exports) = self.exports.lock() {
+                for id in evicted {
+                    exports.remove(&id);
+                }
+            }
         }
     }
 }
@@ -429,6 +532,16 @@ fn history_part(part: &ExportPartSummary) -> HistoryPart {
 impl EngineExporter for crate::engine_manager::EngineManager {
     fn execute(&self, export_id: &str, sql: &str, options: &ExportOptions) -> Result<(), String> {
         self.execute_export(export_id, sql, options)
+    }
+
+    fn execute_bounded(
+        &self,
+        export_id: &str,
+        sql: &str,
+        options: &ExportOptions,
+        maximum_total_bytes: u64,
+    ) -> Result<(), String> {
+        self.execute_export_bounded(export_id, sql, options, Some(maximum_total_bytes))
     }
 
     fn status(&self, export_id: &str) -> Result<Option<ExportStatus>, String> {
@@ -750,6 +863,70 @@ mod tests {
         assert_eq!(coordinator.completed_part_path("forged", 1), None);
         std::fs::remove_file(canonical).unwrap();
         assert_eq!(coordinator.completed_part_path(&queued.export_id, 1), None);
+        std::fs::remove_dir(directory).unwrap();
+    }
+
+    #[test]
+    fn bounded_submission_forwards_quota_and_terminal_release_preserves_history() {
+        struct BudgetEngine {
+            maximum: StdMutex<Option<u64>>,
+        }
+        impl EngineExporter for BudgetEngine {
+            fn execute(
+                &self,
+                _export_id: &str,
+                _sql: &str,
+                _options: &ExportOptions,
+            ) -> Result<(), String> {
+                panic!("bounded lane must not use unbounded execute")
+            }
+            fn execute_bounded(
+                &self,
+                _export_id: &str,
+                _sql: &str,
+                _options: &ExportOptions,
+                maximum_total_bytes: u64,
+            ) -> Result<(), String> {
+                *self.maximum.lock().unwrap() = Some(maximum_total_bytes);
+                Ok(())
+            }
+            fn status(&self, export_id: &str) -> Result<Option<ExportStatus>, String> {
+                let mut status = status(ExportState::Succeeded);
+                status.export_id = export_id.to_string();
+                Ok(Some(status))
+            }
+            fn cancel(&self, _export_id: &str) -> Result<Option<ExportStatus>, String> {
+                Ok(None)
+            }
+        }
+        let engine = Arc::new(BudgetEngine {
+            maximum: StdMutex::new(None),
+        });
+        let database = MetadataDb::open_in_memory().unwrap();
+        let project = ProjectsRepository::new(database.clone())
+            .upsert(
+                "Test",
+                Path::new("/tmp/export-budget.duckdb"),
+                crate::metadata::projects::ProjectOwnership::External,
+            )
+            .unwrap();
+        let coordinator = Arc::new(
+            ExportCoordinator::new(engine.clone(), database.clone())
+                .with_poll_interval(Duration::from_millis(5)),
+        );
+        let directory = output_dir("bounded");
+        let queued = coordinator
+            .execute_bounded(&project.id, "SELECT 1", options(&directory), 42_000)
+            .unwrap();
+        assert_eq!(*engine.maximum.lock().unwrap(), Some(42_000));
+        wait_terminal(&coordinator, &queued.export_id);
+        assert!(coordinator.release(&queued.export_id).unwrap());
+        assert!(coordinator.status(&queued.export_id).is_none());
+        assert!(SourcesRepository::new(database)
+            .get_export(&queued.export_id)
+            .unwrap()
+            .is_some());
+        assert!(!coordinator.release(&queued.export_id).unwrap());
         std::fs::remove_dir(directory).unwrap();
     }
 

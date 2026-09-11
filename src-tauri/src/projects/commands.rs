@@ -134,7 +134,16 @@ pub async fn rename_project(
     project_id: String,
     new_name: String,
     manager: State<'_, ProjectManager>,
+    agent_access: State<'_, Arc<crate::agent_access::AgentAccessManager>>,
 ) -> Result<crate::metadata::projects::RecentProject, String> {
+    if manager
+        .active()
+        .ok()
+        .flatten()
+        .is_some_and(|active| active.id == project_id)
+    {
+        agent_access.invalidate_project(&project_id);
+    }
     let manager = manager.inner().clone();
     blocking(move || manager.rename(&project_id, &new_name)).await
 }
@@ -143,7 +152,16 @@ pub async fn rename_project(
 pub async fn remove_project(
     project_id: String,
     manager: State<'_, ProjectManager>,
+    agent_access: State<'_, Arc<crate::agent_access::AgentAccessManager>>,
 ) -> Result<ProjectRemoval, String> {
+    if manager
+        .active()
+        .ok()
+        .flatten()
+        .is_some_and(|active| active.id == project_id)
+    {
+        agent_access.invalidate_project(&project_id);
+    }
     let manager = manager.inner().clone();
     blocking(move || manager.remove(&project_id)).await
 }

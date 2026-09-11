@@ -95,6 +95,15 @@ A destination policy includes a display label, CSV/Parquet allowlist, rows-per-p
 
 Destination listing does not itself start an export. The guarded complete-query export tools consume a server-held SafeRead snapshot and opaque destination ID; they never accept SQL, a path, URL, raw `COPY`, arbitrary options, or remembered overwrite authority.
 
+1. Classify the exact one-statement query with `tarik_classify_sql`; only a `safe_read` snapshot can enter export.
+2. List `tarik_list_export_destinations` and use one returned opaque ID.
+3. Call `tarik_propose_export` once with the snapshot ID, destination ID, `csv` or `parquet`, a portable base name, rows per part, and the matching closed format options.
+4. If Tarik returns `delegated`, create-new work starts without per-run approval. A format/chunk policy exception returns `approval_required`; an existing canonical part returns `critical_confirmation`. Wait for direct visible Tarik approval. MCP has no approval method.
+5. Poll `tarik_export_status`; cancel with `tarik_export_cancel` if needed. Treat cancellation as requested until terminal status is returned.
+6. Report exact rows/files/bytes and relative part names only, then call `tarik_export_release`. Release removes only transient ownership state, not completed user files or persisted aggregate history.
+
+Exports rerun the complete immutable SafeRead query and are independent of the 5,000-row browsing cap. They are bounded by one active export per connection, four globally, the destination rows-per-part/total-byte policy, and bounded status manifests. Successful zero-row exports report zero rows/files/bytes and create no file. Destination or catalog drift, cross-owner IDs, quota violations, unsafe existing targets, and unapproved/replayed work fail closed. Publication rollback ambiguity reports `recovery_required`; stop and review visible Tarik rather than retrying.
+
 ## Safety model
 
 - Project paths, source paths, logs, credentials, environment variables, and unrelated projects are never discovery output.

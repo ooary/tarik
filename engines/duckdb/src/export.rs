@@ -40,6 +40,18 @@ pub trait ExportObserver {
 
     fn rows_written(&self, _rows: u64, _current_part: u64) {}
 
+    /// Called after each batch slice is written to the hidden stage. Delegated
+    /// exports use this to bound temporary disk growth before publication.
+    fn check_staged_bytes(&self, _stage_bytes: u64) -> Result<(), EngineError> {
+        Ok(())
+    }
+
+    /// Called after the stage is durably closed but before publication. A
+    /// delegated quota observer can reject the part without exposing it.
+    fn before_part_publish(&self, _part_bytes: u64) -> Result<(), EngineError> {
+        Ok(())
+    }
+
     fn part_completed(&self, _part: &ExportPartSummary) {}
 }
 
@@ -146,10 +158,9 @@ impl<'a> ChunkedExportWriter<'a> {
                 |_| EngineError::ExportInvalid("part size exceeds platform range".into()),
             )?;
             let slice = batch.slice(offset, take);
-            self.current
-                .as_mut()
-                .expect("part exists before writing")
-                .write(&slice)?;
+            let current = self.current.as_mut().expect("part exists before writing");
+            current.write(&slice)?;
+            self.observer.check_staged_bytes(current.stage_bytes()?)?;
             self.current_rows += take as u64;
             self.rows_written += take as u64;
             self.observer.rows_written(take as u64, self.next_part);
@@ -168,7 +179,7 @@ impl<'a> ChunkedExportWriter<'a> {
         };
         let part_number = self.next_part;
         let rows = self.current_rows;
-        let (path, bytes) = current.publish(self.options.overwrite)?;
+        let (path, bytes) = current.publish(self.options.overwrite, self.observer)?;
         let summary = ExportPartSummary {
             part_number,
             path: path.to_string_lossy().into_owned(),
@@ -339,6 +350,15 @@ impl PartWriter {
         })
     }
 
+    fn stage_bytes(&self) -> Result<u64, EngineError> {
+        fs::metadata(&self.stage_path)
+            .map(|metadata| metadata.len())
+            .map_err(|source| EngineError::ExportIo {
+                path: self.stage_path.clone(),
+                source,
+            })
+    }
+
     fn write(&mut self, batch: &RecordBatch) -> Result<(), EngineError> {
         let path = self.stage_path.clone();
         match self.writer.as_mut().expect("part writer is open") {
@@ -359,9 +379,20 @@ impl PartWriter {
         }
     }
 
-    fn publish(mut self, overwrite: ExportOverwritePolicy) -> Result<(PathBuf, u64), EngineError> {
+    fn publish(
+        mut self,
+        overwrite: ExportOverwritePolicy,
+        observer: &dyn ExportObserver,
+    ) -> Result<(PathBuf, u64), EngineError> {
         let writer = self.writer.take().expect("part writer is open");
         writer.close(&self.stage_path)?;
+        let bytes = fs::metadata(&self.stage_path)
+            .map_err(|source| EngineError::ExportIo {
+                path: self.stage_path.clone(),
+                source,
+            })?
+            .len();
+        observer.before_part_publish(bytes)?;
         match overwrite {
             ExportOverwritePolicy::FailIfExists => {
                 // Hard-link creation is atomic and fails if a destination
@@ -394,7 +425,11 @@ impl PartWriter {
                 };
                 if let Err(source) = fs::rename(&self.stage_path, &self.final_path) {
                     if let Some(backup) = backup.as_ref() {
-                        let _ = fs::rename(backup, &self.final_path);
+                        if let Err(rollback) = fs::rename(backup, &self.final_path) {
+                            return Err(EngineError::ExportRecoveryRequired(format!(
+                                "publication failed ({source}); restoring the previous file failed ({rollback})"
+                            )));
+                        }
                     }
                     return Err(EngineError::ExportIo {
                         path: self.final_path.clone(),
@@ -408,12 +443,6 @@ impl PartWriter {
                 }
             }
         }
-        let bytes = fs::metadata(&self.final_path)
-            .map_err(|source| EngineError::ExportIo {
-                path: self.final_path.clone(),
-                source,
-            })?
-            .len();
         Ok((self.final_path.clone(), bytes))
     }
 }
@@ -772,6 +801,82 @@ mod tests {
             "n\n1\n"
         );
         fs::remove_dir_all(directory).unwrap();
+    }
+
+    struct ByteBudget {
+        published: AtomicU64,
+        maximum: u64,
+    }
+
+    impl ExportObserver for ByteBudget {
+        fn before_part_publish(&self, part_bytes: u64) -> Result<(), EngineError> {
+            if self
+                .published
+                .load(Ordering::SeqCst)
+                .saturating_add(part_bytes)
+                > self.maximum
+            {
+                Err(EngineError::ExportQuotaExceeded)
+            } else {
+                Ok(())
+            }
+        }
+
+        fn part_completed(&self, part: &ExportPartSummary) {
+            self.published.fetch_add(part.bytes, Ordering::SeqCst);
+        }
+    }
+
+    #[test]
+    fn byte_quota_rejects_before_publication_and_preserves_prior_parts() {
+        let first_rejected = output_dir("quota-first");
+        let observer = ByteBudget {
+            published: AtomicU64::new(0),
+            maximum: 1,
+        };
+        let options = csv_options(&first_rejected, 2).validate().unwrap();
+        let error = execute_validated_export(
+            &connection(),
+            "SELECT i, repeat('x', 100) AS payload FROM range(0, 4) t(i)",
+            &options,
+            &observer,
+        )
+        .unwrap_err();
+        assert!(matches!(error, EngineError::ExportQuotaExceeded));
+        assert_eq!(fs::read_dir(&first_rejected).unwrap().count(), 0);
+
+        let partial = output_dir("quota-partial");
+        let options = csv_options(&partial, 2).validate().unwrap();
+        let one_part = execute_export(
+            &connection(),
+            "SELECT i, repeat('x', 100) AS payload FROM range(0, 2) t(i)",
+            csv_options(&partial, 2),
+        )
+        .unwrap();
+        let first_bytes = one_part.bytes_written;
+        fs::remove_file(partial.join("orders-part-00001.csv")).unwrap();
+        let observer = ByteBudget {
+            published: AtomicU64::new(0),
+            maximum: first_bytes,
+        };
+        let error = execute_validated_export(
+            &connection(),
+            "SELECT i, repeat('x', 100) AS payload FROM range(0, 4) t(i)",
+            &options,
+            &observer,
+        )
+        .unwrap_err();
+        assert!(matches!(error, EngineError::ExportQuotaExceeded));
+        assert!(partial.join("orders-part-00001.csv").is_file());
+        assert!(!partial.join("orders-part-00002.csv").exists());
+        assert!(!fs::read_dir(&partial).unwrap().flatten().any(|entry| {
+            entry
+                .file_name()
+                .to_string_lossy()
+                .starts_with(".tarik-export-")
+        }));
+        fs::remove_dir_all(first_rejected).unwrap();
+        fs::remove_dir_all(partial).unwrap();
     }
 
     struct FailAfterRows {

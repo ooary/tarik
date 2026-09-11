@@ -543,12 +543,23 @@ impl EngineManager {
         sql: &str,
         options: &ExportOptions,
     ) -> Result<(), String> {
+        self.execute_export_bounded(export_id, sql, options, None)
+    }
+
+    pub fn execute_export_bounded(
+        &self,
+        export_id: &str,
+        sql: &str,
+        options: &ExportOptions,
+        maximum_total_bytes: Option<u64>,
+    ) -> Result<(), String> {
         self.session_request(
             "export.execute",
             serde_json::json!({
                 "exportId": export_id,
                 "sql": sql,
                 "options": options,
+                "maximumTotalBytes": maximum_total_bytes,
             }),
         )
         .map(|_| ())

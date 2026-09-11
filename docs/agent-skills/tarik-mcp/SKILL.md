@@ -62,14 +62,16 @@ There is no MCP approval method. Never alter or resend SQL after approval.
 
 ## Complete guarded export
 
-A complete export is not assembled from result pages. When guarded export tools are available:
+A complete export is not assembled from result pages. Use the guarded export tools as follows:
 
-1. Classify the exact SafeRead query and retain its server-issued export/snapshot identity.
-2. List redacted destination grants.
+1. Classify the exact SafeRead query and retain its server-issued snapshot identity.
+2. List redacted destination grants with `tarik_list_export_destinations`.
 3. Choose only a returned opaque destination ID.
-4. Send only typed format, portable base name, rows per part, and typed CSV or Parquet options.
-5. Never provide or request an absolute path, URL, S3/network target, raw `COPY`, SQL, or arbitrary option string.
-6. Poll export status, cancel if requested, report exact aggregate counters and relative part names only, then release it.
+4. Call `tarik_propose_export` once with only the snapshot ID, destination ID, typed format, portable base name, rows per part, and matching typed CSV or Parquet options.
+5. Never provide or request an absolute path, URL, S3/network target, raw `COPY`, SQL, overwrite flag, or arbitrary option string.
+6. If the decision is `approval_required` or `critical_confirmation`, wait for direct visible Tarik approval. Do not attempt approval from MCP.
+7. Poll `tarik_export_status`; use `tarik_export_cancel` if requested, then continue polling to a terminal state.
+8. Report exact aggregate counters and relative part names only, then call `tarik_export_release`. Release does not delete completed user files.
 
 Guarded export reruns the complete immutable SafeRead query independently of the 5,000-row browsing cap. Delegated exports are create-new-only. Replacement always requires a fresh critical decision in Tarik. A successful zero-row export creates zero files.
 

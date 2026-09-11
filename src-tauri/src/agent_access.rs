@@ -84,6 +84,7 @@ pub struct AgentAccessChange {
 #[serde(rename_all = "camelCase")]
 pub struct ApprovalRequestView {
     pub id: String,
+    pub action: String,
     pub client_name: String,
     pub project_id: String,
     pub project_name: String,
@@ -122,6 +123,15 @@ struct SqlSnapshot {
     created_at: Instant,
 }
 
+pub(crate) struct ConsumedSafeReadSnapshot {
+    pub client_id: String,
+    pub connection_id: String,
+    pub project_id: String,
+    pub sql: String,
+    pub catalog_revision: String,
+    pub snapshot_hash: String,
+}
+
 struct AgentQuery {
     connection_id: String,
     project_id: String,
@@ -130,7 +140,14 @@ struct AgentQuery {
     result_id: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ApprovalKind {
+    Sql,
+    Export { export_id: String },
+}
+
 struct PendingApproval {
+    kind: ApprovalKind,
     approval_id: String,
     connection_id: String,
     profile_id: String,
@@ -167,6 +184,8 @@ struct DiscoveryCursor {
 
 pub trait AgentResourceCleaner: Send + Sync + 'static {
     fn cleanup_connection(&self, connection_id: &str);
+    fn cleanup_client_project(&self, _client_id: &str, _project_id: &str) {}
+    fn cleanup_project(&self, _project_id: &str) {}
     fn cleanup_all(&self);
 }
 
@@ -184,7 +203,7 @@ pub struct AgentAccessManager {
     engine: Arc<EngineManager>,
     logger: Arc<AppLogger>,
     state: Mutex<AccessState>,
-    cleaner: Arc<dyn AgentResourceCleaner>,
+    cleaner: Mutex<Arc<dyn AgentResourceCleaner>>,
     cursor_key: Option<[u8; 32]>,
     mutation_lane: Mutex<()>,
 }
@@ -213,16 +232,29 @@ impl AgentAccessManager {
                 enabled,
                 ..AccessState::default()
             }),
-            cleaner: Arc::new(NoopCleaner),
+            cleaner: Mutex::new(Arc::new(NoopCleaner)),
             cursor_key: random_array::<32>().ok(),
             mutation_lane: Mutex::new(()),
         }
     }
 
     #[cfg(test)]
-    fn with_cleaner(mut self, cleaner: Arc<dyn AgentResourceCleaner>) -> Self {
-        self.cleaner = cleaner;
+    fn with_cleaner(self, cleaner: Arc<dyn AgentResourceCleaner>) -> Self {
+        self.set_resource_cleaner(cleaner);
         self
+    }
+
+    pub(crate) fn set_resource_cleaner(&self, cleaner: Arc<dyn AgentResourceCleaner>) {
+        if let Ok(mut current) = self.cleaner.lock() {
+            *current = cleaner;
+        }
+    }
+
+    fn resource_cleaner(&self) -> Arc<dyn AgentResourceCleaner> {
+        self.cleaner
+            .lock()
+            .map(|cleaner| cleaner.clone())
+            .unwrap_or_else(|_| Arc::new(NoopCleaner))
     }
 
     pub fn set_enabled(&self, enabled: bool) -> Result<AgentAccessChange, String> {
@@ -245,7 +277,14 @@ impl AgentAccessManager {
             {
                 approval.state = ApprovalState::Denied;
             }
-            self.cleaner.cleanup_all();
+        }
+        let change = AgentAccessChange {
+            enabled: state.enabled,
+            endpoint_ready: state.endpoint_ready,
+        };
+        drop(state);
+        if !enabled {
+            self.resource_cleaner().cleanup_all();
         }
         self.logger.record(
             LogLevel::Info,
@@ -256,10 +295,7 @@ impl AgentAccessManager {
                 ..EventFields::default()
             },
         );
-        Ok(AgentAccessChange {
-            enabled: state.enabled,
-            endpoint_ready: state.endpoint_ready,
-        })
+        Ok(change)
     }
 
     pub fn enabled(&self) -> bool {
@@ -459,7 +495,8 @@ impl AgentAccessManager {
             if let Ok(mut state) = self.state.lock() {
                 state.connections.remove(&pending.connection_id);
             }
-            self.cleaner.cleanup_connection(&pending.connection_id);
+            self.resource_cleaner()
+                .cleanup_connection(&pending.connection_id);
             return Err(error.to_string());
         }
         self.logger.record(
@@ -480,7 +517,9 @@ impl AgentAccessManager {
             return Ok(false);
         };
         state.connections.remove(&pending.connection_id);
-        self.cleaner.cleanup_connection(&pending.connection_id);
+        drop(state);
+        self.resource_cleaner()
+            .cleanup_connection(&pending.connection_id);
         self.logger.record(
             LogLevel::Info,
             "agent",
@@ -761,6 +800,229 @@ impl AgentAccessManager {
         })
     }
 
+    pub(crate) fn consume_safe_read_export_snapshot(
+        &self,
+        connection_id: &str,
+        snapshot_id: &str,
+    ) -> Result<ConsumedSafeReadSnapshot, String> {
+        let (client_id, _) = self.authenticated_connection(connection_id)?;
+        let snapshot = {
+            let mut state = self.lock()?;
+            prune(&mut state);
+            let snapshot = state.sql_snapshots.remove(snapshot_id).ok_or_else(|| {
+                "agent.snapshot_missing: Classify the SQL again before exporting.".to_string()
+            })?;
+            if snapshot.connection_id != connection_id {
+                return Err(
+                    "agent.snapshot_owner_mismatch: SQL snapshots cannot be transferred.".into(),
+                );
+            }
+            if snapshot.classification.decision != tarik_engine_protocol::AgentSqlDecision::SafeRead
+            {
+                return Err(
+                    "agent.export_blocked: Only an owned SafeRead snapshot can be exported.".into(),
+                );
+            }
+            snapshot
+        };
+        self.revalidate_safe_read_export(
+            connection_id,
+            &snapshot.project_id,
+            &snapshot.sql,
+            &snapshot.classification.catalog_revision,
+        )?;
+        let snapshot_hash = sql_snapshot_hash(
+            &snapshot.sql,
+            connection_id,
+            &client_id,
+            &snapshot.project_id,
+            &snapshot.classification,
+        );
+        Ok(ConsumedSafeReadSnapshot {
+            client_id,
+            connection_id: connection_id.to_string(),
+            project_id: snapshot.project_id,
+            sql: snapshot.sql,
+            catalog_revision: snapshot.classification.catalog_revision,
+            snapshot_hash,
+        })
+    }
+
+    pub(crate) fn revalidate_safe_read_export(
+        &self,
+        connection_id: &str,
+        project_id: &str,
+        sql: &str,
+        expected_revision: &str,
+    ) -> Result<(), String> {
+        self.require_capability(connection_id, project_id, |grant| grant.analyze, "Analyze")?;
+        let current = self
+            .engine
+            .classify_agent_sql(sql, &self.registered_sources(project_id)?)?;
+        if current.decision != tarik_engine_protocol::AgentSqlDecision::SafeRead
+            || current.catalog_revision != expected_revision
+        {
+            return Err(
+                "agent.snapshot_stale: Catalog policy changed; classify the SQL again.".into(),
+            );
+        }
+        self.require_capability(connection_id, project_id, |grant| grant.analyze, "Analyze")
+    }
+
+    pub(crate) fn create_export_approval(
+        &self,
+        snapshot: &ConsumedSafeReadSnapshot,
+        export_id: &str,
+        decision: tarik_engine_protocol::AgentSqlDecision,
+        reason_code: &str,
+        destination_label: &str,
+    ) -> Result<ApprovalResult, String> {
+        if !matches!(
+            decision,
+            tarik_engine_protocol::AgentSqlDecision::ApprovalRequired
+                | tarik_engine_protocol::AgentSqlDecision::CriticalConfirmation
+        ) {
+            return Err("agent.approval_kind: Export approval risk is invalid.".into());
+        }
+        let (profile_id, _) = self.authenticated_connection(&snapshot.connection_id)?;
+        if profile_id != snapshot.client_id {
+            return Err("agent.snapshot_owner_mismatch: Export identity changed.".into());
+        }
+        self.require_capability(
+            &snapshot.connection_id,
+            &snapshot.project_id,
+            |grant| grant.analyze,
+            "Analyze",
+        )?;
+        let mut state = self.lock()?;
+        prune(&mut state);
+        let pending_global = state
+            .approvals
+            .values()
+            .filter(|approval| approval.state == ApprovalState::Pending)
+            .count();
+        let pending_client = state
+            .approvals
+            .values()
+            .filter(|approval| {
+                approval.state == ApprovalState::Pending && approval.profile_id == profile_id
+            })
+            .count();
+        if pending_global >= MAX_PENDING_APPROVALS
+            || pending_client >= MAX_PENDING_APPROVALS_PER_CLIENT
+        {
+            return Err("agent.approval_limit: Resolve an existing approval request first.".into());
+        }
+        let approval_id = uuid::Uuid::new_v4().to_string();
+        let critical_phrase = (decision
+            == tarik_engine_protocol::AgentSqlDecision::CriticalConfirmation)
+            .then(|| format!("APPROVE {}", &approval_id[..8].to_ascii_uppercase()));
+        let approval = PendingApproval {
+            kind: ApprovalKind::Export {
+                export_id: export_id.to_string(),
+            },
+            approval_id: approval_id.clone(),
+            connection_id: snapshot.connection_id.clone(),
+            profile_id,
+            project_id: snapshot.project_id.clone(),
+            sql: snapshot.sql.clone(),
+            classification: tarik_engine_protocol::AgentSqlClassification {
+                decision,
+                reason_code: reason_code.to_string(),
+                statement_type: "export".into(),
+                catalog_revision: snapshot.catalog_revision.clone(),
+                affected_objects: vec![destination_label.to_string()],
+                has_top_level_filter: None,
+            },
+            snapshot_hash: snapshot.snapshot_hash.clone(),
+            critical_phrase,
+            state: ApprovalState::Pending,
+            created_at: Instant::now(),
+        };
+        let result = approval_result(&approval);
+        state.approvals.insert(approval_id, approval);
+        Ok(result)
+    }
+
+    pub(crate) fn export_approval_state(
+        &self,
+        connection_id: &str,
+        approval_id: &str,
+        export_id: &str,
+    ) -> Result<ApprovalState, String> {
+        self.authenticated_connection(connection_id)?;
+        let mut state = self.lock()?;
+        prune(&mut state);
+        let approval = state
+            .approvals
+            .get(approval_id)
+            .filter(|approval| {
+                approval.connection_id == connection_id
+                    && approval.kind
+                        == (ApprovalKind::Export {
+                            export_id: export_id.to_string(),
+                        })
+            })
+            .ok_or_else(|| {
+                "agent.approval_missing: Export approval is unknown or belongs to another connection."
+                    .to_string()
+            })?;
+        Ok(approval.state)
+    }
+
+    pub(crate) fn cancel_export_approval(&self, approval_id: &str, export_id: &str) {
+        if let Ok(mut state) = self.state.lock() {
+            if let Some(approval) = state.approvals.get_mut(approval_id) {
+                if approval.kind
+                    == (ApprovalKind::Export {
+                        export_id: export_id.to_string(),
+                    })
+                    && matches!(
+                        approval.state,
+                        ApprovalState::Pending | ApprovalState::Approved
+                    )
+                {
+                    approval.state = ApprovalState::Denied;
+                }
+            }
+        }
+    }
+
+    pub(crate) fn claim_export_approval(
+        &self,
+        connection_id: &str,
+        approval_id: &str,
+        export_id: &str,
+    ) -> Result<(), String> {
+        self.authenticated_connection(connection_id)?;
+        let mut state = self.lock()?;
+        prune(&mut state);
+        let approval = state
+            .approvals
+            .get_mut(approval_id)
+            .filter(|approval| {
+                approval.connection_id == connection_id
+                    && approval.kind
+                        == (ApprovalKind::Export {
+                            export_id: export_id.to_string(),
+                        })
+            })
+            .ok_or_else(|| {
+                "agent.approval_missing: Export approval is unknown or expired.".to_string()
+            })?;
+        if approval.created_at.elapsed() >= APPROVAL_LIFETIME {
+            approval.state = ApprovalState::Expired;
+            return Err("agent.approval_expired: Propose the export again.".into());
+        }
+        if approval.state != ApprovalState::Approved {
+            return Err(
+                "agent.approval_not_approved: Approve this export inside Tarik first.".into(),
+            );
+        }
+        approval.state = ApprovalState::Used;
+        Ok(())
+    }
+
     pub fn start_query(
         &self,
         connection_id: &str,
@@ -1004,6 +1266,7 @@ impl AgentAccessManager {
             == tarik_engine_protocol::AgentSqlDecision::CriticalConfirmation)
             .then(|| format!("APPROVE {}", &approval_id[..8].to_ascii_uppercase()));
         let approval = PendingApproval {
+            kind: ApprovalKind::Sql,
             approval_id: approval_id.clone(),
             connection_id: connection_id.to_string(),
             profile_id,
@@ -1055,6 +1318,11 @@ impl AgentAccessManager {
             let approval = state.approvals.get_mut(approval_id).ok_or_else(|| {
                 "agent.approval_missing: The approval is unknown or expired.".to_string()
             })?;
+            if approval.kind != ApprovalKind::Sql {
+                return Err(
+                    "agent.approval_kind: This approval belongs to an export workflow.".into(),
+                );
+            }
             if approval.connection_id != connection_id || approval.profile_id != profile_id {
                 return Err(
                     "agent.approval_owner_mismatch: Approval cannot be transferred.".into(),
@@ -1391,6 +1659,11 @@ impl AgentAccessManager {
                 .unwrap_or_else(|| "Revoked client".into());
             approvals.push(ApprovalRequestView {
                 id: approval.approval_id.clone(),
+                action: match approval.kind {
+                    ApprovalKind::Sql => "sql",
+                    ApprovalKind::Export { .. } => "export",
+                }
+                .into(),
                 client_name,
                 project_id: approval.project_id.clone(),
                 project_name: project.name,
@@ -1525,7 +1798,7 @@ impl AgentAccessManager {
             let _ = self.engine.cancel_profile(&profile);
         }
         if removed {
-            self.cleaner.cleanup_connection(connection_id);
+            self.resource_cleaner().cleanup_connection(connection_id);
         }
         Ok(removed)
     }
@@ -1559,7 +1832,12 @@ impl AgentAccessManager {
         }
         self.repository
             .set_grant(client_id, &grant)
-            .map_err(|error| error.to_string())
+            .map_err(|error| error.to_string())?;
+        if !grant.analyze {
+            self.resource_cleaner()
+                .cleanup_client_project(client_id, &grant.project_id);
+        }
+        Ok(())
     }
 
     pub fn revoke_client(&self, client_id: &str) -> Result<bool, String> {
@@ -1586,12 +1864,13 @@ impl AgentAccessManager {
             ids
         };
         for id in connection_ids {
-            self.cleaner.cleanup_connection(&id);
+            self.resource_cleaner().cleanup_connection(&id);
         }
         Ok(changed)
     }
 
     pub fn invalidate_project(&self, project_id: &str) {
+        self.resource_cleaner().cleanup_project(project_id);
         let (queries, profiles, approvals) = match self.state.lock() {
             Ok(mut state) => {
                 state
@@ -1652,7 +1931,7 @@ impl AgentAccessManager {
             state.profiles.clear();
             state.approvals.clear();
         }
-        self.cleaner.cleanup_all();
+        self.resource_cleaner().cleanup_all();
     }
 
     fn authenticated_connection(
@@ -1678,6 +1957,14 @@ impl AgentAccessManager {
             .list_grants(&profile_id)
             .map_err(|error| error.to_string())?;
         Ok((profile_id, grants))
+    }
+
+    pub(crate) fn require_authenticated_identity(
+        &self,
+        connection_id: &str,
+    ) -> Result<String, String> {
+        self.authenticated_connection(connection_id)
+            .map(|(profile_id, _)| profile_id)
     }
 
     pub(crate) fn require_analyze_identity(

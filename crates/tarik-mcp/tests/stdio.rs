@@ -107,7 +107,7 @@ fn initializes_lists_static_tools_reports_unavailable_and_exits_on_eof() {
     }));
     let tools = process.response();
     let tools = tools["result"]["tools"].as_array().unwrap();
-    assert_eq!(tools.len(), 21);
+    assert_eq!(tools.len(), 25);
     let names = tools
         .iter()
         .map(|tool| tool["name"].as_str().unwrap())
@@ -116,6 +116,10 @@ fn initializes_lists_static_tools_reports_unavailable_and_exits_on_eof() {
     assert!(names.contains(&"tarik_query_start"));
     assert!(names.contains(&"tarik_result_page"));
     assert!(names.contains(&"tarik_list_export_destinations"));
+    assert!(names.contains(&"tarik_propose_export"));
+    assert!(names.contains(&"tarik_export_status"));
+    assert!(names.contains(&"tarik_export_cancel"));
+    assert!(names.contains(&"tarik_export_release"));
     assert!(names.contains(&"tarik_approval_status"));
     assert!(names.contains(&"tarik_execute_approved"));
     assert!(!names.contains(&"tarik_approve"));
@@ -135,6 +139,17 @@ fn initializes_lists_static_tools_reports_unavailable_and_exits_on_eof() {
     assert!(destinations["inputSchema"]["properties"]
         .get("path")
         .is_none());
+    let export = tools
+        .iter()
+        .find(|tool| tool["name"] == "tarik_propose_export")
+        .unwrap();
+    let export_properties = export["inputSchema"]["properties"].as_object().unwrap();
+    assert_eq!(export_properties.len(), 7);
+    for forbidden in ["sql", "path", "url", "overwrite", "options"] {
+        assert!(!export_properties.contains_key(forbidden));
+    }
+    assert_eq!(export_properties["baseName"]["maxLength"], 64);
+    assert_eq!(export_properties["rowsPerPart"]["maximum"], 1_000_000);
 
     process.send(json!({
         "jsonrpc": "2.0",

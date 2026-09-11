@@ -6,7 +6,7 @@
 
 use serde::{Deserialize, Serialize};
 
-pub const BRIDGE_PROTOCOL_VERSION: u32 = 2;
+pub const BRIDGE_PROTOCOL_VERSION: u32 = 3;
 pub const MAX_BRIDGE_MESSAGE_BYTES: usize = 1024 * 1024;
 pub const MAX_CLIENT_LABEL_BYTES: usize = 80;
 pub const MAX_PROFILE_ID_BYTES: usize = 128;
@@ -18,6 +18,9 @@ pub const MAX_DISCOVERY_RESPONSE_BYTES: usize = 256 * 1024;
 pub const MAX_AGENT_RESULT_ROWS: u64 = 5_000;
 pub const MAX_AGENT_PAGE_ROWS: u32 = 500;
 pub const MAX_AGENT_PAGE_RESPONSE_BYTES: usize = 1024 * 1024;
+pub const MAX_AGENT_EXPORT_BASE_NAME_BYTES: usize = 64;
+pub const MAX_AGENT_EXPORT_ROWS_PER_PART: u64 = 1_000_000;
+pub const MAX_AGENT_EXPORT_MANIFEST_BYTES: usize = 256 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -170,6 +173,30 @@ impl BridgeRequest {
                     return Err(ProtocolError::InvalidProjectId);
                 }
             }
+            BridgeAction::ProposeExport {
+                connection_id,
+                intent,
+            } => {
+                validate_connection_id(connection_id)?;
+                intent.validate()?;
+            }
+            BridgeAction::ExportStatus {
+                connection_id,
+                export_id,
+            }
+            | BridgeAction::ExportCancel {
+                connection_id,
+                export_id,
+            }
+            | BridgeAction::ExportRelease {
+                connection_id,
+                export_id,
+            } => {
+                validate_connection_id(connection_id)?;
+                if export_id.trim().is_empty() || export_id.len() > 128 {
+                    return Err(ProtocolError::InvalidExportId);
+                }
+            }
             BridgeAction::ListQuality {
                 connection_id,
                 project_id,
@@ -236,6 +263,22 @@ pub enum BridgeAction {
     ListExportDestinations {
         connection_id: String,
         project_id: String,
+    },
+    ProposeExport {
+        connection_id: String,
+        intent: AgentExportIntent,
+    },
+    ExportStatus {
+        connection_id: String,
+        export_id: String,
+    },
+    ExportCancel {
+        connection_id: String,
+        export_id: String,
+    },
+    ExportRelease {
+        connection_id: String,
+        export_id: String,
     },
     ListCatalog {
         connection_id: String,
@@ -469,6 +512,142 @@ pub struct ExportDestinationList {
     pub destinations: Vec<ExportDestinationView>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AgentCsvExportOptions {
+    pub delimiter: String,
+    pub include_header: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentParquetCompression {
+    Uncompressed,
+    Snappy,
+    Gzip,
+    Zstd,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AgentParquetExportOptions {
+    pub compression: AgentParquetCompression,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AgentExportIntent {
+    pub snapshot_id: String,
+    pub destination_id: String,
+    pub format: ExportFormat,
+    pub base_name: String,
+    pub rows_per_part: u64,
+    pub csv: Option<AgentCsvExportOptions>,
+    pub parquet: Option<AgentParquetExportOptions>,
+}
+
+impl AgentExportIntent {
+    pub fn validate(&self) -> Result<(), ProtocolError> {
+        if self.snapshot_id.trim().is_empty() || self.snapshot_id.len() > 128 {
+            return Err(ProtocolError::InvalidSnapshotId);
+        }
+        if self.destination_id.trim().is_empty() || self.destination_id.len() > 128 {
+            return Err(ProtocolError::InvalidDestinationId);
+        }
+        if self.base_name.is_empty()
+            || self.base_name.len() > MAX_AGENT_EXPORT_BASE_NAME_BYTES
+            || !self
+                .base_name
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+        {
+            return Err(ProtocolError::InvalidExportBaseName);
+        }
+        if self.rows_per_part == 0 || self.rows_per_part > MAX_AGENT_EXPORT_ROWS_PER_PART {
+            return Err(ProtocolError::InvalidExportRowsPerPart);
+        }
+        match self.format {
+            ExportFormat::Csv => {
+                let csv = self
+                    .csv
+                    .as_ref()
+                    .ok_or(ProtocolError::InvalidExportOptions)?;
+                if self.parquet.is_some() {
+                    return Err(ProtocolError::InvalidExportOptions);
+                }
+                let delimiter = csv.delimiter.as_bytes();
+                if delimiter.len() != 1
+                    || !delimiter[0].is_ascii()
+                    || matches!(delimiter[0], 0 | b'"' | b'\r' | b'\n')
+                {
+                    return Err(ProtocolError::InvalidExportOptions);
+                }
+            }
+            ExportFormat::Parquet => {
+                if self.csv.is_some() || self.parquet.is_none() {
+                    return Err(ProtocolError::InvalidExportOptions);
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentExportDecision {
+    Delegated,
+    ApprovalRequired,
+    CriticalConfirmation,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentExportState {
+    AwaitingApproval,
+    Queued,
+    Running,
+    Succeeded,
+    Failed,
+    Cancelled,
+    RecoveryRequired,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentExportPartSummary {
+    pub part_number: u64,
+    pub file_name: String,
+    pub rows: u64,
+    pub bytes: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentExportView {
+    pub export_id: String,
+    pub project_id: String,
+    pub destination_id: String,
+    pub decision: AgentExportDecision,
+    pub approval_id: Option<String>,
+    pub state: AgentExportState,
+    pub complete_query: bool,
+    pub duration_ms: u64,
+    pub rows_written: u64,
+    pub files_written: u64,
+    pub bytes_written: u64,
+    pub current_part: Option<u64>,
+    pub completed_parts: Vec<AgentExportPartSummary>,
+    pub error: Option<tarik_engine_protocol::ErrorEnvelope>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentExportReleaseResult {
+    pub export_id: String,
+    pub released: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CatalogRelationSummary {
@@ -642,6 +821,16 @@ pub enum ProtocolError {
     InvalidResultId,
     #[error("invalid profile request")]
     InvalidProfileRequest,
+    #[error("invalid export ID")]
+    InvalidExportId,
+    #[error("invalid export destination ID")]
+    InvalidDestinationId,
+    #[error("invalid export base name")]
+    InvalidExportBaseName,
+    #[error("invalid export rows per part")]
+    InvalidExportRowsPerPart,
+    #[error("invalid export options")]
+    InvalidExportOptions,
     #[error("invalid authentication proof")]
     InvalidProof,
 }
@@ -716,6 +905,68 @@ mod tests {
             .validate(),
             Err(ProtocolError::InvalidPageLimit)
         );
+    }
+
+    #[test]
+    fn guarded_export_intent_is_closed_and_bounded() {
+        let csv = AgentExportIntent {
+            snapshot_id: "snapshot-1".into(),
+            destination_id: "destination-1".into(),
+            format: ExportFormat::Csv,
+            base_name: "daily_orders".into(),
+            rows_per_part: MAX_AGENT_EXPORT_ROWS_PER_PART,
+            csv: Some(AgentCsvExportOptions {
+                delimiter: ",".into(),
+                include_header: true,
+            }),
+            parquet: None,
+        };
+        assert!(request(BridgeAction::ProposeExport {
+            connection_id: "connection-1".into(),
+            intent: csv.clone(),
+        })
+        .validate()
+        .is_ok());
+
+        let mut invalid = csv.clone();
+        invalid.base_name = "../escape".into();
+        assert_eq!(
+            invalid.validate(),
+            Err(ProtocolError::InvalidExportBaseName)
+        );
+        invalid = csv.clone();
+        invalid.rows_per_part = MAX_AGENT_EXPORT_ROWS_PER_PART + 1;
+        assert_eq!(
+            invalid.validate(),
+            Err(ProtocolError::InvalidExportRowsPerPart)
+        );
+        invalid = csv;
+        invalid.parquet = Some(AgentParquetExportOptions {
+            compression: AgentParquetCompression::Snappy,
+        });
+        assert_eq!(invalid.validate(), Err(ProtocolError::InvalidExportOptions));
+
+        let injected = serde_json::json!({
+            "id": "request-1",
+            "protocolVersion": BRIDGE_PROTOCOL_VERSION,
+            "method": "propose_export",
+            "params": {
+                "connectionId": "connection-1",
+                "intent": {
+                    "snapshotId": "snapshot-1",
+                    "destinationId": "destination-1",
+                    "format": "csv",
+                    "baseName": "orders",
+                    "rowsPerPart": 100,
+                    "csv": {"delimiter": ",", "includeHeader": true},
+                    "parquet": null,
+                    "path": "/tmp/escape",
+                    "sql": "COPY secrets TO '/tmp/escape'",
+                    "overwrite": true
+                }
+            }
+        });
+        assert!(serde_json::from_value::<BridgeRequest>(injected).is_err());
     }
 
     #[test]

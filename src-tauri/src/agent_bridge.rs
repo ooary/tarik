@@ -21,6 +21,7 @@ use tarik_agent_protocol::{BridgeAction, BridgeRequest, BridgeResponse, MAX_BRID
 use crate::{
     agent_access::AgentAccessManager,
     agent_destinations::AgentDestinationManager,
+    agent_exports::AgentExportManager,
     observability::{AppLogger, EventFields, LogLevel},
 };
 
@@ -41,6 +42,7 @@ pub struct AgentBridge {
     runtime_dir: PathBuf,
     access: Arc<AgentAccessManager>,
     destinations: Arc<AgentDestinationManager>,
+    exports: Arc<AgentExportManager>,
     logger: Arc<AppLogger>,
     runtime: Mutex<Option<BridgeRuntime>>,
 }
@@ -55,12 +57,14 @@ impl AgentBridge {
         runtime_dir: PathBuf,
         access: Arc<AgentAccessManager>,
         destinations: Arc<AgentDestinationManager>,
+        exports: Arc<AgentExportManager>,
         logger: Arc<AppLogger>,
     ) -> Self {
         Self {
             runtime_dir,
             access,
             destinations,
+            exports,
             logger,
             runtime: Mutex::new(None),
         }
@@ -94,6 +98,7 @@ impl AgentBridge {
         let stop_thread = stop.clone();
         let access = self.access.clone();
         let destinations = self.destinations.clone();
+        let exports = self.exports.clone();
         let logger = self.logger.clone();
         let runtime_dir = self.runtime_dir.clone();
         let thread = thread::Builder::new()
@@ -104,6 +109,7 @@ impl AgentBridge {
                     stop_thread,
                     access,
                     destinations,
+                    exports,
                     logger,
                     runtime_dir,
                 )
@@ -145,6 +151,7 @@ fn run_listener(
     stop: Arc<AtomicBool>,
     access: Arc<AgentAccessManager>,
     destinations: Arc<AgentDestinationManager>,
+    exports: Arc<AgentExportManager>,
     logger: Arc<AppLogger>,
     runtime_dir: PathBuf,
 ) {
@@ -176,6 +183,7 @@ fn run_listener(
                 let stop_connection = stop.clone();
                 let access_connection = access.clone();
                 let destinations_connection = destinations.clone();
+                let exports_connection = exports.clone();
                 let logger_connection = logger.clone();
                 match thread::Builder::new()
                     .name("tarik-agent-connection".into())
@@ -184,6 +192,7 @@ fn run_listener(
                             stream,
                             &access_connection,
                             &destinations_connection,
+                            &exports_connection,
                             &stop_connection,
                         ) {
                             logger_connection.record(
@@ -237,6 +246,7 @@ fn handle_connection(
     stream: interprocess::local_socket::Stream,
     access: &AgentAccessManager,
     destinations: &AgentDestinationManager,
+    exports: &Arc<AgentExportManager>,
     stop: &AtomicBool,
 ) -> Result<(), String> {
     stream
@@ -278,8 +288,13 @@ fn handle_connection(
                 let request_id = request.id.clone();
                 match request.validate() {
                     Ok(()) => {
-                        match dispatch(request.action, access, destinations, &mut owned_connections)
-                        {
+                        match dispatch(
+                            request.action,
+                            access,
+                            destinations,
+                            exports,
+                            &mut owned_connections,
+                        ) {
                             Ok(value) => BridgeResponse::success(request_id, value),
                             Err(error) => failure(request_id, error),
                         }
@@ -315,6 +330,7 @@ fn dispatch(
     action: BridgeAction,
     access: &AgentAccessManager,
     destinations: &AgentDestinationManager,
+    exports: &Arc<AgentExportManager>,
     owned_connections: &mut Vec<String>,
 ) -> Result<serde_json::Value, String> {
     match action {
@@ -358,6 +374,26 @@ fn dispatch(
             serde_json::to_value(destinations.list_for_agent(&client_id, &project_id)?)
                 .map_err(|error| error.to_string())
         }
+        BridgeAction::ProposeExport {
+            connection_id,
+            intent,
+        } => serde_json::to_value(exports.propose(&connection_id, intent)?)
+            .map_err(|error| error.to_string()),
+        BridgeAction::ExportStatus {
+            connection_id,
+            export_id,
+        } => serde_json::to_value(exports.status(&connection_id, &export_id)?)
+            .map_err(|error| error.to_string()),
+        BridgeAction::ExportCancel {
+            connection_id,
+            export_id,
+        } => serde_json::to_value(exports.cancel(&connection_id, &export_id)?)
+            .map_err(|error| error.to_string()),
+        BridgeAction::ExportRelease {
+            connection_id,
+            export_id,
+        } => serde_json::to_value(exports.release(&connection_id, &export_id)?)
+            .map_err(|error| error.to_string()),
         BridgeAction::ListCatalog {
             connection_id,
             project_id,
@@ -737,7 +773,9 @@ mod tests {
     use crate::{
         agent_access::{challenge_proof, derive_verifier, hex, parse_hex_array},
         agent_destinations::{AgentDestinationManager, DestinationPolicyInput},
+        agent_exports::AgentExportManager,
         engine_manager::EngineManager,
+        export::ExportCoordinator,
         metadata::{projects::ProjectOwnership, MetadataDb},
         projects::{ActiveProject, ProjectManager},
     };
@@ -757,11 +795,28 @@ mod tests {
         let access = Arc::new(AgentAccessManager::new(
             database.clone(),
             projects.clone(),
-            engine,
+            engine.clone(),
             logger.clone(),
         ));
-        let destinations = Arc::new(AgentDestinationManager::new(database, projects, Vec::new()));
-        let bridge = AgentBridge::new(root.join("runtime"), access.clone(), destinations, logger);
+        let destinations = Arc::new(AgentDestinationManager::new(
+            database.clone(),
+            projects,
+            Vec::new(),
+        ));
+        let coordinator = Arc::new(ExportCoordinator::new(engine, database.clone()));
+        let exports = Arc::new(AgentExportManager::new(
+            database,
+            access.clone(),
+            destinations.clone(),
+            coordinator,
+        ));
+        let bridge = AgentBridge::new(
+            root.join("runtime"),
+            access.clone(),
+            destinations,
+            exports,
+            logger,
+        );
         (access, bridge, root)
     }
 
@@ -802,8 +857,24 @@ mod tests {
             duckdb_path: project.duckdb_path.into(),
         });
         let logger = Arc::new(AppLogger::open(root.join("logs")));
-        let access = AgentAccessManager::new(database.clone(), projects.clone(), engine, logger);
-        let destinations = AgentDestinationManager::new(database, projects, Vec::new());
+        let access = Arc::new(AgentAccessManager::new(
+            database.clone(),
+            projects.clone(),
+            engine.clone(),
+            logger,
+        ));
+        let destinations = Arc::new(AgentDestinationManager::new(
+            database.clone(),
+            projects,
+            Vec::new(),
+        ));
+        let coordinator = Arc::new(ExportCoordinator::new(engine, database.clone()));
+        let exports = Arc::new(AgentExportManager::new(
+            database,
+            access.clone(),
+            destinations.clone(),
+            coordinator,
+        ));
         let mut owned = Vec::new();
         access.set_enabled(true).unwrap();
 
@@ -814,6 +885,7 @@ mod tests {
             },
             &access,
             &destinations,
+            &exports,
             &mut owned,
         )
         .unwrap_err();
@@ -839,6 +911,7 @@ mod tests {
             },
             &access,
             &destinations,
+            &exports,
             &mut owned,
         )
         .unwrap_err();
@@ -877,6 +950,7 @@ mod tests {
             },
             &access,
             &destinations,
+            &exports,
             &mut owned,
         )
         .unwrap();

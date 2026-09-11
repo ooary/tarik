@@ -5,7 +5,8 @@
 Tarik 0.1.0 uses:
 
 - metadata SQLite schema version 11;
-- engine protocol version 1;
+- private desktop ↔ `tarik-mcp` bridge protocol version 3;
+- engine protocol version 2;
 - DuckDB runtime 1.5.5;
 - application identifier `com.tarik.desktop`.
 
@@ -39,7 +40,7 @@ DuckDB storage compatibility is governed by DuckDB. Tarik pins DuckDB 1.5.5 for 
 
 ## Export and cache recovery
 
-Completed CSV/Parquet export parts are user files and are not deleted by Tarik cache cleanup. Export replacement uses exact hidden stages/backups and cache-owned recovery manifests. After a crash, startup may remove an incomplete hidden stage or restore an interrupted exact replacement; canonical completed parts are preserved.
+Completed CSV/Parquet export parts are user files and are not deleted by Tarik cache cleanup or MCP export release. Export replacement uses exact hidden stages/backups and cache-owned recovery manifests. After a crash, startup may remove an incomplete hidden stage or restore an interrupted exact replacement; canonical completed parts are preserved. Guarded MCP exports reuse this same streaming/recovery path, while returning only aggregate counters and relative filenames.
 
 `~/.cache/com.tarik.desktop` contains ephemeral result pages and recovery manifests. It can be cleared through Settings; do not treat it as a backup.
 

@@ -1,6 +1,7 @@
 mod agent_access;
 mod agent_bridge;
 mod agent_destinations;
+mod agent_exports;
 mod agent_guidance;
 mod agent_setup;
 mod engine_manager;
@@ -143,10 +144,24 @@ pub fn run() {
                     directories.log_dir.clone(),
                 ],
             ));
+            let export_coordinator = Arc::new(
+                export::ExportCoordinator::new(engine.clone(), database.clone())
+                    .with_cleanup(cleanup.clone()),
+            );
+            let agent_exports = Arc::new(agent_exports::AgentExportManager::new(
+                database.clone(),
+                agent_access.clone(),
+                agent_destinations.clone(),
+                export_coordinator.clone(),
+            ));
+            agent_access.set_resource_cleaner(Arc::new(agent_exports::AgentExportCleaner::new(
+                &agent_exports,
+            )));
             let agent_bridge = Arc::new(agent_bridge::AgentBridge::new(
                 directories.data_dir.join("agent"),
                 agent_access.clone(),
                 agent_destinations.clone(),
+                agent_exports.clone(),
                 logger.clone(),
             ));
             let agent_setup = agent_setup::AgentSetupManager::new(database.clone());
@@ -169,10 +184,6 @@ pub fn run() {
                 engine.clone(),
                 database.clone(),
             ));
-            let export_coordinator = Arc::new(
-                export::ExportCoordinator::new(engine.clone(), database.clone())
-                    .with_cleanup(cleanup.clone()),
-            );
             let profile_coordinator = Arc::new(profile::ProfileCoordinator::new(engine.clone()));
             let quality_coordinator = Arc::new(quality::QualityCoordinator::new(
                 engine.clone(),
@@ -204,6 +215,7 @@ pub fn run() {
             app.manage(agent_access);
             app.manage(agent_bridge);
             app.manage(agent_destinations);
+            app.manage(agent_exports);
             app.manage(agent_setup);
             app.manage(agent_guidance);
             app.manage(cleanup);

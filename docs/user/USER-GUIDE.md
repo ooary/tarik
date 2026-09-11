@@ -163,7 +163,9 @@ When a paired client has **Analyze data**, its project permissions include **Exp
 
 Tarik stores the canonical path and directory identity privately. The MCP client receives only an opaque destination ID, label, allowed formats, quota summary, enabled/readiness state, and revision. It cannot supply a path, discover the absolute folder, enable overwrite, or mutate destination grants. Roots, files, symlinks/reparse points, non-user-owned folders, network/remote filesystems, and folders overlapping Tarik/project storage are rejected. A moved, replaced, or missing folder becomes **Repair required** and cannot be used until you choose a valid replacement directly in Tarik.
 
-Disabling a destination preserves its policy but prevents delegated use. Revoking it deletes the grant. Removing **Analyze data**, removing the project grant, or revoking the client also deletes that client's destination grants for the affected project. These controls do not delete already exported user files. Complete delegated export execution is introduced separately; bounded MCP result pages must not be described as complete exports.
+Disabling a destination preserves its policy but prevents delegated use. Revoking it deletes the grant. Removing **Analyze data**, removing the project grant, or revoking the client also deletes that client's destination grants for the affected project. These controls do not delete already exported user files.
+
+For a complete delegated export, the client classifies one SafeRead query, lists redacted destinations, and calls the guarded export tool with only server-issued IDs and typed CSV/Parquet options. Tarik reruns the complete immutable query independently of the 5,000-row browse cap. Within-policy create-new work is delegated; format/chunk exceptions wait for visible Tarik approval, while replacing existing canonical parts always requires a fresh critical typed confirmation. Status exposes exact aggregate counters and relative filenames only. Cancellation must be polled to a terminal state, and release preserves completed files. A successful zero-row export creates no files.
 
 ## 10. Diagnostics, logs, and cache
 
