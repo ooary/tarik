@@ -54,6 +54,11 @@ const MIGRATIONS: &[Migration] = &[
         name: "agent_access",
         sql: include_str!("../../migrations/0009_agent_access.sql"),
     },
+    Migration {
+        version: 10,
+        name: "agent_audit",
+        sql: include_str!("../../migrations/0010_agent_audit.sql"),
+    },
 ];
 
 pub(super) fn migrate(connection: &mut Connection) -> Result<(), MetadataError> {
@@ -137,6 +142,7 @@ mod tests {
             "quality_check_runs",
             "agent_clients",
             "agent_project_grants",
+            "agent_audit",
         ] {
             let exists: bool = connection
                 .query_row(

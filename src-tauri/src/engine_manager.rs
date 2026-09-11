@@ -7,9 +7,10 @@ use serde::Serialize;
 use serde_json::Value;
 use tarik_engine_client::EngineProcess;
 use tarik_engine_protocol::{
-    AgentSqlClassification, CatalogSnapshot, CreateTableDefinition, CsvOptions,
-    EffectiveEngineResources, EngineResourceSettings, ExportOptions, ExportStatus, ImportOptions,
-    ProfileRequest, ProfileStatus, ProjectLocator, SourceInspection, SourceRecord, SqlValidation,
+    AgentMutationResult, AgentSqlClassification, CatalogSnapshot, CreateTableDefinition,
+    CsvOptions, EffectiveEngineResources, EngineResourceSettings, ExportOptions, ExportStatus,
+    ImportOptions, ProfileRequest, ProfileStatus, ProjectLocator, SourceInspection, SourceRecord,
+    SqlValidation,
 };
 
 pub struct EngineManager {
@@ -311,6 +312,24 @@ impl EngineManager {
         )?;
         serde_json::from_value(value)
             .map_err(|error| format!("agent SQL classification decode failed: {error}"))
+    }
+
+    pub fn execute_agent_mutation(
+        &self,
+        sql: &str,
+        catalog_revision: &str,
+        registered_sources: &[tarik_engine_protocol::AgentRegisteredSource],
+    ) -> Result<AgentMutationResult, String> {
+        let value = self.session_request(
+            "agent.mutation.execute",
+            serde_json::json!({
+                "sql": sql,
+                "catalogRevision": catalog_revision,
+                "registeredSources": registered_sources,
+            }),
+        )?;
+        serde_json::from_value(value)
+            .map_err(|error| format!("agent mutation decode failed: {error}"))
     }
 
     pub fn create_table(&self, definition: &CreateTableDefinition) -> Result<(), String> {

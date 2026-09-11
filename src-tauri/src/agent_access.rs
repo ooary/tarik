@@ -20,7 +20,7 @@ use zeroize::Zeroizing;
 use crate::{
     engine_manager::EngineManager,
     metadata::{
-        agent::{AgentClientState, AgentRepository},
+        agent::{AgentAuditRecord, AgentClientState, AgentRepository},
         projects::ProjectsRepository,
         settings::SettingsRepository,
         sources::SourcesRepository,
@@ -183,6 +183,7 @@ pub struct AgentAccessManager {
     state: Mutex<AccessState>,
     cleaner: Arc<dyn AgentResourceCleaner>,
     cursor_key: Option<[u8; 32]>,
+    mutation_lane: Mutex<()>,
 }
 
 impl AgentAccessManager {
@@ -211,6 +212,7 @@ impl AgentAccessManager {
             }),
             cleaner: Arc::new(NoopCleaner),
             cursor_key: random_array::<32>().ok(),
+            mutation_lane: Mutex::new(()),
         }
     }
 
@@ -1009,6 +1011,129 @@ impl AgentAccessManager {
         Ok(approval_result(approval))
     }
 
+    pub fn execute_approved(
+        &self,
+        connection_id: &str,
+        approval_id: &str,
+    ) -> Result<AgentExecutionResult, String> {
+        let _lane = self
+            .mutation_lane
+            .lock()
+            .map_err(|_| "agent.mutation_lane_unavailable".to_string())?;
+        let (profile_id, project_id, sql, classification, snapshot_hash) = {
+            let (profile_id, _) = self.authenticated_connection(connection_id)?;
+            let mut state = self.lock()?;
+            prune(&mut state);
+            let approval = state.approvals.get_mut(approval_id).ok_or_else(|| {
+                "agent.approval_missing: The approval is unknown or expired.".to_string()
+            })?;
+            if approval.connection_id != connection_id || approval.profile_id != profile_id {
+                return Err(
+                    "agent.approval_owner_mismatch: Approval cannot be transferred.".into(),
+                );
+            }
+            if approval.state != ApprovalState::Approved {
+                return Err(
+                    "agent.approval_not_approved: Approve this request inside Tarik first.".into(),
+                );
+            }
+            approval.state = ApprovalState::Used;
+            (
+                profile_id,
+                approval.project_id.clone(),
+                approval.sql.clone(),
+                approval.classification.clone(),
+                approval.snapshot_hash.clone(),
+            )
+        };
+        if let Err(error) = self.require_capability(
+            connection_id,
+            &project_id,
+            |grant| grant.modify_data,
+            "Modify data",
+        ) {
+            self.mark_approval_failed(approval_id);
+            return Err(error);
+        }
+        let current = self
+            .engine
+            .classify_agent_sql(&sql, &self.registered_sources(&project_id)?)?;
+        if current.decision != classification.decision
+            || current.catalog_revision != classification.catalog_revision
+        {
+            self.mark_approval_failed(approval_id);
+            self.write_audit(
+                &profile_id,
+                connection_id,
+                approval_id,
+                &project_id,
+                &classification,
+                &snapshot_hash,
+                "failed",
+                None,
+                "not_started",
+                Some("agent.snapshot_stale"),
+            )?;
+            return Err(
+                "agent.snapshot_stale: Catalog policy changed; propose the SQL again.".into(),
+            );
+        }
+        let result = self.engine.execute_agent_mutation(
+            &sql,
+            &classification.catalog_revision,
+            &self.registered_sources(&project_id)?,
+        );
+        match result {
+            Ok(result) => {
+                if let Err(error) = self.write_audit(
+                    &profile_id,
+                    connection_id,
+                    approval_id,
+                    &project_id,
+                    &classification,
+                    &snapshot_hash,
+                    "succeeded",
+                    result.rows_affected,
+                    "not_needed",
+                    None,
+                ) {
+                    self.mark_approval_failed(approval_id);
+                    return Err(format!(
+                        "agent.critical_recovery: Mutation committed but terminal audit failed: {error}"
+                    ));
+                }
+                Ok(AgentExecutionResult {
+                    execution_id: approval_id.to_string(),
+                    project_id,
+                    state: "succeeded".into(),
+                    duration_ms: 0,
+                    rows_produced: None,
+                    rows_affected: result.rows_affected,
+                    result_id: None,
+                    row_total: None,
+                    row_total_exact: None,
+                    error: None,
+                })
+            }
+            Err(error) => {
+                self.mark_approval_failed(approval_id);
+                self.write_audit(
+                    &profile_id,
+                    connection_id,
+                    approval_id,
+                    &project_id,
+                    &classification,
+                    &snapshot_hash,
+                    "failed",
+                    None,
+                    "confirmed_by_transaction_drop",
+                    Some("agent.mutation_failed"),
+                )?;
+                Err(format!("agent.mutation_failed: {error}"))
+            }
+        }
+    }
+
     pub fn list_pending_approvals(&self) -> Result<Vec<ApprovalRequestView>, String> {
         let mut state = self.lock()?;
         prune(&mut state);
@@ -1053,6 +1178,49 @@ impl AgentAccessManager {
         }
         approvals.sort_by_key(|approval| approval.expires_in_seconds);
         Ok(approvals)
+    }
+
+    fn mark_approval_failed(&self, approval_id: &str) {
+        if let Ok(mut state) = self.state.lock() {
+            if let Some(approval) = state.approvals.get_mut(approval_id) {
+                approval.state = ApprovalState::Failed;
+            }
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn write_audit(
+        &self,
+        client_id: &str,
+        connection_id: &str,
+        approval_id: &str,
+        project_id: &str,
+        classification: &tarik_engine_protocol::AgentSqlClassification,
+        snapshot_hash: &str,
+        outcome: &str,
+        rows_affected: Option<u64>,
+        rollback_state: &str,
+        error_code: Option<&str>,
+    ) -> Result<(), String> {
+        self.repository
+            .add_audit(&AgentAuditRecord {
+                id: uuid::Uuid::new_v4().to_string(),
+                project_id: project_id.to_string(),
+                client_id: client_id.to_string(),
+                connection_id: connection_id.to_string(),
+                approval_id: approval_id.to_string(),
+                tool: "tarik_execute_approved".into(),
+                risk: format!("{:?}", classification.decision).to_ascii_lowercase(),
+                snapshot_hash: snapshot_hash.to_string(),
+                decision: "approved".into(),
+                outcome: outcome.into(),
+                affected_objects: classification.affected_objects.clone(),
+                rows_affected,
+                rollback_state: rollback_state.into(),
+                error_code: error_code.map(ToOwned::to_owned),
+                created_at: chrono::Utc::now().to_rfc3339(),
+            })
+            .map_err(|error| error.to_string())
     }
 
     pub fn decide_approval(
@@ -1176,6 +1344,43 @@ impl AgentAccessManager {
             self.cleaner.cleanup_connection(&id);
         }
         Ok(changed)
+    }
+
+    pub fn invalidate_project(&self, project_id: &str) {
+        let (queries, approvals) = match self.state.lock() {
+            Ok(mut state) => {
+                state
+                    .sql_snapshots
+                    .retain(|_, snapshot| snapshot.project_id != project_id);
+                let queries = state
+                    .agent_queries
+                    .values()
+                    .filter(|query| query.project_id == project_id)
+                    .map(|query| query.execution_id.clone())
+                    .collect::<Vec<_>>();
+                state
+                    .agent_queries
+                    .retain(|_, query| query.project_id != project_id);
+                let mut approvals = 0;
+                for approval in state.approvals.values_mut().filter(|approval| {
+                    approval.project_id == project_id
+                        && matches!(
+                            approval.state,
+                            ApprovalState::Pending | ApprovalState::Approved
+                        )
+                }) {
+                    approval.state = ApprovalState::Denied;
+                    approvals += 1;
+                }
+                (queries, approvals)
+            }
+            Err(_) => return,
+        };
+        for query in queries {
+            let _ = self.engine.cancel_query(&query);
+            let _ = self.engine.release_result(&query);
+        }
+        let _ = approvals;
     }
 
     pub fn shutdown(&self) {

@@ -15,7 +15,7 @@ use std::{
 
 use rusqlite::{Connection, OpenFlags};
 
-pub const LATEST_SCHEMA_VERSION: u32 = 9;
+pub const LATEST_SCHEMA_VERSION: u32 = 10;
 
 #[derive(Debug, thiserror::Error)]
 pub enum MetadataError {

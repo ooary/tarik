@@ -1,3 +1,4 @@
+mod agent_mutation;
 mod agent_policy;
 mod catalog;
 mod error;
@@ -92,6 +93,31 @@ fn dispatch(
             let session_id = required_string(params, "sessionId")?;
             let connection = sessions.get(&session_id)?;
             Ok(serde_json::to_value(catalog::inspect(connection)?)?)
+        }
+        "agent.mutation.execute" => {
+            let session_id = required_string(params, "sessionId")?;
+            if jobs.has_active_session(&session_id)?
+                || exports.has_active_session(&session_id)?
+                || profiles.has_active_session(&session_id)?
+            {
+                return Err(EngineError::ProfileBusy);
+            }
+            let sql = required_string(params, "sql")?;
+            let expected_revision = required_string(params, "catalogRevision")?;
+            let registered_sources: Vec<tarik_engine_protocol::AgentRegisteredSource> =
+                serde_json::from_value(
+                    params
+                        .get("registeredSources")
+                        .cloned()
+                        .unwrap_or_else(|| Value::Array(Vec::new())),
+                )?;
+            let connection = sessions.get_mut(&session_id)?;
+            Ok(serde_json::to_value(agent_mutation::execute(
+                connection,
+                &sql,
+                &expected_revision,
+                &registered_sources,
+            )?)?)
         }
         "agent.sql.classify" => {
             let session_id = required_string(params, "sessionId")?;

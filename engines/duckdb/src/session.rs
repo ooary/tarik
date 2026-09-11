@@ -99,4 +99,11 @@ impl SessionManager {
             .map(|session| &session.connection)
             .ok_or_else(|| EngineError::SessionMissing(session_id.to_string()))
     }
+
+    pub fn get_mut(&mut self, session_id: &str) -> Result<&mut Connection, EngineError> {
+        self.sessions
+            .get_mut(session_id)
+            .map(|session| &mut session.connection)
+            .ok_or_else(|| EngineError::SessionMissing(session_id.to_string()))
+    }
 }

@@ -706,6 +706,13 @@ pub struct AgentRegisteredSource {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct AgentMutationResult {
+    pub rows_affected: Option<u64>,
+    pub catalog_revision: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AgentSqlClassification {
     pub decision: AgentSqlDecision,
     pub reason_code: String,

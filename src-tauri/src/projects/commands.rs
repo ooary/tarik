@@ -151,9 +151,13 @@ pub async fn remove_project(
 #[tauri::command]
 pub async fn close_project(
     manager: State<'_, ProjectManager>,
+    agent_access: State<'_, Arc<crate::agent_access::AgentAccessManager>>,
     logger: State<'_, Arc<AppLogger>>,
 ) -> Result<bool, String> {
     let project_id = manager.active().ok().flatten().map(|project| project.id);
+    if let Some(project_id) = &project_id {
+        agent_access.invalidate_project(project_id);
+    }
     let span = logger.inner().operation("project", "close", project_id);
     let manager = manager.inner().clone();
     match blocking(move || manager.close()).await {

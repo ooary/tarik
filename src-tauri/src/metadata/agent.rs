@@ -6,6 +6,27 @@ use super::{MetadataDb, MetadataError};
 
 pub const MAX_AGENT_CLIENTS: usize = 8;
 pub const MAX_AGENT_PROJECT_GRANTS: usize = 16;
+pub const MAX_AGENT_AUDIT_PER_PROJECT: usize = 5_000;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentAuditRecord {
+    pub id: String,
+    pub project_id: String,
+    pub client_id: String,
+    pub connection_id: String,
+    pub approval_id: String,
+    pub tool: String,
+    pub risk: String,
+    pub snapshot_hash: String,
+    pub decision: String,
+    pub outcome: String,
+    pub affected_objects: Vec<String>,
+    pub rows_affected: Option<u64>,
+    pub rollback_state: String,
+    pub error_code: Option<String>,
+    pub created_at: String,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -184,6 +205,97 @@ impl AgentRepository {
         )? > 0)
     }
 
+    pub fn add_audit(&self, audit: &AgentAuditRecord) -> Result<(), MetadataError> {
+        let affected_objects =
+            serde_json::to_string(&audit.affected_objects).map_err(|source| {
+                MetadataError::InvalidJson {
+                    key: format!("agent-audit:{}:objects", audit.id),
+                    source,
+                }
+            })?;
+        let mut connection = self.database.connection()?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        transaction.execute(
+            "INSERT INTO agent_audit(
+                id, project_id, client_id, connection_id, approval_id, tool, risk,
+                snapshot_hash, decision, outcome, affected_objects_json, rows_affected,
+                rollback_state, error_code, created_at
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
+            params![
+                audit.id,
+                audit.project_id,
+                audit.client_id,
+                audit.connection_id,
+                audit.approval_id,
+                audit.tool,
+                audit.risk,
+                audit.snapshot_hash,
+                audit.decision,
+                audit.outcome,
+                affected_objects,
+                audit.rows_affected,
+                audit.rollback_state,
+                audit.error_code,
+                audit.created_at,
+            ],
+        )?;
+        transaction.execute(
+            "DELETE FROM agent_audit
+             WHERE project_id = ?1 AND id NOT IN (
+               SELECT id FROM agent_audit WHERE project_id = ?1
+               ORDER BY created_at DESC, id DESC LIMIT ?2
+             )",
+            params![audit.project_id, MAX_AGENT_AUDIT_PER_PROJECT as u64],
+        )?;
+        transaction.commit()?;
+        Ok(())
+    }
+
+    #[cfg(test)]
+    pub fn list_audit(
+        &self,
+        project_id: &str,
+        limit: u32,
+    ) -> Result<Vec<AgentAuditRecord>, MetadataError> {
+        let connection = self.database.connection()?;
+        let mut statement = connection.prepare(
+            "SELECT id, project_id, client_id, connection_id, approval_id, tool, risk,
+                    snapshot_hash, decision, outcome, affected_objects_json, rows_affected,
+                    rollback_state, error_code, created_at
+             FROM agent_audit WHERE project_id = ?1
+             ORDER BY created_at DESC, id DESC LIMIT ?2",
+        )?;
+        let records = statement
+            .query_map(params![project_id, limit.min(500)], |row| {
+                let objects: String = row.get(10)?;
+                Ok(AgentAuditRecord {
+                    id: row.get(0)?,
+                    project_id: row.get(1)?,
+                    client_id: row.get(2)?,
+                    connection_id: row.get(3)?,
+                    approval_id: row.get(4)?,
+                    tool: row.get(5)?,
+                    risk: row.get(6)?,
+                    snapshot_hash: row.get(7)?,
+                    decision: row.get(8)?,
+                    outcome: row.get(9)?,
+                    affected_objects: serde_json::from_str(&objects).map_err(|error| {
+                        rusqlite::Error::FromSqlConversionFailure(
+                            10,
+                            rusqlite::types::Type::Text,
+                            Box::new(error),
+                        )
+                    })?,
+                    rows_affected: row.get(11)?,
+                    rollback_state: row.get(12)?,
+                    error_code: row.get(13)?,
+                    created_at: row.get(14)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(records)
+    }
+
     pub fn list_grants(&self, client_id: &str) -> Result<Vec<ProjectGrant>, MetadataError> {
         let connection = self.database.connection()?;
         let mut statement = connection.prepare(
@@ -314,6 +426,36 @@ mod tests {
             )
             .unwrap();
         assert!(repository.list_grants("client").unwrap().is_empty());
+    }
+
+    #[test]
+    fn audit_is_project_scoped_and_excludes_sql() {
+        let (repository, project_id) = fixture();
+        repository
+            .add_audit(&AgentAuditRecord {
+                id: "audit-1".into(),
+                project_id: project_id.clone(),
+                client_id: "client".into(),
+                connection_id: "connection".into(),
+                approval_id: "approval".into(),
+                tool: "tarik_execute_approved".into(),
+                risk: "approvalrequired".into(),
+                snapshot_hash: "hash".into(),
+                decision: "approved".into(),
+                outcome: "succeeded".into(),
+                affected_objects: vec!["main.orders".into()],
+                rows_affected: Some(1),
+                rollback_state: "not_needed".into(),
+                error_code: None,
+                created_at: "2026-09-11T00:00:00Z".into(),
+            })
+            .unwrap();
+        let audit = repository.list_audit(&project_id, 10).unwrap();
+        assert_eq!(audit.len(), 1);
+        assert_eq!(audit[0].snapshot_hash, "hash");
+        assert_eq!(audit[0].affected_objects, ["main.orders"]);
+        let json = serde_json::to_string(&audit[0]).unwrap();
+        assert!(!json.contains("INSERT INTO"));
     }
 
     #[test]
