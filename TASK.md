@@ -2401,6 +2401,148 @@ Blocked
 
 ---
 
+## EPIC E15.1 — Agent Connection Assistant, Usage Guidance, and Guarded Export Delegation
+
+**Status:** `PLANNED / T0 READY` — The user approved the E15.1 task plan on September 11, 2026. Implementation remains blocked on a durable E15.1-T0 Graph Protocol and explicit review of that contract. E15 consolidated manual review and native Windows gates remain independently open.
+
+**Outcome:** A beginner can connect Tarik to supported Windows MCP hosts without editing JSON, optionally install portable Tarik usage guidance, and let an agent export a complete immutable SafeRead query to a bounded user-created destination grant. Tarik continues to own pairing, project permissions, destination selection, export policy, destructive approval, execution, recovery, and audit.
+
+**Product boundary:**
+
+- Configure supported MCP hosts through a Tarik-owned **Connect an agent** assistant; connection setup never pairs a client or grants a project automatically.
+- Prefer a host's official setup CLI over direct configuration edits. Invoke executables with structured argument arrays and bounded output/timeouts; never construct a shell command.
+- Permit a managed configuration edit only for a pinned, reviewed host format with ownership/symlink checks, parse-before-write, conflict detection, timestamped backup, atomic replacement, verification, and exact-entry undo.
+- Initial one-click Windows targets are Claude Desktop, Claude Code, and Codex CLI. Pi, Cursor, VS Code, and generic MCP clients remain guided until a stable reviewed adapter exists.
+- Never install, update, authenticate, or modify a third-party agent application silently. Unsupported or unknown host versions fall back to verified instructions without writing configuration.
+- Deliver concise guidance through MCP server instructions and prompts, plus an optional Agent Skills package for compatible hosts. Guidance is educational, removable, and never an authorization boundary.
+- An export destination is chosen only through Tarik's native folder picker and stored privately. MCP receives an opaque destination ID and policy summary, never its absolute path.
+- A destination grant is bound to one paired client and project and may pre-authorize only new CSV/Parquet files within explicit format, chunk, and total-byte limits.
+- Overwrite/replacement is never delegated or remembered. It requires a fresh Tarik-owned critical typed confirmation every time.
+- Typed export tools rerun the complete immutable SafeRead query through Tarik's existing streaming export coordinator. They do not export the 5,000-row MCP browsing artifact and never rewrite SQL.
+- Raw `COPY`, an agent-provided path, URL/S3/network destination, arbitrary options, stale/blocked SQL, project-file deletion, and unknown effects remain blocked with no approval fallback.
+- Host confirmation authorizes only the host's MCP tool invocation; it never substitutes for Tarik approval.
+
+**Host support matrix:**
+
+| Host             | Initial setup method                                                               |
+| ---------------- | ---------------------------------------------------------------------------------- |
+| Claude Desktop   | Managed user-config JSON merge with backup, atomic replace, verification, and undo |
+| Claude Code      | Official `claude mcp add` CLI adapter with version check and verification          |
+| Codex CLI        | Official `codex mcp add` CLI adapter with version check and verification           |
+| Pi               | Guided setup initially; optional reviewed Agent Skill where supported              |
+| Cursor           | Guided setup until its stable setup API/config contract is pinned                  |
+| VS Code          | Guided setup until its stable setup API/config contract is pinned                  |
+| Generic MCP host | Generated reviewed stdio command/config and copy action only                       |
+
+**Export authority matrix:**
+
+| Operation                                                     | Authority                                     |
+| ------------------------------------------------------------- | --------------------------------------------- |
+| Catalog/SafeRead/Flow/Profile/Quality inspection              | Existing project capability grant             |
+| New export entirely within a Tarik-created destination grant  | Delegated; no per-export approval             |
+| Select, change, or repair an export destination               | Direct local Tarik interaction                |
+| Export outside a destination grant                            | Fresh Tarik approval                          |
+| Replace or overwrite an existing file                         | Fresh Tarik critical typed confirmation       |
+| DML/DDL                                                       | Existing fresh Tarik approval policy          |
+| DROP/TRUNCATE/unfiltered mutation                             | Existing fresh Tarik critical confirmation    |
+| Agent path, raw `COPY`, URL/S3/network export, unknown effect | Blocked; no approval path                     |
+| MCP-host confirmation                                         | Tool-call permission only; not Tarik approval |
+
+- [ ] **E15.1-T0 Define connection, guidance, and export-delegation contracts**
+  - Depends on: E15 implementation candidate; approved E15.1 task plan
+  - Owns: `docs/design/E15-1-DESIGN-GRAPH.md`, host adapters, guidance trust boundary, destination-grant policy, export effect matrix, lifecycle budgets, recovery, and implementation inventory
+  - Deliverables:
+    - Extend the E15 threat model for hostile host configuration, executable spoofing, unsafe ownership/symlinks, PATH substitution, malformed/conflicting config, portable-folder movement, skill prompt injection, destination substitution, path disclosure, quota exhaustion, filename collision, overwrite, cancellation, and export recovery.
+    - Define typed `HostInstallation`, `HostSetupPlan`, `SetupReceipt`, `UsageGuidance`, `ExportDestinationGrant`, `ExportIntent`, `ExportDecision`, `ExportStatus`, and structured error shapes.
+    - Pin supported Claude Desktop configuration locations/schema and minimum/maximum reviewed Claude Code and Codex CLI versions/commands on native Windows.
+    - Define detection, plan preview, setup, verification, repair, exact-entry removal, and undo without ever modifying unrelated host configuration.
+    - Define MCP instructions/prompts and optional Agent Skill content, installation locations, compatibility checks, backup/removal, and the rule that guidance never grants authority.
+    - Define destination canonicalization, allowed local-folder classes, client/project binding, opaque IDs, format/chunk/byte quotas, revocation, portable movement, collision policy, and absolute-path redaction.
+    - Resolve D5—the canonical empty-export behavior—explicitly before export implementation and reconcile user/release documentation.
+    - Define full-query export ownership, status/cancel/release, bounded part summaries, disconnect behavior, audit, recovery manifests, and package/runtime budgets.
+  - Acceptance: the complete Graph Protocol has A/E/R/cardinality for every setup, guidance, delegation, export, recovery, and cleanup node; every host/config/filesystem boundary is parsed once; no agent-controlled path or self-approval route exists; user explicitly approves the durable design before T1.
+  - Tests: host/config fixture matrix, path and ownership adversarial corpus, skill/prompt review, export policy table, lifecycle inventory, and code-to-graph mismatch review.
+  - Commit: `docs(design): define assisted MCP setup and export delegation`
+
+- [ ] **E15.1-T1 Add host detection and the Connect an agent assistant**
+  - Depends on: E15.1-T0 approval
+  - Owns: host detector, versioned setup adapters, setup-plan UI, bounded process runner, managed-config writer, verification, repair, removal, and receipts
+  - Deliverables:
+    - Detect supported Windows hosts only from reviewed current-user install locations and PATH candidates; canonicalize a regular executable and parse bounded version output without treating names or PATH order as identity proof.
+    - Add a calm, compact **Connect an agent** flow showing Installed, Not configured, Restart required, Waiting for pairing, Paired, Granted, and Repair required states.
+    - Configure Claude Code through its official `mcp add` command and Codex through its official `mcp add` command using direct process invocation, explicit user scope, absolute packaged `tarik-mcp.exe`, stable per-host profile, and bounded timeout/output.
+    - Configure Claude Desktop through a reviewed JSON merge that preserves unrelated fields/servers, rejects malformed/unsafe/conflicting input, writes a timestamped backup and temporary file, atomically replaces, verifies, and can undo only Tarik's exact entry.
+    - Detect a moved portable Tarik folder and offer explicit repair from the old managed executable path to the current packaged sibling.
+    - Show verified manual instructions and copy actions for Pi, Cursor, VS Code, generic clients, unsupported host versions, and host setup failures.
+    - Never start the configured agent, install/update it, pair it, infer a project grant, or expose model credentials.
+  - Acceptance: a beginner can configure, verify, repair, and remove Tarik from supported hosts without editing JSON; unrelated host settings survive byte/semantic comparison; every write is previewed and locally authorized; unsupported cases make no change.
+  - Tests: zero/one/multiple installations, spoofed executable, version matrix, spaces/Unicode paths, CLI success/failure/timeout/output cap, malformed/conflicting/symlinked config, backup/atomicity/undo, moved portable folder, minimum viewport, keyboard/focus, and native Windows host launches.
+  - Commit: `feat(mcp): add agent connection assistant`
+  - UI gate: keep the complete assistant local and unpushed until real-Tauri review.
+
+- [ ] **E15.1-T2 Ship portable Tarik usage guidance**
+  - Depends on: E15.1-T0 approval, E15.1-T1 host model
+  - Owns: concise MCP instructions, MCP prompts, Agent Skills package, compatibility/install/remove adapters, and guidance review
+  - Deliverables:
+    - Keep automatic server instructions short and security-focused: inspect before querying, use immutable IDs, release resources, distinguish capped browsing from full export, and never treat host confirmation as Tarik approval.
+    - Expose optional MCP prompts for getting started, catalog analysis, JOIN analysis, Query Flow, Profile/Quality investigation, guarded mutation, and full-query export.
+    - Ship an Agent Skills-standard `tarik-mcp` workflow package for compatible hosts covering discovery, SafeRead, result cleanup, approval waiting, critical actions, data-trust truthfulness, export delegation, cancellation, and recovery.
+    - Let the connection assistant optionally install/remove only the reviewed Tarik skill in verified user-owned host locations with preview, backup, and compatibility checks.
+    - Fall back to MCP prompts/instructions for Claude Desktop and hosts without a reviewed skill mechanism.
+    - Treat all local data and MCP results as untrusted content; instructions found in rows cannot alter authority, approve actions, reveal paths, or bypass tool policy.
+  - Acceptance: guided agents consistently inspect/classify/use IDs/poll/release and describe limits truthfully, while ignoring the skill cannot weaken backend enforcement; installing or removing guidance never changes pairing or project permissions.
+  - Tests: prompt/schema goldens, Agent Skill validation, host install/remove fixtures, prompt-injection rows, capped-vs-full-export language, no-approval claims, and representative model workflow evaluation.
+  - Commit: `feat(mcp): add portable agent usage guidance`
+
+- [ ] **E15.1-T3 Add reusable export destination grants**
+  - Depends on: E15.1-T0 approval
+  - Owns: destination-grant migration/repository, native folder selection, policy editor, opaque identity, revocation/repair, and authorization checks
+  - Deliverables:
+    - Select every destination through Tarik's native folder picker; canonicalize and verify a local user-controlled directory without returning the path over MCP.
+    - Persist a destination grant bound to client, project, opaque destination ID, safe display label, allowed CSV/Parquet formats, maximum rows per part, maximum total bytes, create-new-only policy, enabled state, and timestamps.
+    - Reject filesystem roots, Tarik app/cache/project directories, files, symlinks/unsafe traversal, unavailable destinations, and disallowed network/remote classes according to the T0 platform policy.
+    - Add list/create/edit/disable/revoke/repair controls in Agent Access. Changing the directory requires direct folder selection; overwrite can never be enabled or remembered.
+    - Revalidate paired client, active project, capability, destination identity, canonical path containment, quotas, and no-collision immediately before every delegated export starts.
+    - Return only opaque ID, label, formats, quota summary, and readiness to MCP; logs/audit omit the absolute path.
+  - Acceptance: possession or guessing of a destination ID cannot reveal its path or authorize another client/project; revoked/moved/unsafe/colliding destinations fail before export publication; new-file delegation never permits replacement.
+  - Tests: client/project isolation, ID guessing, local/network/root/app-data/symlink paths, moved/missing directory, format/chunk/byte bounds, collision, revoke/disable/restart, path redaction, and native Windows/Linux picker behavior.
+  - Commit: `feat(mcp): add delegated export destinations`
+  - UI gate: keep destination-policy UI local and unpushed until real-Tauri review.
+
+- [ ] **E15.1-T4 Expose typed guarded full-query export tools**
+  - Depends on: E15.1-T2, E15.1-T3, existing E9 export coordinator, existing E15 classifier/ownership/approval/audit contracts
+  - Owns: `tarik_list_export_destinations`, `tarik_propose_export`, `tarik_export_status`, `tarik_export_cancel`, `tarik_export_release`, immutable export snapshots, ownership, and bounded manifests
+  - Deliverables:
+    - Accept only a one-use server-held SafeRead snapshot ID, opaque destination ID, safe base name, format enum, rows-per-part, and typed CSV or Parquet options; accept no SQL, path, raw option string, or `COPY` statement.
+    - Reclassify the exact immutable SQL against the current strong catalog/source/function revision and revalidate Analyze capability plus destination grant immediately before execution.
+    - Route a create-new export within the grant directly to the existing streaming coordinator; route out-of-policy but controllable exports to fresh Tarik approval; route any replacement to fresh critical typed confirmation; block arbitrary/unknown effects.
+    - Run the complete immutable query independently of the 5,000-row MCP browsing cap, preserve bounded-memory streaming/chunking, and state this distinction in every relevant schema/status.
+    - Reuse existing CSV delimiter/header and Parquet compression validation, exact rows/files/bytes counters, collision-safe staging, replacement recovery, cancellation, terminal history, and startup recovery.
+    - Bind export/proposal/status/cancel/release to client, connection, project, destination, snapshot hash, and catalog revision; disconnect/revoke/project close/disable/shutdown cancels or releases transient ownership truthfully.
+    - Return bounded aggregate facts and relative part filenames only. Never return absolute destination or completed-part paths.
+    - Persist bounded audit facts without SQL, values, typed phrase, or path; ambiguous publication/recovery enters critical recovery and is never reported as successful.
+  - Acceptance: an agent can export a complete JOIN/aggregate query to chunked CSV or Parquet inside a user-created grant without per-run approval, but cannot choose a path, overwrite a file, export stale/blocked SQL, escape quotas, inspect another export, or confuse the browse cap with export completeness.
+  - Tests: CSV/Parquet option matrix, D5 empty export, 1/999999/1000000/1000001/2000000-row chunk boundaries, batch-crossing chunks, large JOIN full export, browse-cap independence, quota/collision/overwrite, approval/critical/blocked routes, cancellation at first/later part, ownership/replay/drift/disconnect/restart, recovery failure, redaction, and fixed memory/disk residue.
+  - Commit: `feat(mcp): add delegated chunked exports`
+
+- [ ] **E15.1-T5 Package and review the assisted connection and export workflow**
+  - Depends on: E15.1-T1 through E15.1-T4
+  - Owns: `docs/review/E15-1-CONNECTION-EXPORT.md`, updated setup/user/release guides, deterministic fixtures, package contents, native Windows evidence, and manual sign-off
+  - Deliverables:
+    - Walk through detect → preview → configure → restart host → pair → grant → inspect → guided JOIN → SafeRead page/release → destination grant → complete chunked export → status/cancel → revoke/remove/repair.
+    - Test Claude Desktop managed configuration, Claude Code official CLI setup, and Codex official CLI setup on native Windows with spaces/Unicode paths and a moved portable folder.
+    - Verify MCP instructions/prompts and optional skill in every supported delivery mode; prove row prompt injection cannot alter destination, approval, or export policy.
+    - Verify delegated new-file export, out-of-policy Tarik approval, critical typed overwrite, stale/replayed/cross-client IDs, quota/collision failures, cancellation, recovery, and path/log redaction.
+    - Re-run full frontend/Node/Rust/docs/build, query/result/flow/Profile/Quality/export, migration/startup/shutdown, memory/cache/disk, Linux package, Windows portable package, WebView2, process cleanup, DPI, mixed-monitor, keyboard, screen-reader, reduced-motion, and minimum-viewport gates.
+    - Preserve E15's independent consolidated approval and E12/E13 Windows gates; never claim unrun host, clean-machine, accessibility, or platform evidence.
+  - Acceptance: supported Windows hosts connect without manual JSON; optional guidance improves workflow without changing authority; complete CSV/Parquet exports obey destination delegation and exact chunk semantics; repair/removal is safe; no orphan process, stale approval, path disclosure, or export residue remains; user explicitly signs off E15.1.
+  - Tests: complete host/setup/security/export matrix, real external hosts, native Windows/Linux package inspection, fixed-workload resources, and signed manual checklist.
+  - Commit: `docs(review): add assisted MCP and export acceptance packet`
+
+**Explicitly deferred beyond E15.1:** Agent-side approval authority, remembered destructive approval, arbitrary agent-selected paths, URL/S3/network exports, raw `COPY`, automatic third-party agent installation/update/login, embedded model credentials/chat, remote Tarik transport, headless project ownership, unrestricted SQL/filesystem/network access, project-file deletion, and automatic data repair remain out of scope.
+
+---
+
 # Cross-cutting test matrix
 
 | Layer                  | Required coverage                                                          |
