@@ -213,6 +213,80 @@ impl BridgeClient {
         })
     }
 
+    pub fn start_profile(
+        &mut self,
+        request: tarik_engine_protocol::ProfileRequest,
+    ) -> Result<tarik_engine_protocol::ProfileStatus, String> {
+        self.request(BridgeAction::StartProfile {
+            connection_id: self.connection_id()?,
+            request,
+        })
+    }
+
+    pub fn profile_status(
+        &mut self,
+        profile_id: String,
+    ) -> Result<tarik_engine_protocol::ProfileStatus, String> {
+        self.request(BridgeAction::ProfileStatus {
+            connection_id: self.connection_id()?,
+            profile_id,
+        })
+    }
+
+    pub fn cancel_profile(
+        &mut self,
+        profile_id: String,
+    ) -> Result<tarik_engine_protocol::ProfileStatus, String> {
+        self.request(BridgeAction::CancelProfile {
+            connection_id: self.connection_id()?,
+            profile_id,
+        })
+    }
+
+    pub fn list_quality(
+        &mut self,
+        project_id: String,
+        offset: u32,
+        limit: u32,
+    ) -> Result<serde_json::Value, String> {
+        self.request(BridgeAction::ListQuality {
+            connection_id: self.connection_id()?,
+            project_id,
+            offset,
+            limit,
+        })
+    }
+
+    pub fn list_quality_runs(
+        &mut self,
+        project_id: String,
+        check_id: Option<String>,
+        offset: u32,
+        limit: u32,
+    ) -> Result<serde_json::Value, String> {
+        self.request(BridgeAction::ListQualityRuns {
+            connection_id: self.connection_id()?,
+            project_id,
+            check_id,
+            offset,
+            limit,
+        })
+    }
+
+    pub fn list_saved_queries(
+        &mut self,
+        project_id: String,
+        offset: u32,
+        limit: u32,
+    ) -> Result<serde_json::Value, String> {
+        self.request(BridgeAction::ListSavedQueries {
+            connection_id: self.connection_id()?,
+            project_id,
+            offset,
+            limit,
+        })
+    }
+
     fn connection_id(&self) -> Result<String, String> {
         self.connection_id
             .clone()

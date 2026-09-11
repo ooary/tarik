@@ -108,6 +108,57 @@ pub struct ApprovalRequest {
     pub approval_id: String,
 }
 
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ProfileRequestInput {
+    pub project_id: String,
+    pub database: String,
+    pub schema: String,
+    pub relation: String,
+    pub relation_kind: String,
+    pub catalog_revision: String,
+    pub columns: Vec<ProfileColumnInput>,
+    #[serde(default)]
+    pub exact: bool,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ProfileColumnInput {
+    pub name: String,
+    pub data_type: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ProfileIdRequest {
+    pub profile_id: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectPageRequest {
+    pub project_id: String,
+    #[serde(default)]
+    pub offset: u32,
+    #[serde(default = "default_page_limit")]
+    #[schemars(range(min = 1, max = 100))]
+    pub limit: u32,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct QualityRunsRequest {
+    pub project_id: String,
+    #[serde(default)]
+    pub check_id: Option<String>,
+    #[serde(default)]
+    pub offset: u32,
+    #[serde(default = "default_page_limit")]
+    #[schemars(range(min = 1, max = 100))]
+    pub limit: u32,
+}
+
 #[derive(Debug, Clone, Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct TarikServerStatus {
@@ -356,6 +407,106 @@ impl TarikMcpServer {
     ) -> Result<rmcp::model::CallToolResult, rmcp::ErrorData> {
         Ok(self.bridge_call(|bridge| bridge.execute_approved(request.approval_id)))
     }
+
+    #[tool(
+        name = "tarik_profile_start",
+        description = "Start a bounded exact or approximate profile for an exact relation and selected columns from the current granted catalog. Existing Tarik profile provenance and response budgets apply."
+    )]
+    fn profile_start(
+        &self,
+        Parameters(request): Parameters<ProfileRequestInput>,
+    ) -> Result<rmcp::model::CallToolResult, rmcp::ErrorData> {
+        let request = tarik_engine_protocol::ProfileRequest {
+            project_id: request.project_id,
+            target: tarik_engine_protocol::ProfileTarget {
+                database: request.database,
+                schema: request.schema,
+                name: request.relation,
+                kind: request.relation_kind,
+            },
+            columns: request
+                .columns
+                .into_iter()
+                .map(|column| tarik_engine_protocol::ProfileColumn {
+                    name: column.name,
+                    data_type: column.data_type,
+                })
+                .collect(),
+            catalog_revision: request.catalog_revision,
+            mode: if request.exact {
+                tarik_engine_protocol::ProfileMode::Exact
+            } else {
+                tarik_engine_protocol::ProfileMode::Approximate
+            },
+        };
+        Ok(self.bridge_call(|bridge| bridge.start_profile(request)))
+    }
+
+    #[tool(
+        name = "tarik_profile_status",
+        description = "Poll one bounded profile owned by this authenticated MCP connection. Metrics retain Exact, Approximate, or Sampled provenance and exact SQL evidence."
+    )]
+    fn profile_status(
+        &self,
+        Parameters(request): Parameters<ProfileIdRequest>,
+    ) -> Result<rmcp::model::CallToolResult, rmcp::ErrorData> {
+        Ok(self.bridge_call(|bridge| bridge.profile_status(request.profile_id)))
+    }
+
+    #[tool(
+        name = "tarik_profile_cancel",
+        description = "Cancel one bounded profile owned by this authenticated MCP connection."
+    )]
+    fn profile_cancel(
+        &self,
+        Parameters(request): Parameters<ProfileIdRequest>,
+    ) -> Result<rmcp::model::CallToolResult, rmcp::ErrorData> {
+        Ok(self.bridge_call(|bridge| bridge.cancel_profile(request.profile_id)))
+    }
+
+    #[tool(
+        name = "tarik_list_quality_checks",
+        description = "List a bounded page of quality-check definitions from an explicitly granted project. This never runs a check or returns failure rows."
+    )]
+    fn list_quality_checks(
+        &self,
+        Parameters(request): Parameters<ProjectPageRequest>,
+    ) -> Result<rmcp::model::CallToolResult, rmcp::ErrorData> {
+        Ok(self.bridge_call(|bridge| {
+            bridge.list_quality(request.project_id, request.offset, request.limit)
+        }))
+    }
+
+    #[tool(
+        name = "tarik_list_quality_runs",
+        description = "List bounded aggregate quality-run facts. Failure rows are never persisted or returned; any future preview must be labeled current-data preview."
+    )]
+    fn list_quality_runs(
+        &self,
+        Parameters(request): Parameters<QualityRunsRequest>,
+    ) -> Result<rmcp::model::CallToolResult, rmcp::ErrorData> {
+        Ok(self.bridge_call(|bridge| {
+            bridge.list_quality_runs(
+                request.project_id,
+                request.check_id,
+                request.offset,
+                request.limit,
+            )
+        }))
+    }
+
+    #[tool(
+        name = "tarik_list_saved_queries",
+        description = "List a bounded page of saved SQL from a project with explicit Modify workspace access. Listing never opens an editor or executes SQL."
+    )]
+    fn list_saved_queries(
+        &self,
+        Parameters(request): Parameters<ProjectPageRequest>,
+    ) -> Result<rmcp::model::CallToolResult, rmcp::ErrorData> {
+        Ok(self.bridge_call(|bridge| {
+            bridge.list_saved_queries(request.project_id, request.offset, request.limit)
+        }))
+    }
 }
 
 impl TarikMcpServer {
@@ -550,7 +701,7 @@ mod tests {
             .iter()
             .map(|tool| tool.name.as_ref())
             .collect::<Vec<_>>();
-        assert_eq!(names.len(), 13);
+        assert_eq!(names.len(), 19);
         for required in [
             "tarik_classify_sql",
             "tarik_describe_relation",
@@ -565,6 +716,12 @@ mod tests {
             "tarik_propose_sql",
             "tarik_approval_status",
             "tarik_execute_approved",
+            "tarik_profile_start",
+            "tarik_profile_status",
+            "tarik_profile_cancel",
+            "tarik_list_quality_checks",
+            "tarik_list_quality_runs",
+            "tarik_list_saved_queries",
         ] {
             assert!(names.contains(&required));
         }

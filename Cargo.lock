@@ -4490,6 +4490,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "tarik-agent-protocol",
+ "tarik-engine-protocol",
  "thiserror 2.0.20",
  "tokio",
  "uuid",

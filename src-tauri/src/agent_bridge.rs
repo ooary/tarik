@@ -411,6 +411,56 @@ fn dispatch(
             approval_id,
         } => serde_json::to_value(access.execute_approved(&connection_id, &approval_id)?)
             .map_err(|error| error.to_string()),
+        BridgeAction::StartProfile {
+            connection_id,
+            request,
+        } => serde_json::to_value(access.start_profile(&connection_id, request)?)
+            .map_err(|error| error.to_string()),
+        BridgeAction::ProfileStatus {
+            connection_id,
+            profile_id,
+        } => serde_json::to_value(access.profile_status(&connection_id, &profile_id)?)
+            .map_err(|error| error.to_string()),
+        BridgeAction::CancelProfile {
+            connection_id,
+            profile_id,
+        } => serde_json::to_value(access.cancel_profile(&connection_id, &profile_id)?)
+            .map_err(|error| error.to_string()),
+        BridgeAction::ListQuality {
+            connection_id,
+            project_id,
+            offset,
+            limit,
+        } => {
+            serde_json::to_value(access.list_quality(&connection_id, &project_id, offset, limit)?)
+                .map_err(|error| error.to_string())
+        }
+        BridgeAction::ListQualityRuns {
+            connection_id,
+            project_id,
+            check_id,
+            offset,
+            limit,
+        } => serde_json::to_value(access.list_quality_runs(
+            &connection_id,
+            &project_id,
+            check_id.as_deref(),
+            offset,
+            limit,
+        )?)
+        .map_err(|error| error.to_string()),
+        BridgeAction::ListSavedQueries {
+            connection_id,
+            project_id,
+            offset,
+            limit,
+        } => serde_json::to_value(access.list_saved_queries(
+            &connection_id,
+            &project_id,
+            offset,
+            limit,
+        )?)
+        .map_err(|error| error.to_string()),
         BridgeAction::Disconnect { connection_id } => {
             owned_connections.retain(|owned| owned != &connection_id);
             Ok(serde_json::json!({ "disconnected": access.disconnect(&connection_id)? }))

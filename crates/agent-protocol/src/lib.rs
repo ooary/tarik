@@ -78,6 +78,8 @@ impl BridgeRequest {
             | BridgeAction::ProposeSql { connection_id, .. }
             | BridgeAction::ApprovalStatus { connection_id, .. }
             | BridgeAction::ExecuteApproved { connection_id, .. }
+            | BridgeAction::ProfileStatus { connection_id, .. }
+            | BridgeAction::CancelProfile { connection_id, .. }
             | BridgeAction::Disconnect { connection_id } => {
                 validate_connection_id(connection_id)?;
             }
@@ -146,6 +148,50 @@ impl BridgeRequest {
                     return Err(ProtocolError::InvalidResultId);
                 }
                 if *max_rows == 0 || *max_rows > MAX_AGENT_PAGE_ROWS {
+                    return Err(ProtocolError::InvalidPageLimit);
+                }
+            }
+            BridgeAction::StartProfile {
+                connection_id,
+                request,
+            } => {
+                validate_connection_id(connection_id)?;
+                request
+                    .validate()
+                    .map_err(|_| ProtocolError::InvalidProfileRequest)?;
+            }
+            BridgeAction::ListQuality {
+                connection_id,
+                project_id,
+                offset,
+                limit,
+            }
+            | BridgeAction::ListSavedQueries {
+                connection_id,
+                project_id,
+                offset,
+                limit,
+            } => {
+                validate_connection_id(connection_id)?;
+                if project_id.trim().is_empty() || project_id.len() > MAX_PROFILE_ID_BYTES {
+                    return Err(ProtocolError::InvalidProjectId);
+                }
+                if *limit == 0 || *limit > 100 || *offset > 5_000 {
+                    return Err(ProtocolError::InvalidPageLimit);
+                }
+            }
+            BridgeAction::ListQualityRuns {
+                connection_id,
+                project_id,
+                offset,
+                limit,
+                ..
+            } => {
+                validate_connection_id(connection_id)?;
+                if project_id.trim().is_empty() || project_id.len() > MAX_PROFILE_ID_BYTES {
+                    return Err(ProtocolError::InvalidProjectId);
+                }
+                if *limit == 0 || *limit > 100 || *offset > 5_000 {
                     return Err(ProtocolError::InvalidPageLimit);
                 }
             }
@@ -234,6 +280,38 @@ pub enum BridgeAction {
     ExecuteApproved {
         connection_id: String,
         approval_id: String,
+    },
+    StartProfile {
+        connection_id: String,
+        request: tarik_engine_protocol::ProfileRequest,
+    },
+    ProfileStatus {
+        connection_id: String,
+        profile_id: String,
+    },
+    CancelProfile {
+        connection_id: String,
+        profile_id: String,
+    },
+    ListQuality {
+        connection_id: String,
+        project_id: String,
+        offset: u32,
+        limit: u32,
+    },
+    ListQualityRuns {
+        connection_id: String,
+        project_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        check_id: Option<String>,
+        offset: u32,
+        limit: u32,
+    },
+    ListSavedQueries {
+        connection_id: String,
+        project_id: String,
+        offset: u32,
+        limit: u32,
     },
     Disconnect {
         connection_id: String,
@@ -515,6 +593,8 @@ pub enum ProtocolError {
     InvalidSnapshotId,
     #[error("invalid result id")]
     InvalidResultId,
+    #[error("invalid profile request")]
+    InvalidProfileRequest,
     #[error("invalid authentication proof")]
     InvalidProof,
 }

@@ -151,6 +151,7 @@ struct AccessState {
     sql_snapshots: HashMap<String, SqlSnapshot>,
     agent_queries: HashMap<String, AgentQuery>,
     approvals: HashMap<String, PendingApproval>,
+    profiles: HashMap<String, (String, String)>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -234,6 +235,7 @@ impl AgentAccessManager {
             state.connections.clear();
             state.sql_snapshots.clear();
             state.agent_queries.clear();
+            state.profiles.clear();
             for approval in state
                 .approvals
                 .values_mut()
@@ -1134,6 +1136,137 @@ impl AgentAccessManager {
         }
     }
 
+    pub fn start_profile(
+        &self,
+        connection_id: &str,
+        request: tarik_engine_protocol::ProfileRequest,
+    ) -> Result<tarik_engine_protocol::ProfileStatus, String> {
+        self.require_capability(
+            connection_id,
+            &request.project_id,
+            |grant| grant.analyze,
+            "Analyze",
+        )?;
+        let catalog = self.projects.catalog().map_err(|error| error.to_string())?;
+        let object = catalog.objects.iter().find(|object| {
+            object.database == request.target.database
+                && object.schema == request.target.schema
+                && object.name == request.target.name
+                && object.kind == request.target.kind
+        });
+        if object.is_none() || catalog.revision != request.catalog_revision {
+            return Err("agent.profile_target_stale: Refresh catalog metadata first.".into());
+        }
+        let profile_id = format!("agent-profile-{}", uuid::Uuid::new_v4());
+        self.engine.execute_profile(&profile_id, &request)?;
+        self.lock()?.profiles.insert(
+            profile_id.clone(),
+            (connection_id.to_string(), request.project_id.clone()),
+        );
+        Ok(tarik_engine_protocol::ProfileStatus {
+            profile_id,
+            state: tarik_engine_protocol::ProfileState::Queued,
+            duration_ms: 0,
+            snapshot: None,
+            error: None,
+        })
+    }
+
+    pub fn profile_status(
+        &self,
+        connection_id: &str,
+        profile_id: &str,
+    ) -> Result<tarik_engine_protocol::ProfileStatus, String> {
+        let project_id = self.profile_owner(connection_id, profile_id)?;
+        self.require_capability(connection_id, &project_id, |grant| grant.analyze, "Analyze")?;
+        let status = self.engine.profile_status(profile_id)?.ok_or_else(|| {
+            "agent.profile_missing: This profile is no longer tracked.".to_string()
+        })?;
+        if matches!(
+            status.state,
+            tarik_engine_protocol::ProfileState::Succeeded
+                | tarik_engine_protocol::ProfileState::Failed
+                | tarik_engine_protocol::ProfileState::Cancelled
+        ) {
+            self.lock()?.profiles.remove(profile_id);
+        }
+        Ok(status)
+    }
+
+    pub fn cancel_profile(
+        &self,
+        connection_id: &str,
+        profile_id: &str,
+    ) -> Result<tarik_engine_protocol::ProfileStatus, String> {
+        self.profile_owner(connection_id, profile_id)?;
+        self.engine
+            .cancel_profile(profile_id)?
+            .ok_or_else(|| "agent.profile_missing: This profile is no longer tracked.".to_string())
+    }
+
+    pub fn list_quality(
+        &self,
+        connection_id: &str,
+        project_id: &str,
+        offset: u32,
+        limit: u32,
+    ) -> Result<serde_json::Value, String> {
+        self.require_capability(connection_id, project_id, |grant| grant.inspect, "Inspect")?;
+        let definitions = crate::metadata::quality::QualityRepository::new(self.metadata.clone())
+            .list(project_id)
+            .map_err(|error| error.to_string())?;
+        let start = (offset as usize).min(definitions.len());
+        let end = (start + limit.min(100) as usize).min(definitions.len());
+        ensure_discovery_budget(&definitions[start..end])?;
+        Ok(serde_json::json!({
+            "projectId": project_id,
+            "definitions": &definitions[start..end],
+            "offset": offset,
+            "nextOffset": (end < definitions.len()).then_some(end as u32),
+        }))
+    }
+
+    pub fn list_quality_runs(
+        &self,
+        connection_id: &str,
+        project_id: &str,
+        check_id: Option<&str>,
+        offset: u32,
+        limit: u32,
+    ) -> Result<crate::metadata::quality::CheckHistoryPage, String> {
+        self.require_capability(connection_id, project_id, |grant| grant.inspect, "Inspect")?;
+        crate::metadata::quality::QualityRepository::new(self.metadata.clone())
+            .history(project_id, check_id, offset, limit)
+            .map_err(|error| error.to_string())
+    }
+
+    pub fn list_saved_queries(
+        &self,
+        connection_id: &str,
+        project_id: &str,
+        offset: u32,
+        limit: u32,
+    ) -> Result<serde_json::Value, String> {
+        self.require_capability(
+            connection_id,
+            project_id,
+            |grant| grant.modify_workspace,
+            "Modify workspace",
+        )?;
+        let queries = crate::metadata::queries::QueriesRepository::new(self.metadata.clone())
+            .list_saved(project_id, None)
+            .map_err(|error| error.to_string())?;
+        let start = (offset as usize).min(queries.len());
+        let end = (start + limit.min(100) as usize).min(queries.len());
+        ensure_discovery_budget(&queries[start..end])?;
+        Ok(serde_json::json!({
+            "projectId": project_id,
+            "queries": &queries[start..end],
+            "offset": offset,
+            "nextOffset": (end < queries.len()).then_some(end as u32),
+        }))
+    }
+
     pub fn list_pending_approvals(&self) -> Result<Vec<ApprovalRequestView>, String> {
         let mut state = self.lock()?;
         prune(&mut state);
@@ -1253,7 +1386,7 @@ impl AgentAccessManager {
     }
 
     pub fn disconnect(&self, connection_id: &str) -> Result<bool, String> {
-        let (removed, queries) = {
+        let (removed, queries, profiles) = {
             let mut state = self.lock()?;
             let removed = state.connections.remove(connection_id).is_some();
             state
@@ -1273,11 +1406,23 @@ impl AgentAccessManager {
             state
                 .agent_queries
                 .retain(|_, query| query.connection_id != connection_id);
-            (removed, queries)
+            let profiles = state
+                .profiles
+                .iter()
+                .filter(|(_, (owner, _))| owner == connection_id)
+                .map(|(id, _)| id.clone())
+                .collect::<Vec<_>>();
+            state
+                .profiles
+                .retain(|_, (owner, _)| owner != connection_id);
+            (removed, queries, profiles)
         };
         for query in queries {
             let _ = self.engine.cancel_query(&query);
             let _ = self.engine.release_result(&query);
+        }
+        for profile in profiles {
+            let _ = self.engine.cancel_profile(&profile);
         }
         if removed {
             self.cleaner.cleanup_connection(connection_id);
@@ -1347,7 +1492,7 @@ impl AgentAccessManager {
     }
 
     pub fn invalidate_project(&self, project_id: &str) {
-        let (queries, approvals) = match self.state.lock() {
+        let (queries, profiles, approvals) = match self.state.lock() {
             Ok(mut state) => {
                 state
                     .sql_snapshots
@@ -1361,6 +1506,15 @@ impl AgentAccessManager {
                 state
                     .agent_queries
                     .retain(|_, query| query.project_id != project_id);
+                let profiles = state
+                    .profiles
+                    .iter()
+                    .filter(|(_, (_, owner_project))| owner_project == project_id)
+                    .map(|(id, _)| id.clone())
+                    .collect::<Vec<_>>();
+                state
+                    .profiles
+                    .retain(|_, (_, owner_project)| owner_project != project_id);
                 let mut approvals = 0;
                 for approval in state.approvals.values_mut().filter(|approval| {
                     approval.project_id == project_id
@@ -1372,13 +1526,16 @@ impl AgentAccessManager {
                     approval.state = ApprovalState::Denied;
                     approvals += 1;
                 }
-                (queries, approvals)
+                (queries, profiles, approvals)
             }
             Err(_) => return,
         };
         for query in queries {
             let _ = self.engine.cancel_query(&query);
             let _ = self.engine.release_result(&query);
+        }
+        for profile in profiles {
+            let _ = self.engine.cancel_profile(&profile);
         }
         let _ = approvals;
     }
@@ -1391,6 +1548,7 @@ impl AgentAccessManager {
             state.connections.clear();
             state.sql_snapshots.clear();
             state.agent_queries.clear();
+            state.profiles.clear();
             state.approvals.clear();
         }
         self.cleaner.cleanup_all();
@@ -1489,6 +1647,18 @@ impl AgentAccessManager {
                 })
             })
             .collect())
+    }
+
+    fn profile_owner(&self, connection_id: &str, profile_id: &str) -> Result<String, String> {
+        self.lock()?
+            .profiles
+            .get(profile_id)
+            .filter(|(owner, _)| owner == connection_id)
+            .map(|(_, project_id)| project_id.clone())
+            .ok_or_else(|| {
+                "agent.profile_owner_mismatch: This profile belongs to another connection."
+                    .to_string()
+            })
     }
 
     fn query_owner(&self, connection_id: &str, execution_id: &str) -> Result<AgentQuery, String> {
@@ -1703,7 +1873,7 @@ fn relation_summary(
     }
 }
 
-fn ensure_discovery_budget(value: &impl Serialize) -> Result<(), String> {
+fn ensure_discovery_budget(value: &(impl Serialize + ?Sized)) -> Result<(), String> {
     let size = serde_json::to_vec(value)
         .map_err(|error| format!("agent.discovery_encode: {error}"))?
         .len();
