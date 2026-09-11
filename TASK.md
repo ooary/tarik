@@ -2209,7 +2209,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
 
 ## EPIC E15 — Local Agent Gateway (MCP) with non-bypassable approvals
 
-**Status:** `APPROVED FOR DESIGN` — The user authorized adding E15 on September 11, 2026 after confirming `origin/main` was current at `7830ea4`. E15-T0 is ready. MCP implementation remains unstarted and must not proceed beyond the approved design task until its threat model, protocol graph, and guardrail review are accepted. E13-T6/E12-T4 Windows acceptance continues independently and still blocks final cross-platform release claims.
+**Status:** `T0 IMPLEMENTED / DESIGN REVIEW REQUIRED` — The user authorized E15-T0 execution on September 11, 2026. The protocol, threat model, capability/effect policy, parser strategy, lifecycle budgets, implementation inventory, and complete Graph Protocol are documented in `docs/design/E15-DESIGN-GRAPH.md`. MCP source implementation remains unstarted; E15-T1 is blocked until the user explicitly accepts the durable T0 design. E13-T6/E12-T4 Windows acceptance continues independently and still blocks final cross-platform release claims.
 
 **Outcome:** Claude Desktop, Claude Code, Pi, and other standard MCP hosts can inspect explicitly granted local Tarik projects, run bounded analysis, and propose controlled workspace/data changes. Tarik remains model-independent and local-first. Read operations are fail-closed and bounded; mutations require a visible Tarik-owned one-use approval; critical destructive actions additionally require typed confirmation; unsupported or uncontrollable effects are blocked with no approval bypass.
 
@@ -2255,7 +2255,7 @@ Blocked
 7. Approved mutations use an exclusive lane and a DuckDB transaction where supported. Failure/cancellation rolls back; rollback failure becomes a critical recovery state and is never reported as a successful cancellation.
 8. Schema changes refresh catalog identity and invalidate stale results/profiles as required. Every decision and terminal outcome creates a bounded local audit record.
 
-- [ ] **E15-T0 Define the MCP protocol, threat model, and approval design graph**
+- [x] **E15-T0 Define the MCP protocol, threat model, and approval design graph**
   - Depends on: E14-T7 implementation approval; user authorization to begin E15 design
   - Owns: `docs/design/E15-DESIGN-GRAPH.md`, MCP scope, threat model, capability matrix, effect taxonomy, approval state machine, lifecycle budgets, and implementation inventory
   - Deliverables:
@@ -2269,6 +2269,7 @@ Blocked
   - Acceptance: the Graph Protocol is complete; every exposed operation has an A/E/R path, capability, effect class, trust boundary, resource owner, and test layer; no unclassified operation can execute; user explicitly approves the E15 design before T1 begins.
   - Tests: protocol/schema review, parser spike matrix, adversarial request corpus, lifecycle/resource inventory, and code-to-graph mismatch review.
   - Commit: `docs(design): define guarded MCP agent gateway`
+  - Notes: Implemented September 11, 2026 in `docs/design/E15-DESIGN-GRAPH.md`. The design pins stdio MCP 2025-06-18/2025-11-25, a host-managed `tarik-mcp` child, no TCP listener or competing DuckDB owner, HMAC challenge pairing with user-private credentials, explicit active-project grants, a dual `sqlparser` DuckDB AST plus pinned-DuckDB parser/type classifier, immutable snapshots, no MCP approval method, atomic one-use 120-second approvals, transactional mutation recovery, and bounded defaults for every connection/job/result/approval/audit lifecycle. A temporary parser spike confirmed distinct DuckDB AST coverage for representative read, DML, DDL, external, extension, secret, setting, transaction, macro, and multi-statement families; disagreement still fails closed. T1 remains blocked on explicit design acceptance.
 
 - [ ] **E15-T1 Add authenticated local bridge, pairing, and project grants**
   - Depends on: E15-T0 approval
