@@ -2466,7 +2466,7 @@ Blocked
   - Commit: `docs(design): define assisted MCP setup and export delegation`
 
 - [ ] **E15.1-T1 Add host detection and the Connect an agent assistant**
-  - Status: Linux-developed implementation candidate completed September 11, 2026. Rust setup engine is ready to commit; the combined Agent Access/connection-assistant UI remains local and uncommitted for real-Tauri review. Native Windows host detection, current-user ACL/reparse checks, CLI launch/configure/remove, atomic replacement, portable-move repair, WebView2, DPI, accessibility, and process evidence remain required before completion.
+  - Status: Linux-developed implementation candidate completed September 11, 2026. Rust setup engine committed locally as `dc544dd`; the combined Agent Access/connection-assistant UI remains local and uncommitted for real-Tauri review. Native Windows host detection, current-user ACL/reparse checks, CLI launch/configure/remove, atomic replacement, portable-move repair, WebView2, DPI, accessibility, and process evidence remain required before completion.
   - Depends on: E15.1-T0 approval
   - Owns: host detector, versioned setup adapters, setup-plan UI, bounded process runner, managed-config writer, verification, repair, removal, and receipts
   - Deliverables:
