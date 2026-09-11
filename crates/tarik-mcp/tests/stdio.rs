@@ -106,8 +106,12 @@ fn initializes_lists_static_tools_reports_unavailable_and_exits_on_eof() {
         "params": {}
     }));
     let tools = process.response();
-    assert_eq!(tools["result"]["tools"].as_array().unwrap().len(), 1);
-    assert_eq!(tools["result"]["tools"][0]["name"], "tarik_server_info");
+    let tools = tools["result"]["tools"].as_array().unwrap();
+    assert_eq!(tools.len(), 4);
+    assert_eq!(tools[0]["name"], "tarik_describe_relation");
+    assert_eq!(tools[1]["name"], "tarik_list_catalog");
+    assert_eq!(tools[2]["name"], "tarik_list_projects");
+    assert_eq!(tools[3]["name"], "tarik_server_info");
 
     process.send(json!({
         "jsonrpc": "2.0",

@@ -4,19 +4,23 @@ use std::{
     time::{Duration, Instant},
 };
 
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tarik_agent_protocol::{
-    AuthenticationResult, ConnectionStatusResult, HelloResult, HelloState, ProjectGrant,
-    CHALLENGE_BYTES, PROOF_BYTES,
+    AuthenticationResult, CatalogPageResult, CatalogRelationSummary, ConnectionStatusResult,
+    GrantedProject, GrantedProjectsResult, HelloResult, HelloState, ProjectGrant, RelationColumn,
+    RelationDescriptionResult, CHALLENGE_BYTES, MAX_DISCOVERY_RESPONSE_BYTES, PROOF_BYTES,
 };
 use zeroize::Zeroizing;
 
 use crate::{
     metadata::{
         agent::{AgentClientState, AgentRepository},
+        projects::ProjectsRepository,
         settings::SettingsRepository,
+        sources::SourcesRepository,
         MetadataDb,
     },
     observability::{AppLogger, EventFields, LogLevel},
@@ -90,6 +94,15 @@ struct AccessState {
     connections: HashMap<String, ConnectionRecord>,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+struct DiscoveryCursor {
+    kind: String,
+    project_id: String,
+    revision: String,
+    identity: String,
+    offset: usize,
+}
+
 pub trait AgentResourceCleaner: Send + Sync + 'static {
     fn cleanup_connection(&self, connection_id: &str);
     fn cleanup_all(&self);
@@ -102,12 +115,14 @@ impl AgentResourceCleaner for NoopCleaner {
 }
 
 pub struct AgentAccessManager {
+    metadata: MetadataDb,
     repository: AgentRepository,
     settings: SettingsRepository,
     projects: ProjectManager,
     logger: Arc<AppLogger>,
     state: Mutex<AccessState>,
     cleaner: Arc<dyn AgentResourceCleaner>,
+    cursor_key: Option<[u8; 32]>,
 }
 
 impl AgentAccessManager {
@@ -119,6 +134,7 @@ impl AgentAccessManager {
             .flatten()
             .unwrap_or(false);
         Self {
+            metadata: database.clone(),
             repository: AgentRepository::new(database),
             settings,
             projects,
@@ -128,6 +144,7 @@ impl AgentAccessManager {
                 ..AccessState::default()
             }),
             cleaner: Arc::new(NoopCleaner),
+            cursor_key: random_array::<32>().ok(),
         }
     }
 
@@ -457,6 +474,155 @@ impl AgentAccessManager {
         })
     }
 
+    pub fn list_granted_projects(
+        &self,
+        connection_id: &str,
+    ) -> Result<GrantedProjectsResult, String> {
+        let (_, grants) = self.authenticated_connection(connection_id)?;
+        let active_id = self
+            .projects
+            .active()
+            .map_err(|error| error.to_string())?
+            .map(|project| project.id);
+        let repository = ProjectsRepository::new(self.metadata.clone());
+        let mut projects = Vec::new();
+        for grant in grants.into_iter().filter(|grant| grant.inspect) {
+            let Some(project) = repository
+                .find(&grant.project_id)
+                .map_err(|error| error.to_string())?
+            else {
+                continue;
+            };
+            projects.push(GrantedProject {
+                active: active_id.as_deref() == Some(project.id.as_str()),
+                project_id: project.id,
+                name: project.name,
+                grant,
+            });
+        }
+        Ok(GrantedProjectsResult { projects })
+    }
+
+    pub fn list_catalog(
+        &self,
+        connection_id: &str,
+        project_id: &str,
+        search: Option<&str>,
+        cursor: Option<&str>,
+        limit: u32,
+    ) -> Result<CatalogPageResult, String> {
+        self.require_inspect(connection_id, project_id)?;
+        let snapshot = self.projects.catalog().map_err(|error| error.to_string())?;
+        self.require_inspect(connection_id, project_id)?;
+        let offset = self.decode_cursor(cursor, "catalog", project_id, &snapshot.revision, "")?;
+        let needle = search
+            .map(|value| value.trim().to_lowercase())
+            .filter(|value| !value.is_empty());
+        let sources = SourcesRepository::new(self.metadata.clone())
+            .list_sources(project_id)
+            .map_err(|error| error.to_string())?;
+        let filtered = snapshot
+            .objects
+            .iter()
+            .filter(|object| {
+                needle.as_ref().is_none_or(|needle| {
+                    object.name.to_lowercase().contains(needle)
+                        || object.schema.to_lowercase().contains(needle)
+                        || object.database.to_lowercase().contains(needle)
+                })
+            })
+            .collect::<Vec<_>>();
+        if offset > filtered.len() {
+            return Err("agent.cursor_stale: Start catalog listing again.".into());
+        }
+        let end = (offset + limit as usize).min(filtered.len());
+        let relations = filtered[offset..end]
+            .iter()
+            .map(|object| relation_summary(object, &snapshot.columns, &sources))
+            .collect::<Vec<_>>();
+        let next_cursor = (end < filtered.len())
+            .then(|| self.encode_cursor("catalog", project_id, &snapshot.revision, "", end))
+            .transpose()?;
+        let result = CatalogPageResult {
+            project_id: project_id.to_string(),
+            catalog_revision: snapshot.revision,
+            relations,
+            next_cursor,
+        };
+        ensure_discovery_budget(&result)?;
+        self.require_inspect(connection_id, project_id)?;
+        Ok(result)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn describe_relation(
+        &self,
+        connection_id: &str,
+        project_id: &str,
+        database: &str,
+        schema: &str,
+        name: &str,
+        cursor: Option<&str>,
+        limit: u32,
+    ) -> Result<RelationDescriptionResult, String> {
+        self.require_inspect(connection_id, project_id)?;
+        let snapshot = self.projects.catalog().map_err(|error| error.to_string())?;
+        self.require_inspect(connection_id, project_id)?;
+        let identity = format!("{database}\u{0}{schema}\u{0}{name}");
+        let object = snapshot
+            .objects
+            .iter()
+            .find(|object| {
+                object.database == database && object.schema == schema && object.name == name
+            })
+            .ok_or_else(|| {
+                "agent.relation_missing: The relation is not in the current catalog.".to_string()
+            })?;
+        let offset = self.decode_cursor(
+            cursor,
+            "relation",
+            project_id,
+            &snapshot.revision,
+            &identity,
+        )?;
+        let relation_columns = snapshot
+            .columns
+            .iter()
+            .filter(|column| {
+                column.database == database && column.schema == schema && column.object == name
+            })
+            .collect::<Vec<_>>();
+        if offset > relation_columns.len() {
+            return Err("agent.cursor_stale: Describe the relation again.".into());
+        }
+        let end = (offset + limit as usize).min(relation_columns.len());
+        let columns = relation_columns[offset..end]
+            .iter()
+            .map(|column| RelationColumn {
+                name: column.name.clone(),
+                data_type: column.data_type.clone(),
+                position: column.position,
+                nullable: column.nullable,
+            })
+            .collect();
+        let sources = SourcesRepository::new(self.metadata.clone())
+            .list_sources(project_id)
+            .map_err(|error| error.to_string())?;
+        let next_cursor = (end < relation_columns.len())
+            .then(|| self.encode_cursor("relation", project_id, &snapshot.revision, &identity, end))
+            .transpose()?;
+        let result = RelationDescriptionResult {
+            project_id: project_id.to_string(),
+            catalog_revision: snapshot.revision,
+            relation: relation_summary(object, &snapshot.columns, &sources),
+            columns,
+            next_cursor,
+        };
+        ensure_discovery_budget(&result)?;
+        self.require_inspect(connection_id, project_id)?;
+        Ok(result)
+    }
+
     pub fn disconnect(&self, connection_id: &str) -> Result<bool, String> {
         let removed = self.lock()?.connections.remove(connection_id).is_some();
         if removed {
@@ -531,10 +697,183 @@ impl AgentAccessManager {
         self.cleaner.cleanup_all();
     }
 
+    fn authenticated_connection(
+        &self,
+        connection_id: &str,
+    ) -> Result<(String, Vec<ProjectGrant>), String> {
+        let mut state = self.lock()?;
+        prune(&mut state);
+        if !state.enabled {
+            return Err("agent.disabled: Agent Access is disabled.".into());
+        }
+        let connection = state
+            .connections
+            .get(connection_id)
+            .filter(|connection| connection.authenticated)
+            .ok_or_else(|| {
+                "agent.authentication_required: Reconnect and authenticate.".to_string()
+            })?;
+        let profile_id = connection.profile_id.clone();
+        drop(state);
+        let grants = self
+            .repository
+            .list_grants(&profile_id)
+            .map_err(|error| error.to_string())?;
+        Ok((profile_id, grants))
+    }
+
+    fn require_inspect(&self, connection_id: &str, project_id: &str) -> Result<(), String> {
+        let (_, grants) = self.authenticated_connection(connection_id)?;
+        if !grants
+            .iter()
+            .any(|grant| grant.project_id == project_id && grant.inspect)
+        {
+            return Err("agent.permission_denied: Inspect is not granted for this project.".into());
+        }
+        let active = self
+            .projects
+            .active()
+            .map_err(|error| error.to_string())?
+            .ok_or_else(|| {
+                "agent.project_closed: Open the granted project in Tarik.".to_string()
+            })?;
+        if active.id != project_id {
+            return Err("agent.project_closed: The granted project is not active in Tarik.".into());
+        }
+        Ok(())
+    }
+
+    fn encode_cursor(
+        &self,
+        kind: &str,
+        project_id: &str,
+        revision: &str,
+        identity: &str,
+        offset: usize,
+    ) -> Result<String, String> {
+        let payload = DiscoveryCursor {
+            kind: kind.to_string(),
+            project_id: project_id.to_string(),
+            revision: revision.to_string(),
+            identity: identity.to_string(),
+            offset,
+        };
+        let bytes = serde_json::to_vec(&payload).map_err(|error| error.to_string())?;
+        let mut mac = HmacSha256::new_from_slice(self.cursor_key.as_ref().ok_or_else(|| {
+            "agent.entropy_unavailable: Discovery cursors are unavailable.".to_string()
+        })?)
+        .map_err(|_| "agent.cursor_invalid".to_string())?;
+        mac.update(b"tarik-agent-cursor-v1");
+        mac.update(&bytes);
+        let signature = mac.finalize().into_bytes();
+        Ok(format!(
+            "{}.{}",
+            URL_SAFE_NO_PAD.encode(bytes),
+            URL_SAFE_NO_PAD.encode(signature)
+        ))
+    }
+
+    fn decode_cursor(
+        &self,
+        cursor: Option<&str>,
+        kind: &str,
+        project_id: &str,
+        revision: &str,
+        identity: &str,
+    ) -> Result<usize, String> {
+        let Some(cursor) = cursor else {
+            return Ok(0);
+        };
+        let (payload, signature) = cursor
+            .split_once('.')
+            .ok_or_else(|| "agent.cursor_invalid: Start discovery again.".to_string())?;
+        let bytes = URL_SAFE_NO_PAD
+            .decode(payload)
+            .map_err(|_| "agent.cursor_invalid: Start discovery again.".to_string())?;
+        let signature = URL_SAFE_NO_PAD
+            .decode(signature)
+            .map_err(|_| "agent.cursor_invalid: Start discovery again.".to_string())?;
+        let mut mac = HmacSha256::new_from_slice(self.cursor_key.as_ref().ok_or_else(|| {
+            "agent.entropy_unavailable: Discovery cursors are unavailable.".to_string()
+        })?)
+        .map_err(|_| "agent.cursor_invalid".to_string())?;
+        mac.update(b"tarik-agent-cursor-v1");
+        mac.update(&bytes);
+        mac.verify_slice(&signature)
+            .map_err(|_| "agent.cursor_invalid: Start discovery again.".to_string())?;
+        let decoded: DiscoveryCursor = serde_json::from_slice(&bytes)
+            .map_err(|_| "agent.cursor_invalid: Start discovery again.".to_string())?;
+        if decoded.kind != kind
+            || decoded.project_id != project_id
+            || decoded.revision != revision
+            || decoded.identity != identity
+        {
+            return Err(
+                "agent.cursor_stale: Catalog identity changed; start discovery again.".into(),
+            );
+        }
+        Ok(decoded.offset)
+    }
+
     fn lock(&self) -> Result<MutexGuard<'_, AccessState>, String> {
         self.state
             .lock()
             .map_err(|_| "agent.state_unavailable".to_string())
+    }
+}
+
+fn relation_summary(
+    object: &tarik_engine_protocol::CatalogObject,
+    columns: &[tarik_engine_protocol::CatalogColumn],
+    sources: &[crate::metadata::sources::SourceRecord],
+) -> CatalogRelationSummary {
+    let source = sources.iter().find(|source| {
+        source.duckdb_name == object.name && (object.schema == "main" || object.schema == "public")
+    });
+    CatalogRelationSummary {
+        database: object.database.clone(),
+        schema: object.schema.clone(),
+        name: object.name.clone(),
+        kind: object.kind.clone(),
+        estimated_row_count: object.estimated_row_count,
+        column_count: columns
+            .iter()
+            .filter(|column| {
+                column.database == object.database
+                    && column.schema == object.schema
+                    && column.object == object.name
+            })
+            .count()
+            .try_into()
+            .unwrap_or(u32::MAX),
+        registered_source_id: source.map(|source| source.id.clone()),
+        source_kind: source.map(|source| {
+            match source.kind {
+                crate::metadata::sources::SourceKind::DuckdbTable => "duckdb_table",
+                crate::metadata::sources::SourceKind::LinkedParquet => "linked_parquet",
+                crate::metadata::sources::SourceKind::LinkedCsv => "linked_csv",
+            }
+            .to_string()
+        }),
+        source_state: source.map(|source| {
+            match source.state {
+                crate::metadata::sources::SourceState::Ready => "ready",
+                crate::metadata::sources::SourceState::Missing => "missing",
+                crate::metadata::sources::SourceState::InvalidSchema => "invalid_schema",
+            }
+            .to_string()
+        }),
+    }
+}
+
+fn ensure_discovery_budget(value: &impl Serialize) -> Result<(), String> {
+    let size = serde_json::to_vec(value)
+        .map_err(|error| format!("agent.discovery_encode: {error}"))?
+        .len();
+    if size > MAX_DISCOVERY_RESPONSE_BYTES {
+        Err("agent.response_too_large: Request a smaller discovery page.".into())
+    } else {
+        Ok(())
     }
 }
 
@@ -731,24 +1070,10 @@ mod tests {
         )
     }
 
-    #[test]
-    fn disabled_access_rejects_hello_and_disable_cleans_resources() {
-        let (manager, _) = fixture();
-        assert!(manager.hello("", "Pi", Some(&"01".repeat(32))).is_err());
-        let cleaner = Arc::new(TrackingCleaner(AtomicUsize::new(0)));
-        let manager = manager.with_cleaner(cleaner.clone());
-        manager.set_enabled(true).unwrap();
-        manager.set_enabled(false).unwrap();
-        assert_eq!(cleaner.0.load(Ordering::SeqCst), 1);
-    }
-
-    #[test]
-    fn pairing_requires_local_approval_then_challenge_proof() {
-        let (manager, project_id) = fixture();
+    fn pair_and_authenticate(manager: &AgentAccessManager) -> (String, String) {
         manager.set_enabled(true).unwrap();
         let key = [7u8; 32];
         let hello = manager.hello("", "Pi", Some(&hex(&key))).unwrap();
-        assert_eq!(hello.state, HelloState::PairingRequired);
         let profile_id = manager
             .approve_pairing(hello.pairing_request_id.as_deref().unwrap())
             .unwrap();
@@ -763,11 +1088,32 @@ mod tests {
             &parse_hex_array(&hello.challenge).unwrap(),
         )
         .unwrap();
-        let authenticated = manager
+        manager
             .authenticate(&hello.connection_id, &profile_id, &hex(&expected))
             .unwrap();
-        assert_eq!(authenticated.client_profile_id, profile_id);
-        assert!(authenticated.grants.is_empty());
+        (profile_id, hello.connection_id)
+    }
+
+    #[test]
+    fn disabled_access_rejects_hello_and_disable_cleans_resources() {
+        let (manager, _) = fixture();
+        assert!(manager.hello("", "Pi", Some(&"01".repeat(32))).is_err());
+        let cleaner = Arc::new(TrackingCleaner(AtomicUsize::new(0)));
+        let manager = manager.with_cleaner(cleaner.clone());
+        manager.set_enabled(true).unwrap();
+        manager.set_enabled(false).unwrap();
+        assert_eq!(cleaner.0.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn pairing_requires_local_approval_then_challenge_proof() {
+        let (manager, project_id) = fixture();
+        let (profile_id, connection_id) = pair_and_authenticate(&manager);
+        assert!(manager
+            .connection_status(&connection_id)
+            .unwrap()
+            .grants
+            .is_empty());
         manager
             .set_project_grant(
                 &profile_id,
@@ -780,10 +1126,44 @@ mod tests {
                 },
             )
             .unwrap();
-        let status = manager.connection_status(&hello.connection_id).unwrap();
+        let status = manager.connection_status(&connection_id).unwrap();
         assert!(status.authenticated);
         assert_eq!(status.grants[0].project_id, project_id);
         assert!(status.grants[0].inspect);
+    }
+
+    #[test]
+    fn discovery_lists_only_granted_identity_without_paths() {
+        let (manager, project_id) = fixture();
+        let (profile_id, connection_id) = pair_and_authenticate(&manager);
+        assert!(manager
+            .list_granted_projects(&connection_id)
+            .unwrap()
+            .projects
+            .is_empty());
+        manager
+            .set_project_grant(
+                &profile_id,
+                ProjectGrant {
+                    project_id: project_id.clone(),
+                    inspect: true,
+                    analyze: false,
+                    modify_workspace: false,
+                    modify_data: false,
+                },
+            )
+            .unwrap();
+        let projects = manager.list_granted_projects(&connection_id).unwrap();
+        assert_eq!(projects.projects.len(), 1);
+        assert_eq!(projects.projects[0].project_id, project_id);
+        assert!(projects.projects[0].active);
+        let encoded = serde_json::to_string(&projects).unwrap();
+        assert!(!encoded.contains("duckdb"));
+        assert!(!encoded.contains("/tmp"));
+        assert!(manager
+            .list_catalog(&connection_id, "another-project", None, None, 10)
+            .unwrap_err()
+            .contains("permission_denied"));
     }
 
     #[test]

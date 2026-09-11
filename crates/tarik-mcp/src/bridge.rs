@@ -12,8 +12,8 @@ use interprocess::local_socket::{prelude::*, GenericFilePath, Stream};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use tarik_agent_protocol::{
-    AuthenticationResult, BridgeAction, BridgeRequest, BridgeResponse, HelloResult,
-    MAX_BRIDGE_MESSAGE_BYTES,
+    AuthenticationResult, BridgeAction, BridgeRequest, BridgeResponse, CatalogPageResult,
+    GrantedProjectsResult, HelloResult, RelationDescriptionResult, MAX_BRIDGE_MESSAGE_BYTES,
 };
 use zeroize::Zeroizing;
 
@@ -33,6 +33,7 @@ pub struct BridgeDescriptor {
 
 pub struct BridgeClient {
     stream: BufReader<Stream>,
+    connection_id: Option<String>,
 }
 
 impl BridgeClient {
@@ -52,6 +53,7 @@ impl BridgeClient {
             .map_err(|error| format!("could not configure Tarik bridge: {error}"))?;
         Ok(Self {
             stream: BufReader::new(stream),
+            connection_id: None,
         })
     }
 
@@ -80,11 +82,62 @@ impl BridgeClient {
         let challenge = decode_hex::<32>(&hello.challenge)?;
         let verifier = Zeroizing::new(derive_verifier(&pairing_key, &salt));
         let proof = challenge_proof(verifier.as_ref(), &hello.connection_id, &challenge)?;
-        self.request(BridgeAction::Authenticate {
+        let result = self.request(BridgeAction::Authenticate {
             connection_id: hello.connection_id.clone(),
             profile_id: hello.profile_id.clone(),
             proof: encode_hex(&proof),
+        })?;
+        self.connection_id = Some(hello.connection_id.clone());
+        Ok(result)
+    }
+
+    pub fn list_projects(&mut self) -> Result<GrantedProjectsResult, String> {
+        self.request(BridgeAction::ListProjects {
+            connection_id: self.connection_id()?,
         })
+    }
+
+    pub fn list_catalog(
+        &mut self,
+        project_id: String,
+        search: Option<String>,
+        cursor: Option<String>,
+        limit: u32,
+    ) -> Result<CatalogPageResult, String> {
+        self.request(BridgeAction::ListCatalog {
+            connection_id: self.connection_id()?,
+            project_id,
+            search,
+            cursor,
+            limit,
+        })
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn describe_relation(
+        &mut self,
+        project_id: String,
+        database: String,
+        schema: String,
+        name: String,
+        cursor: Option<String>,
+        limit: u32,
+    ) -> Result<RelationDescriptionResult, String> {
+        self.request(BridgeAction::DescribeRelation {
+            connection_id: self.connection_id()?,
+            project_id,
+            database,
+            schema,
+            name,
+            cursor,
+            limit,
+        })
+    }
+
+    fn connection_id(&self) -> Result<String, String> {
+        self.connection_id
+            .clone()
+            .ok_or_else(|| "Authenticate with Tarik before using project tools".into())
     }
 
     fn request<T: serde::de::DeserializeOwned>(

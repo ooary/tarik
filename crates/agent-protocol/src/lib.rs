@@ -12,6 +12,9 @@ pub const MAX_CLIENT_LABEL_BYTES: usize = 80;
 pub const MAX_PROFILE_ID_BYTES: usize = 128;
 pub const CHALLENGE_BYTES: usize = 32;
 pub const PROOF_BYTES: usize = 32;
+pub const MAX_DISCOVERY_PAGE_ITEMS: u32 = 100;
+pub const MAX_DISCOVERY_SEARCH_BYTES: usize = 128;
+pub const MAX_DISCOVERY_RESPONSE_BYTES: usize = 256 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -64,9 +67,41 @@ impl BridgeRequest {
                     return Err(ProtocolError::InvalidProof);
                 }
             }
-            BridgeAction::Status { connection_id } | BridgeAction::Disconnect { connection_id } => {
-                if connection_id.trim().is_empty() {
-                    return Err(ProtocolError::InvalidConnectionId);
+            BridgeAction::Status { connection_id }
+            | BridgeAction::ListProjects { connection_id }
+            | BridgeAction::Disconnect { connection_id } => {
+                validate_connection_id(connection_id)?;
+            }
+            BridgeAction::ListCatalog {
+                connection_id,
+                project_id,
+                search,
+                cursor,
+                limit,
+            } => {
+                validate_discovery_request(connection_id, project_id, cursor.as_deref(), *limit)?;
+                if search
+                    .as_ref()
+                    .is_some_and(|value| value.len() > MAX_DISCOVERY_SEARCH_BYTES)
+                {
+                    return Err(ProtocolError::InvalidSearch);
+                }
+            }
+            BridgeAction::DescribeRelation {
+                connection_id,
+                project_id,
+                database,
+                schema,
+                name,
+                cursor,
+                limit,
+            } => {
+                validate_discovery_request(connection_id, project_id, cursor.as_deref(), *limit)?;
+                if [database, schema, name]
+                    .iter()
+                    .any(|value| value.trim().is_empty() || value.len() > 1024)
+                {
+                    return Err(ProtocolError::InvalidRelationIdentity);
                 }
             }
             BridgeAction::Ping => {}
@@ -93,6 +128,28 @@ pub enum BridgeAction {
     },
     Status {
         connection_id: String,
+    },
+    ListProjects {
+        connection_id: String,
+    },
+    ListCatalog {
+        connection_id: String,
+        project_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        search: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cursor: Option<String>,
+        limit: u32,
+    },
+    DescribeRelation {
+        connection_id: String,
+        project_id: String,
+        database: String,
+        schema: String,
+        name: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cursor: Option<String>,
+        limit: u32,
     },
     Disconnect {
         connection_id: String,
@@ -188,10 +245,94 @@ pub struct ProjectGrant {
     pub modify_data: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GrantedProject {
+    pub project_id: String,
+    pub name: String,
+    pub active: bool,
+    pub grant: ProjectGrant,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GrantedProjectsResult {
+    pub projects: Vec<GrantedProject>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CatalogRelationSummary {
+    pub database: String,
+    pub schema: String,
+    pub name: String,
+    pub kind: String,
+    pub estimated_row_count: Option<u64>,
+    pub column_count: u32,
+    pub registered_source_id: Option<String>,
+    pub source_kind: Option<String>,
+    pub source_state: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CatalogPageResult {
+    pub project_id: String,
+    pub catalog_revision: String,
+    pub relations: Vec<CatalogRelationSummary>,
+    pub next_cursor: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RelationColumn {
+    pub name: String,
+    pub data_type: String,
+    pub position: u32,
+    pub nullable: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RelationDescriptionResult {
+    pub project_id: String,
+    pub catalog_revision: String,
+    pub relation: CatalogRelationSummary,
+    pub columns: Vec<RelationColumn>,
+    pub next_cursor: Option<String>,
+}
+
 impl ProjectGrant {
     pub fn has_any(&self) -> bool {
         self.inspect || self.analyze || self.modify_workspace || self.modify_data
     }
+}
+
+fn validate_connection_id(value: &str) -> Result<(), ProtocolError> {
+    if value.trim().is_empty() || value.len() > 128 {
+        Err(ProtocolError::InvalidConnectionId)
+    } else {
+        Ok(())
+    }
+}
+
+fn validate_discovery_request(
+    connection_id: &str,
+    project_id: &str,
+    cursor: Option<&str>,
+    limit: u32,
+) -> Result<(), ProtocolError> {
+    validate_connection_id(connection_id)?;
+    if project_id.trim().is_empty() || project_id.len() > MAX_PROFILE_ID_BYTES {
+        return Err(ProtocolError::InvalidProjectId);
+    }
+    if limit == 0 || limit > MAX_DISCOVERY_PAGE_ITEMS {
+        return Err(ProtocolError::InvalidPageLimit);
+    }
+    if cursor.is_some_and(|value| value.is_empty() || value.len() > 1024) {
+        return Err(ProtocolError::InvalidCursor);
+    }
+    Ok(())
 }
 
 fn valid_proof_hex(value: &str) -> bool {
@@ -214,6 +355,16 @@ pub enum ProtocolError {
     UnexpectedPairingKey,
     #[error("invalid bridge connection id")]
     InvalidConnectionId,
+    #[error("invalid project id")]
+    InvalidProjectId,
+    #[error("discovery page limit must be between 1 and 100")]
+    InvalidPageLimit,
+    #[error("invalid discovery cursor")]
+    InvalidCursor,
+    #[error("catalog search text is too long")]
+    InvalidSearch,
+    #[error("invalid relation identity")]
+    InvalidRelationIdentity,
     #[error("invalid authentication proof")]
     InvalidProof,
 }
@@ -263,6 +414,30 @@ mod tests {
             })
             .validate(),
             Err(ProtocolError::InvalidClientLabel)
+        );
+    }
+
+    #[test]
+    fn validates_discovery_bounds() {
+        assert!(request(BridgeAction::ListCatalog {
+            connection_id: "connection-1".into(),
+            project_id: "project-1".into(),
+            search: None,
+            cursor: None,
+            limit: 100,
+        })
+        .validate()
+        .is_ok());
+        assert_eq!(
+            request(BridgeAction::ListCatalog {
+                connection_id: "connection-1".into(),
+                project_id: "project-1".into(),
+                search: None,
+                cursor: None,
+                limit: 101,
+            })
+            .validate(),
+            Err(ProtocolError::InvalidPageLimit)
         );
     }
 

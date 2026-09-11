@@ -322,6 +322,42 @@ fn dispatch(
             serde_json::to_value(access.connection_status(&connection_id)?)
                 .map_err(|error| error.to_string())
         }
+        BridgeAction::ListProjects { connection_id } => {
+            serde_json::to_value(access.list_granted_projects(&connection_id)?)
+                .map_err(|error| error.to_string())
+        }
+        BridgeAction::ListCatalog {
+            connection_id,
+            project_id,
+            search,
+            cursor,
+            limit,
+        } => serde_json::to_value(access.list_catalog(
+            &connection_id,
+            &project_id,
+            search.as_deref(),
+            cursor.as_deref(),
+            limit,
+        )?)
+        .map_err(|error| error.to_string()),
+        BridgeAction::DescribeRelation {
+            connection_id,
+            project_id,
+            database,
+            schema,
+            name,
+            cursor,
+            limit,
+        } => serde_json::to_value(access.describe_relation(
+            &connection_id,
+            &project_id,
+            &database,
+            &schema,
+            &name,
+            cursor.as_deref(),
+            limit,
+        )?)
+        .map_err(|error| error.to_string()),
         BridgeAction::Disconnect { connection_id } => {
             owned_connections.retain(|owned| owned != &connection_id);
             Ok(serde_json::json!({ "disconnected": access.disconnect(&connection_id)? }))

@@ -10,7 +10,9 @@ use rmcp::{
     schemars, tool, tool_handler, tool_router, ServerHandler,
 };
 use serde::{Deserialize, Serialize};
-use tarik_agent_protocol::{AuthenticationResult, HelloResult, HelloState};
+use tarik_agent_protocol::{
+    AuthenticationResult, HelloResult, HelloState, MAX_DISCOVERY_PAGE_ITEMS,
+};
 use zeroize::Zeroizing;
 
 use crate::{
@@ -27,6 +29,41 @@ pub struct ServerInfoRequest {
     #[schemars(description = "Refresh the local Tarik connection before returning status")]
     #[serde(default)]
     pub refresh: bool,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct EmptyRequest {}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CatalogRequest {
+    pub project_id: String,
+    #[serde(default)]
+    pub search: Option<String>,
+    #[serde(default)]
+    pub cursor: Option<String>,
+    #[serde(default = "default_page_limit")]
+    #[schemars(range(min = 1, max = 100))]
+    pub limit: u32,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct DescribeRelationRequest {
+    pub project_id: String,
+    pub database: String,
+    pub schema: String,
+    pub name: String,
+    #[serde(default)]
+    pub cursor: Option<String>,
+    #[serde(default = "default_page_limit")]
+    #[schemars(range(min = 1, max = 100))]
+    pub limit: u32,
+}
+
+fn default_page_limit() -> u32 {
+    50
 }
 
 #[derive(Debug, Clone, Serialize, schemars::JsonSchema)]
@@ -107,15 +144,117 @@ impl TarikMcpServer {
                 .map(|state| state.status.clone())
                 .unwrap_or_else(|_| unavailable_status("The local MCP state is unavailable."))
         };
-        Ok(rmcp::model::CallToolResult::structured(
-            serde_json::to_value(status).unwrap_or_else(|_| {
-                serde_json::json!({
-                    "available": false,
-                    "guidance": "Tarik status could not be encoded."
-                })
-            }),
-        ))
+        Ok(structured(status))
     }
+
+    #[tool(
+        name = "tarik_list_projects",
+        description = "List only Tarik projects explicitly granted to this paired client. Paths are never returned. A project must be active in visible Tarik before catalog or analysis tools can use it."
+    )]
+    fn list_projects(
+        &self,
+        Parameters(_request): Parameters<EmptyRequest>,
+    ) -> Result<rmcp::model::CallToolResult, rmcp::ErrorData> {
+        Ok(self.bridge_call(|bridge| bridge.list_projects()))
+    }
+
+    #[tool(
+        name = "tarik_list_catalog",
+        description = "List a bounded page of relation metadata from an explicitly granted active Tarik project. This performs catalog inspection only: it returns no data rows and runs no user query. Continue with the opaque nextCursor when present."
+    )]
+    fn list_catalog(
+        &self,
+        Parameters(request): Parameters<CatalogRequest>,
+    ) -> Result<rmcp::model::CallToolResult, rmcp::ErrorData> {
+        if request.limit == 0 || request.limit > MAX_DISCOVERY_PAGE_ITEMS {
+            return Ok(tool_error(
+                "agent.invalid_page_limit",
+                "limit must be between 1 and 100",
+            ));
+        }
+        Ok(self.bridge_call(|bridge| {
+            bridge.list_catalog(
+                request.project_id,
+                request.search,
+                request.cursor,
+                request.limit,
+            )
+        }))
+    }
+
+    #[tool(
+        name = "tarik_describe_relation",
+        description = "Describe one exact relation and a bounded page of its columns in an explicitly granted active Tarik project. This performs catalog inspection only and never scans relation data. Continue with the opaque nextCursor when present."
+    )]
+    fn describe_relation(
+        &self,
+        Parameters(request): Parameters<DescribeRelationRequest>,
+    ) -> Result<rmcp::model::CallToolResult, rmcp::ErrorData> {
+        if request.limit == 0 || request.limit > MAX_DISCOVERY_PAGE_ITEMS {
+            return Ok(tool_error(
+                "agent.invalid_page_limit",
+                "limit must be between 1 and 100",
+            ));
+        }
+        Ok(self.bridge_call(|bridge| {
+            bridge.describe_relation(
+                request.project_id,
+                request.database,
+                request.schema,
+                request.name,
+                request.cursor,
+                request.limit,
+            )
+        }))
+    }
+}
+
+impl TarikMcpServer {
+    fn bridge_call<T: Serialize>(
+        &self,
+        operation: impl FnOnce(&mut BridgeClient) -> Result<T, String>,
+    ) -> rmcp::model::CallToolResult {
+        let result = self
+            .state
+            .lock()
+            .map_err(|_| "agent.state_unavailable: Local MCP state is unavailable.".to_string())
+            .and_then(|mut state| {
+                let bridge = state.bridge.as_mut().ok_or_else(|| {
+                    "agent.authentication_required: Call tarik_server_info with refresh true and complete pairing in Tarik.".to_string()
+                })?;
+                operation(bridge)
+            });
+        match result {
+            Ok(value) => structured(value),
+            Err(error) => {
+                let (code, message) = error
+                    .split_once(": ")
+                    .unwrap_or(("agent.request_failed", error.as_str()));
+                tool_error(code, message)
+            }
+        }
+    }
+}
+
+fn structured(value: impl Serialize) -> rmcp::model::CallToolResult {
+    match serde_json::to_value(value) {
+        Ok(value) => rmcp::model::CallToolResult::structured(value),
+        Err(_) => tool_error(
+            "agent.response_encode",
+            "Tarik could not encode the response.",
+        ),
+    }
+}
+
+fn tool_error(code: &str, message: &str) -> rmcp::model::CallToolResult {
+    rmcp::model::CallToolResult::structured_error(serde_json::json!({
+        "code": code,
+        "message": message,
+        "retryable": matches!(
+            code,
+            "agent.authentication_required" | "agent.project_closed" | "agent.busy"
+        ),
+    }))
 }
 
 #[tool_handler(router = self.tool_router)]
@@ -252,5 +391,28 @@ mod tests {
         assert!(info.capabilities.tools.is_some());
         assert!(info.capabilities.prompts.is_none());
         assert!(info.capabilities.resources.is_none());
+    }
+
+    #[test]
+    fn discovery_contract_is_bounded_and_has_no_mutation_or_approval_tool() {
+        let server = TarikMcpServer::new("test".into(), "Test".into());
+        let tools = server.tool_router.list_all();
+        let names = tools
+            .iter()
+            .map(|tool| tool.name.as_ref())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            names,
+            [
+                "tarik_describe_relation",
+                "tarik_list_catalog",
+                "tarik_list_projects",
+                "tarik_server_info",
+            ]
+        );
+        let catalog = server.tool_router.get("tarik_list_catalog").unwrap();
+        assert_eq!(catalog.input_schema["properties"]["limit"]["maximum"], 100);
+        assert!(!names.iter().any(|name| name.contains("approve")));
+        assert!(!names.iter().any(|name| name.contains("query")));
     }
 }
