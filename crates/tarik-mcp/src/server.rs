@@ -629,6 +629,17 @@ fn connect_state(state: &mut ServerState) -> Result<TarikServerStatus, String> {
     match existing {
         Some(existing) => {
             let hello = bridge.hello(Some(&existing), &state.label, None)?;
+            if hello.state == HelloState::PairingRequired {
+                let profile_id = hello.profile_id.clone();
+                state.bridge = Some(bridge);
+                state.pending_pairing = Some(PendingPairing {
+                    hello,
+                    pairing_key: Zeroizing::new(existing.pairing_key.clone()),
+                    profile_dir,
+                    label: state.label.clone(),
+                });
+                return Ok(pairing_status(profile_id));
+            }
             let authenticated = bridge.authenticate(&hello, &existing.pairing_key)?;
             state.bridge = Some(bridge);
             Ok(authenticated_status(authenticated))
@@ -639,6 +650,14 @@ fn connect_state(state: &mut ServerState) -> Result<TarikServerStatus, String> {
             if hello.state != HelloState::PairingRequired {
                 return Err("Tarik did not create a pairing request".into());
             }
+            profile::save(
+                &profile_dir,
+                &ClientProfile {
+                    profile_id: hello.profile_id.clone(),
+                    client_label: state.label.clone(),
+                    pairing_key: pairing_key.to_string(),
+                },
+            )?;
             let profile_id = hello.profile_id.clone();
             state.bridge = Some(bridge);
             state.pending_pairing = Some(PendingPairing {

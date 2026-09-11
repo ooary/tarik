@@ -99,6 +99,7 @@ pub struct ApprovalRequestView {
 
 struct PendingPairing {
     id: String,
+    profile_id: String,
     display_name: String,
     connection_id: String,
     salt: [u8; 32],
@@ -355,6 +356,7 @@ impl AgentAccessManager {
                 pairing_id.clone(),
                 PendingPairing {
                     id: pairing_id.clone(),
+                    profile_id: profile_id.clone(),
                     display_name: display_name.trim().to_string(),
                     connection_id: connection_id.clone(),
                     salt,
@@ -378,6 +380,33 @@ impl AgentAccessManager {
                 challenge: hex(&challenge),
                 salt: hex(&salt),
                 pairing_request_id: Some(pairing_id),
+            });
+        }
+
+        if let Some(pending) = state
+            .pending
+            .values_mut()
+            .find(|pending| pending.profile_id == requested_profile_id)
+        {
+            pending.connection_id = connection_id.clone();
+            let salt = pending.salt;
+            let pairing_request_id = pending.id.clone();
+            state.connections.insert(
+                connection_id.clone(),
+                ConnectionRecord {
+                    profile_id: requested_profile_id.to_string(),
+                    challenge,
+                    created_at: Instant::now(),
+                    authenticated: false,
+                },
+            );
+            return Ok(HelloResult {
+                state: HelloState::PairingRequired,
+                connection_id,
+                profile_id: requested_profile_id.to_string(),
+                challenge: hex(&challenge),
+                salt: hex(&salt),
+                pairing_request_id: Some(pairing_request_id),
             });
         }
 
@@ -419,11 +448,7 @@ impl AgentAccessManager {
             let pending = state.pending.remove(pairing_id).ok_or_else(|| {
                 "agent.pairing_missing: The pairing request expired or was denied.".to_string()
             })?;
-            let profile_id = state
-                .connections
-                .get(&pending.connection_id)
-                .map(|connection| connection.profile_id.clone())
-                .ok_or_else(|| "agent.connection_stale: Pairing connection is gone.".to_string())?;
+            let profile_id = pending.profile_id.clone();
             (pending, profile_id)
         };
         let verifier = derive_verifier(&pending.pairing_key, &pending.salt);
@@ -2502,6 +2527,42 @@ mod tests {
         manager.shutdown();
         engine.shutdown();
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn pending_pairing_survives_mcp_host_connection_restart() {
+        let (manager, _) = fixture();
+        manager.set_enabled(true).unwrap();
+        let key = [7u8; 32];
+        let first = manager.hello("", "Pi", Some(&hex(&key))).unwrap();
+        manager.disconnect(&first.connection_id).unwrap();
+
+        let restarted = manager.hello(&first.profile_id, "Pi", None).unwrap();
+        assert_eq!(restarted.state, HelloState::PairingRequired);
+        assert_eq!(restarted.profile_id, first.profile_id);
+        assert_eq!(restarted.pairing_request_id, first.pairing_request_id);
+
+        manager
+            .approve_pairing(restarted.pairing_request_id.as_deref().unwrap())
+            .unwrap();
+        let stored = manager
+            .repository
+            .find_client(&restarted.profile_id)
+            .unwrap()
+            .unwrap();
+        let expected = challenge_proof(
+            &stored.secret_verifier,
+            &restarted.connection_id,
+            &parse_hex_array(&restarted.challenge).unwrap(),
+        )
+        .unwrap();
+        assert!(manager
+            .authenticate(
+                &restarted.connection_id,
+                &restarted.profile_id,
+                &hex(&expected),
+            )
+            .is_ok());
     }
 
     #[test]
