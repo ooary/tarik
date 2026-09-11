@@ -2209,7 +2209,7 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
 
 ## EPIC E15 — Local Agent Gateway (MCP) with non-bypassable approvals
 
-**Status:** `T0 IMPLEMENTED / DESIGN REVIEW REQUIRED` — The user authorized E15-T0 execution on September 11, 2026. The protocol, threat model, capability/effect policy, parser strategy, lifecycle budgets, implementation inventory, and complete Graph Protocol are documented in `docs/design/E15-DESIGN-GRAPH.md`. MCP source implementation remains unstarted; E15-T1 is blocked until the user explicitly accepts the durable T0 design. E13-T6/E12-T4 Windows acceptance continues independently and still blocks final cross-platform release claims.
+**Status:** `IMPLEMENTATION READY / CONSOLIDATED REVIEW REQUIRED` — The user accepted E15-T0 and authorized implementing E15-T1 through E15-T9 sequentially on September 11, 2026. T1-T8 and T9 automated/package preparation are implemented; one consolidated real-Tauri/manual review is now required. Approval-center and final UI work stays local and unpushed until that review. E13-T6/E12-T4 Windows acceptance continues independently and still blocks final cross-platform release claims.
 
 **Outcome:** Claude Desktop, Claude Code, Pi, and other standard MCP hosts can inspect explicitly granted local Tarik projects, run bounded analysis, and propose controlled workspace/data changes. Tarik remains model-independent and local-first. Read operations are fail-closed and bounded; mutations require a visible Tarik-owned one-use approval; critical destructive actions additionally require typed confirmation; unsupported or uncontrollable effects are blocked with no approval bypass.
 
@@ -2271,7 +2271,7 @@ Blocked
   - Commit: `docs(design): define guarded MCP agent gateway`
   - Notes: Implemented September 11, 2026 in `docs/design/E15-DESIGN-GRAPH.md`. The design pins stdio MCP 2025-06-18/2025-11-25, a host-managed `tarik-mcp` child, no TCP listener or competing DuckDB owner, HMAC challenge pairing with user-private credentials, explicit active-project grants, a dual `sqlparser` DuckDB AST plus pinned-DuckDB parser/type classifier, immutable snapshots, no MCP approval method, atomic one-use 120-second approvals, transactional mutation recovery, and bounded defaults for every connection/job/result/approval/audit lifecycle. A temporary parser spike confirmed distinct DuckDB AST coverage for representative read, DML, DDL, external, extension, secret, setting, transaction, macro, and multi-statement families; disagreement still fails closed. T1 remains blocked on explicit design acceptance.
 
-- [ ] **E15-T1 Add authenticated local bridge, pairing, and project grants**
+- [x] **E15-T1 Add authenticated local bridge, pairing, and project grants**
   - Depends on: E15-T0 approval
   - Owns: local endpoint lifecycle, client identity/pairing, project capability grants, Agent Access settings, revocation, and bridge tests
   - Deliverables:
@@ -2283,8 +2283,9 @@ Blocked
   - Acceptance: an unpaired, revoked, cross-user, wrong-project, or stale client cannot invoke a Tarik service; no endpoint remains after shutdown; revocation takes effect before subsequent work starts.
   - Tests: endpoint permissions, token entropy/rotation, pair/deny/reconnect, project isolation, capability downgrade, spoofed identity, replay, disconnect cleanup, concurrent clients, restart invalidation, and Windows/Linux packaged endpoint behavior.
   - Commit: `feat(mcp): add local pairing and project grants`
+  - Notes: Implemented a versioned private bridge protocol, schema-9 paired-client and project-grant repositories, persisted Agent Access setting, HMAC challenge authentication, bounded pairing/connection registries, revocation cleanup, user-private Unix socket endpoint, current-user Windows named-pipe ACL branch, shutdown integration, and a compact existing-design-system pairing/grant dialog. New clients receive no inferred grant; only the active visible project can be granted. Focused Rust, migration, UI, type, format, and Clippy gates pass. Off-host Windows cross-check remains limited by the existing native-MSVC build guard and must be run under E15-T9/E12-T4.
 
-- [ ] **E15-T2 Implement the native stdio MCP server and protocol conformance**
+- [x] **E15-T2 Implement the native stdio MCP server and protocol conformance**
   - Depends on: E15-T0, E15-T1
   - Owns: new `tarik-mcp` workspace crate/binary, MCP transport/router, schemas, desktop bridge client, process lifecycle, and conformance tests
   - Deliverables:
@@ -2296,8 +2297,9 @@ Blocked
   - Acceptance: Claude Desktop, Claude Code, Pi, and a generic MCP inspector can initialize, discover the same typed tool contract, receive structured errors, reconnect, and stop without orphan processes or resources.
   - Tests: official/independent MCP inspector where available, JSON-RPC golden fixtures, malformed/oversized input, cancellation, EOF, stderr/stdout separation, desktop unavailable, capability negotiation, reconnect, and process leak checks.
   - Commit: `feat(mcp): add native stdio server`
+  - Notes: Implemented in the `tarik-mcp` Rust binary with `rmcp` 3.3, standard stdio lifecycle, MCP 2025-06-18/2025-11-25 negotiation, private persistent client profiles, authenticated local-bridge pairing/reconnect, protocol-only stdout, clean EOF exit, actionable unavailable status, typed schema discovery, and subprocess conformance coverage. The initial server exposes only status and discovery-family tools; no executable SQL or approval method exists.
 
-- [ ] **E15-T3 Expose safe project and catalog discovery tools**
+- [x] **E15-T3 Expose safe project and catalog discovery tools**
   - Depends on: E15-T2
   - Owns: `tarik_server_info`, project list/detail, bounded catalog search/list, relation description, resource identifiers, and authorization filters
   - Deliverables:
@@ -2308,8 +2310,9 @@ Blocked
   - Acceptance: agents can identify an approved relation and its schema without receiving data rows, hidden filesystem details, another project's metadata, or unbounded catalog output.
   - Tests: zero/one/many projects, ambiguous names, Unicode/long identifiers, missing links, wide catalogs, pagination/byte caps, grant filtering, revocation during call, and no-engine/no-scan behavior.
   - Commit: `feat(mcp): expose guarded catalog discovery`
+  - Notes: Implemented explicit authenticated bridge and MCP methods for granted-project identity, bounded catalog relation pages, and bounded relation-column pages. Every catalog/describe call checks the live Inspect grant and active project before and after inspection; responses omit project/source paths, include conservative registered-source state, enforce 100-entry/256-KiB caps, and use HMAC-bound opaque continuation cursors tied to project, catalog revision, and relation identity. Discovery invokes only existing catalog metadata inspection and never query execution.
 
-- [ ] **E15-T4 Add bounded read-only query, result, and query-flow tools**
+- [x] **E15-T4 Add bounded read-only query, result, and query-flow tools**
   - Depends on: E15-T3, E15-T5 classifier contract
   - Owns: query proposal/start/status/cancel, page/release, Estimate/Actual Flow tools, client ownership, budgets, and result cleanup
   - Deliverables:
@@ -2321,8 +2324,9 @@ Blocked
   - Acceptance: an agent can run, inspect, cancel, and release a large read while desktop memory/disk remain bounded; it cannot access another client's execution or bypass project/source policy.
   - Tests: success/DML-rejection/DDL-rejection/external-read rejection, queued/running/cancelled/error, first/later page, byte/row limit, truncation/NULL fidelity, ownership, expiry, disconnect/restart/revoke cleanup, flow bounds, and fixed-workload memory/residue.
   - Commit: `feat(mcp): add bounded analysis tools`
+  - Notes: Implemented immutable classify-then-start SafeRead tools plus owner-checked status, cancellation, bounded page reads, and explicit result release. Query start accepts only a one-use server-held snapshot ID, reclassifies against the current stronger catalog revision, and never accepts resent SQL. The engine applies a 5,000-row execution cap without rewriting SQL, reports capped totals as inexact, preserves NULL and truncation metadata, and bounds pages to 500 rows/1 MiB. Desktop ownership allows one active query/result per connection and four globally with a 60-second deadline. Estimate/Actual Flow was completed in follow-up commit `1788943`: both consume one-use owner-bound SafeRead snapshots, Estimate uses non-executing EXPLAIN, and Actual explicitly uses bounded EXPLAIN ANALYZE.
 
-- [ ] **E15-T5 Implement parser-backed effect classification and fail-closed policy**
+- [x] **E15-T5 Implement parser-backed effect classification and fail-closed policy**
   - Depends on: E15-T0 approval
   - Owns: immutable SQL snapshots, DuckDB-dialect parsing/classification, affected-object extraction, source-aware external access, policy decisions, and adversarial fixtures
   - Deliverables:
@@ -2334,8 +2338,9 @@ Blocked
   - Acceptance: every adversarial fixture has one deterministic effect decision and reason; unsupported future syntax fails closed; no mutation/external effect reaches SafeRead.
   - Tests: every DuckDB statement family, nested mutation CTEs, comments/quotes/dollar strings, macros/table functions, registered versus arbitrary files, URLs, extensions/secrets, PRAGMAs/settings, prepared/bind failures, Unicode identifiers, multiple statements, parser disagreement, and fuzz/property corpus.
   - Commit: `feat(mcp): classify SQL effects fail closed`
+  - Notes: Implemented in the pinned DuckDB sidecar with `sqlparser` 0.62 `DuckDbDialect`, bounded recursion/input, exactly-one-statement enforcement, an independent DuckDB `json_serialize_sql` parser-family check, non-executing DuckDB EXPLAIN bind/plan for SafeRead, conservative relation/function/source provenance, and a stronger `agent-v1-*` catalog/function/registered-source revision. Unknown relations, ordinary views/macros/functions, external readers/URLs, extensions, secrets, raw COPY/ATTACH, settings/PRAGMA/CALL, transactions, dynamic targets, and parser disagreement are blocked with no approval fallback. Known DML/DDL is separated into approval or critical-confirmation classes; unfiltered UPDATE/DELETE and destructive/replacement DDL are critical. The existing lexical validator remains separate defense-in-depth only.
 
-- [ ] **E15-T6 Add the Tarik approval center and one-use critical confirmations**
+- [x] **E15-T6 Add the Tarik approval center and one-use critical confirmations**
   - Depends on: E15-T1, E15-T5
   - Owns: bounded approval registry, immutable hash/revision binding, approval UI, typed confirmation, expiry/denial/revocation, and accessibility tests
   - Deliverables:
@@ -2347,8 +2352,9 @@ Blocked
   - Acceptance: the user approves the exact server-held snapshot once; an agent cannot approve, modify, replay, transfer, race, or reuse it; destructive approval can never be remembered.
   - Tests: approve/deny/dismiss/expire, typed phrase, hash/client/connection/project/revision mismatch, replay/concurrency, registry full, catalog drift, disconnect/revoke/restart, no approve tool, focus/keyboard/screen reader, themes/DPI/minimum viewport, and no hidden execution.
   - Commit: `feat(mcp): require Tarik-owned action approval`
+  - Notes: Implemented a bounded volatile approval registry (16 global, 4/client), immutable SQL/client/connection/project/catalog/risk binding, SHA-256 snapshot hashes, 120-second expiry, owner-only MCP status, and direct Tarik-only approve/deny commands. Critical classifications receive a random server-generated typed phrase and cannot be approved until it matches exactly. The Agent Access review candidate shows exact SQL, client/project, objects, filter state, hash, countdown, denial, and approve-once controls. Critical input blocks paste and requires exact typing. MCP exposes proposal/status/execute-by-ID but no approval operation; T7 supplies the transactional execution lane.
 
-- [ ] **E15-T7 Execute approved mutations atomically and retain a bounded local audit**
+- [x] **E15-T7 Execute approved mutations atomically and retain a bounded local audit**
   - Depends on: E15-T5, E15-T6
   - Owns: exclusive mutation lane, atomic approval claim, transactional execution, cancellation/rollback, catalog/cache invalidation, audit migration/repository, and recovery states
   - Deliverables:
@@ -2361,8 +2367,9 @@ Blocked
   - Acceptance: success commits once; error/cancel rolls back or enters an explicit critical state; concurrent work cannot observe a falsely completed mutation; audit is project/client isolated, bounded, restart-safe, and truthful.
   - Tests: insert/update/delete/merge/create/alter/drop/truncate matrix, filtered/unfiltered risk, commit/error/cancel/rollback-failure injection, exactly-once claim, concurrent executions, catalog/cache invalidation, restart recovery, retention/project isolation, log redaction, and audit-clear isolation.
   - Commit: `feat(mcp): execute approved changes with audit`
+  - Notes: Implemented atomic in-memory approval claim before execution, same connection/client/project/capability/revision revalidation, and a synchronous exclusive sidecar mutation lane that rejects concurrent query/export/profile work. The sidecar reclassifies the exact server-held SQL, executes it in one DuckDB transaction, commits once, and returns catalog/row facts; failures roll back via the transaction guard. This serialization means subsequent jobs clone only after mutation completion/catalog visibility. Schema 10 adds bounded per-project audit facts without SQL/values. Catalog drift, ownership mismatch, replay, disconnect, revoke, project close, disable, and shutdown fail closed; terminal audit failure is surfaced as critical recovery rather than false success. Follow-up commit `1788943` adds explicit rollback-failure detection and a project-scoped critical mutation freeze until close/reopen. Native sidecar process-loss and rollback-failure injection remain manual/adversarial review evidence and are not claimed as run.
 
-- [ ] **E15-T8 Expose guarded Profile, Quality, and saved-query workflows**
+- [x] **E15-T8 Expose guarded Profile, Quality, and saved-query workflows**
   - Depends on: E15-T3, E15-T4, E15-T7
   - Owns: profile and quality inspection tools, current-data failure previews, approved definition/run/save actions, and open-without-execution handoff
   - Deliverables:
@@ -2374,8 +2381,9 @@ Blocked
   - Acceptance: an agent can investigate data trust and prepare reusable artifacts without losing provenance/revision truth, persisting failure rows, silently executing SQL, or bypassing workspace approval.
   - Tests: profile bounds/provenance/cancel, quality revision/history/current-data labels, custom confirmation, definition/save approval and denial, open-without-run, stale targets, preview release, restart, and privacy/resource regression.
   - Commit: `feat(mcp): expose guarded data trust workflows`
+  - Notes: Implemented owner-bound Profile start/status/cancel against exact granted catalog relation identity using existing 100-column/provenance/256-KiB constraints; disconnect/project-close cleanup cancels tracked profiles. Added bounded read-only Quality definition and aggregate run-history tools that never persist or expose failure rows, plus bounded saved-query listing gated by Modify workspace and explicitly documented as open/run-free. Direct MCP CRUD for checks/saved queries, custom check execution, suite execution, editor handoff, and failure-preview workflows remain blocked rather than mirroring broad metadata commands; those typed mutation surfaces require a future action-specific immutable schema and cannot be claimed in v1 without it.
 
-- [ ] **E15-T9 Package and review the complete MCP agent workflow**
+- [ ] **E15-T9 Package and review the complete MCP agent workflow** — implementation/package evidence ready; manual sign-off open
   - Depends on: E15-T2, E15-T3, E15-T4, E15-T5, E15-T6, E15-T7, E15-T8
   - Owns: `docs/review/E15-MCP-AGENT-GATEWAY.md`, client setup guides, deterministic fixtures, Linux/Windows packaging, protocol/security evidence, and manual sign-off
   - Deliverables:
@@ -2387,6 +2395,7 @@ Blocked
   - Acceptance: each supported host uses the same standard tools and guardrails; all safe, approval, critical, blocked, cancellation, rollback, disconnect, and recovery states are truthful; no orphan MCP/engine process or result/approval residue remains; user explicitly signs off E15.
   - Tests: MCP conformance and adversarial corpus, full frontend/Node/Rust/docs/package gates, real sidecar workflow, fixed memory/disk budgets, Windows/Linux process cleanup, and signed manual checklist.
   - Commit: `docs(review): add guarded MCP acceptance packet`
+  - Notes: Added `docs/user/MCP-AGENT-SETUP.md` for Claude Desktop, Claude Code, Pi, Cursor/VS Code, and generic stdio hosts; packaged `tarik-mcp` in Linux portable/DEB/AppImage and the Windows portable specification; updated compatibility to metadata schema 10; and added `docs/review/E15-MCP-AGENT-GATEWAY.md`. Full Linux gates pass: Cargo workspace/all-target tests and Clippy, 216 UI tests, 36 Node tests, production build, typecheck, docs, formatting, engine check, and Linux tar/DEB/AppImage build/content/startup/checksums. ESLint has only two pre-existing warnings. No native Windows runtime, real external-host launch, visual/accessibility/DPI review, or user sign-off is claimed; therefore T9 remains unchecked.
 
 **Explicitly deferred beyond E15:** Embedded chat/model APIs, model credentials, remote/HTTP MCP transport, headless project ownership without Tarik, remembered destructive approval, unrestricted SQL/filesystem/network access, extension installation, secret management, automatic repair, arbitrary project/file deletion, and multi-agent collaboration are not part of E15.
 
