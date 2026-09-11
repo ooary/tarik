@@ -1,3 +1,4 @@
+mod agent_policy;
 mod catalog;
 mod error;
 pub mod export;
@@ -91,6 +92,23 @@ fn dispatch(
             let session_id = required_string(params, "sessionId")?;
             let connection = sessions.get(&session_id)?;
             Ok(serde_json::to_value(catalog::inspect(connection)?)?)
+        }
+        "agent.sql.classify" => {
+            let session_id = required_string(params, "sessionId")?;
+            let sql = required_string(params, "sql")?;
+            let registered_sources: Vec<tarik_engine_protocol::AgentRegisteredSource> =
+                serde_json::from_value(
+                    params
+                        .get("registeredSources")
+                        .cloned()
+                        .unwrap_or_else(|| Value::Array(Vec::new())),
+                )?;
+            let connection = sessions.get(&session_id)?;
+            Ok(serde_json::to_value(agent_policy::classify(
+                connection,
+                &sql,
+                &registered_sources,
+            )?)?)
         }
         "catalog.create_table" => {
             let session_id = required_string(params, "sessionId")?;

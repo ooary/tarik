@@ -16,6 +16,7 @@ serde_json.workspace = true
 thiserror.workspace = true
 uuid.workspace = true
 duckdb.workspace = true
+sqlparser.workspace = true
 glob = "0.3"
 arrow-ipc = "58"
 arrow-csv = "58"

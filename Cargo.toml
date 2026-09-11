@@ -59,6 +59,7 @@ interprocess = "2.4"
 tokio = "1"
 rmcp = { version = "3.3", default-features = false }
 schemars = "1"
+sqlparser = { version = "0.62", features = ["visitor"] }
 libc = "0.2"
 widestring = "1.2"
 duckdb = { version = "~1.10505.0" }

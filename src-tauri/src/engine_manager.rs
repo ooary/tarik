@@ -7,9 +7,9 @@ use serde::Serialize;
 use serde_json::Value;
 use tarik_engine_client::EngineProcess;
 use tarik_engine_protocol::{
-    CatalogSnapshot, CreateTableDefinition, CsvOptions, EffectiveEngineResources,
-    EngineResourceSettings, ExportOptions, ExportStatus, ImportOptions, ProfileRequest,
-    ProfileStatus, ProjectLocator, SourceInspection, SourceRecord, SqlValidation,
+    AgentSqlClassification, CatalogSnapshot, CreateTableDefinition, CsvOptions,
+    EffectiveEngineResources, EngineResourceSettings, ExportOptions, ExportStatus, ImportOptions,
+    ProfileRequest, ProfileStatus, ProjectLocator, SourceInspection, SourceRecord, SqlValidation,
 };
 
 pub struct EngineManager {
@@ -295,6 +295,22 @@ impl EngineManager {
     pub fn catalog(&self) -> Result<CatalogSnapshot, String> {
         let value = self.session_request("catalog.inspect", serde_json::json!({}))?;
         serde_json::from_value(value).map_err(|error| format!("catalog decode failed: {error}"))
+    }
+
+    pub fn classify_agent_sql(
+        &self,
+        sql: &str,
+        registered_sources: &[tarik_engine_protocol::AgentRegisteredSource],
+    ) -> Result<AgentSqlClassification, String> {
+        let value = self.session_request(
+            "agent.sql.classify",
+            serde_json::json!({
+                "sql": sql,
+                "registeredSources": registered_sources,
+            }),
+        )?;
+        serde_json::from_value(value)
+            .map_err(|error| format!("agent SQL classification decode failed: {error}"))
     }
 
     pub fn create_table(&self, definition: &CreateTableDefinition) -> Result<(), String> {

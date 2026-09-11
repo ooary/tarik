@@ -22,6 +22,7 @@ pub const MAX_PROFILE_SCALAR_BATCH_COLUMNS: usize = 25;
 pub const MAX_PROFILE_VALUES: usize = 20;
 pub const MAX_PROFILE_VALUE_BYTES: usize = 64 * 1024;
 pub const MAX_PROFILE_SNAPSHOT_BYTES: usize = 256 * 1024;
+pub const MAX_AGENT_SQL_BYTES: usize = 256 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -681,6 +682,37 @@ pub struct ResultInfo {
     pub row_count_exact: bool,
     /// Location of the bounded page artifact directory.
     pub page_dir: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentSqlDecision {
+    SafeRead,
+    ApprovalRequired,
+    CriticalConfirmation,
+    Blocked,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentRegisteredSource {
+    pub source_id: String,
+    pub database: String,
+    pub schema: String,
+    pub name: String,
+    pub kind: String,
+    pub state: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentSqlClassification {
+    pub decision: AgentSqlDecision,
+    pub reason_code: String,
+    pub statement_type: String,
+    pub catalog_revision: String,
+    pub affected_objects: Vec<String>,
+    pub has_top_level_filter: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
