@@ -1,0 +1,28 @@
+[package]
+name = "tarik-mcp"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "tarik-mcp"
+path = "src/main.rs"
+
+[dependencies]
+tarik-agent-protocol = { path = "../agent-protocol" }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+uuid.workspace = true
+sha2.workspace = true
+hmac.workspace = true
+zeroize.workspace = true
+getrandom.workspace = true
+interprocess.workspace = true
+rmcp = { workspace = true, default-features = false, features = ["server", "macros", "transport-io"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "io-std"] }
+schemars.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+libc.workspace = true

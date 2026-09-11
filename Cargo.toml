@@ -3,6 +3,7 @@ resolver = "2"
 members = [
   "src-tauri",
   "crates/agent-protocol",
+  "crates/tarik-mcp",
   "crates/engine-protocol",
   "crates/engine-client",
   "engines/duckdb",
@@ -13,6 +14,7 @@ members = [
 default-members = [
   "src-tauri",
   "crates/agent-protocol",
+  "crates/tarik-mcp",
   "crates/engine-protocol",
   "crates/engine-client",
 ]
@@ -54,6 +56,9 @@ hmac = "0.12"
 zeroize = "1.9"
 getrandom = "0.3"
 interprocess = "2.4"
+tokio = "1"
+rmcp = { version = "3.3", default-features = false }
+schemars = "1"
 libc = "0.2"
 widestring = "1.2"
 duckdb = { version = "~1.10505.0" }
