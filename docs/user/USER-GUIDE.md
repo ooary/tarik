@@ -8,7 +8,7 @@ The E11 Linux build produces three x86_64 choices:
 
 - **AppImage**: make it executable and run it from any folder;
 - **DEB**: install on a compatible Debian/Ubuntu system;
-- **portable tarball**: extract and run `tarik`; keep `tarik-engine-duckdb` and `libduckdb.so` beside it.
+- **portable tarball**: extract and run `tarik`; keep `tarik-mcp`, `tarik-engine-duckdb`, and `libduckdb.so` beside it.
 
 Linux requires a glibc-compatible x86_64 userspace, GTK 3, and WebKitGTK 4.1. Artifacts are currently unsigned; verify the file against `SHA256SUMS` from the same release directory:
 

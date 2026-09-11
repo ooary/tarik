@@ -7,6 +7,7 @@ export const WINDOWS_TARGET = "x86_64-pc-windows-msvc";
 export const PORTABLE_FILES = [
   "Tarik.exe",
   "tarik-engine-duckdb.exe",
+  "tarik-mcp.exe",
   "duckdb.dll",
   "README.md",
   "COMPATIBILITY.md",
@@ -56,7 +57,12 @@ export async function assertPortableContents(root) {
       `portable contents differ\nexpected: ${expected.join(", ")}\nobserved: ${observed.join(", ")}`,
     );
   }
-  for (const executable of ["Tarik.exe", "tarik-engine-duckdb.exe", "duckdb.dll"]) {
+  for (const executable of [
+    "Tarik.exe",
+    "tarik-engine-duckdb.exe",
+    "tarik-mcp.exe",
+    "duckdb.dll",
+  ]) {
     const file = path.join(root, executable);
     if ((await stat(file)).size < 2) throw new Error(`${executable} is empty`);
     if ((await readFile(file)).subarray(0, 2).toString("ascii") !== "MZ") {
@@ -97,7 +103,7 @@ export function portableManifest({ version, revision, archive, bytes, digest }) 
     checksums: "SHA256SUMS",
     artifacts: [{ file: archive, bytes, sha256: digest }],
     compatibility: {
-      metadataSchemaVersion: 8,
+      metadataSchemaVersion: 10,
       engineProtocolVersion: 1,
       duckdbVersion: "1.5.5",
     },

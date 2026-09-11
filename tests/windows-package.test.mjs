@@ -47,7 +47,12 @@ test("portable contents are exact and reject missing or extra files", async () =
   await mkdir(root, { recursive: true });
   try {
     for (const file of PORTABLE_FILES) {
-      const bytes = ["Tarik.exe", "tarik-engine-duckdb.exe", "duckdb.dll"].includes(file)
+      const bytes = [
+        "Tarik.exe",
+        "tarik-engine-duckdb.exe",
+        "tarik-mcp.exe",
+        "duckdb.dll",
+      ].includes(file)
         ? `MZ${file}`
         : file;
       await writeFile(path.join(root, file), bytes);

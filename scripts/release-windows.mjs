@@ -59,7 +59,8 @@ try {
   const targetRelease = path.join(root, "target", "release");
   await copyFile(duckdbDll, path.join(targetRelease, "duckdb.dll"));
 
-  console.log("==> Compile Tauri Windows release executable");
+  console.log("==> Compile MCP adapter and Tauri Windows release executable");
+  await run("cargo", ["build", "-p", "tarik-mcp", "--release"], { cwd: root });
   await run("cargo", ["clean", "-p", "tarik", "--release"], { cwd: root });
   await run(
     process.execPath,
@@ -103,6 +104,7 @@ try {
   const copies = [
     [path.join(targetRelease, "tarik.exe"), "Tarik.exe"],
     [path.join(targetRelease, "tarik-engine-duckdb.exe"), "tarik-engine-duckdb.exe"],
+    [path.join(targetRelease, "tarik-mcp.exe"), "tarik-mcp.exe"],
     [duckdbDll, "duckdb.dll"],
     [path.join(root, "docs", "release", "WINDOWS-PORTABLE-README.md"), "README.md"],
     [path.join(root, "docs", "release", "COMPATIBILITY.md"), "COMPATIBILITY.md"],

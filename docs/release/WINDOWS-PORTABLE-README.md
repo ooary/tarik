@@ -5,7 +5,7 @@ Tarik is a local-first DuckDB SQL workbench. This package contains the desktop a
 ## Start Tarik
 
 1. Extract the entire ZIP to a normal writable folder, such as `Documents\Tarik`.
-2. Keep `Tarik.exe`, `tarik-engine-duckdb.exe`, and `duckdb.dll` together in that folder.
+2. Keep `Tarik.exe`, `tarik-mcp.exe`, `tarik-engine-duckdb.exe`, and `duckdb.dll` together in that folder.
 3. Double-click `Tarik.exe`.
 
 Do not launch Tarik from inside the ZIP preview. No installer, administrator access, Node.js, Rust, or terminal command is required.
@@ -14,7 +14,7 @@ Tarik requires Windows 10 or Windows 11 x64 and Microsoft Edge WebView2 Runtime.
 
 ## Offline and local data
 
-Tarik does not download DuckDB and does not require an account. The bundled `tarik-engine-duckdb.exe` starts in the background when you create or open a project.
+Tarik does not download DuckDB and does not require an account. The bundled `tarik-engine-duckdb.exe` starts in the background when you create or open a project. MCP hosts start `tarik-mcp.exe` as a stdio child only when configured; Tarik must already be running with Agent Access enabled.
 
 Tarik operational data is stored under your Windows application-data directories. DuckDB projects, CSV/Parquet sources, and completed exports remain in locations you choose. Deleting the extracted application folder does not automatically delete those files or your AppData metadata.
 

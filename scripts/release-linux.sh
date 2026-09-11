@@ -28,11 +28,13 @@ CHECKSUMS="$STAGE/SHA256SUMS"
 rm -rf "$STAGE"
 mkdir -p "$STAGE" "$PORTABLE"
 
-printf '==> Build and stage DuckDB sidecar\n'
+printf '==> Build and stage DuckDB sidecar and MCP adapter\n'
 CARGO_BUILD_PROFILE=release ./scripts/build-engine.sh
 cp target/release/tarik-engine-duckdb "src-tauri/binaries/tarik-engine-duckdb-$TARGET_TRIPLE"
+cargo build -p tarik-mcp --release
+cp target/release/tarik-mcp "src-tauri/binaries/tarik-mcp-$TARGET_TRIPLE"
 cp target/release/libduckdb.so "src-tauri/binaries/libduckdb.so-$TARGET_TRIPLE"
-trap 'rm -f "src-tauri/binaries/tarik-engine-duckdb-$TARGET_TRIPLE" "src-tauri/binaries/libduckdb.so-$TARGET_TRIPLE"' EXIT
+trap 'rm -f "src-tauri/binaries/tarik-engine-duckdb-$TARGET_TRIPLE" "src-tauri/binaries/tarik-mcp-$TARGET_TRIPLE" "src-tauri/binaries/libduckdb.so-$TARGET_TRIPLE"' EXIT
 
 printf '==> Verify sidecar runtime link\n'
 readelf -d target/release/tarik-engine-duckdb | grep -Eq '\((RPATH|RUNPATH)\).*\$ORIGIN'
@@ -63,6 +65,7 @@ rm "$STAGE/cargo-metadata.json"
 printf '==> Assemble portable archive\n'
 cp target/release/tarik "$PORTABLE/"
 cp target/release/tarik-engine-duckdb "$PORTABLE/tarik-engine-duckdb"
+cp target/release/tarik-mcp "$PORTABLE/tarik-mcp"
 cp target/release/libduckdb.so "$PORTABLE/libduckdb.so"
 cp LICENSE THIRD_PARTY_NOTICES.md README.md "$PORTABLE/"
 cp docs/release/COMPATIBILITY.md "$PORTABLE/COMPATIBILITY.md"
@@ -104,7 +107,7 @@ DEB=$(find "$STAGE" -maxdepth 1 -name '*.deb' -print -quit)
 APPIMAGE=$(find "$STAGE" -maxdepth 1 -name '*.AppImage' -print -quit)
 DEB_CONTENTS="$STAGE/.deb-contents"
 ar p "$DEB" data.tar.gz | tar -tzf - > "$DEB_CONTENTS"
-for expected in usr/bin/tarik usr/bin/tarik-engine-duckdb usr/bin/libduckdb.so usr/lib/Tarik/COMPATIBILITY.md usr/lib/Tarik/THIRD_PARTY_NOTICES.md; do
+for expected in usr/bin/tarik usr/bin/tarik-engine-duckdb usr/bin/tarik-mcp usr/bin/libduckdb.so usr/lib/Tarik/COMPATIBILITY.md usr/lib/Tarik/THIRD_PARTY_NOTICES.md; do
   grep -Fx "$expected" "$DEB_CONTENTS" >/dev/null
 done
 rm "$DEB_CONTENTS"
@@ -144,7 +147,7 @@ manifest={
   'signed':False,
   'checksums':'SHA256SUMS',
   'artifacts':artifacts,
-  'compatibility':{'metadataSchemaVersion':8,'engineProtocolVersion':1,'duckdbVersion':'1.5.5'},
+  'compatibility':{'metadataSchemaVersion':10,'engineProtocolVersion':1,'duckdbVersion':'1.5.5'},
   'runtime':{'linux':['WebKitGTK 4.1','GTK 3','glibc-compatible x86_64 userspace']},
   'deferredReleaseGates':['E6 final review','E7 final review','E10 manual review']
 }
