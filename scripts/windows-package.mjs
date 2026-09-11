@@ -113,7 +113,7 @@ export function portableManifest({ version, revision, archive, bytes, digest }) 
     checksums: "SHA256SUMS",
     artifacts: [{ file: archive, bytes, sha256: digest }],
     compatibility: {
-      metadataSchemaVersion: 10,
+      metadataSchemaVersion: 11,
       engineProtocolVersion: 1,
       duckdbVersion: "1.5.5",
     },

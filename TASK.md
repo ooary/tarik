@@ -2403,7 +2403,7 @@ Blocked
 
 ## EPIC E15.1 — Agent Connection Assistant, Usage Guidance, and Guarded Export Delegation
 
-**Status:** `IN PROGRESS / T1 REVIEW` — The user approved the E15.1 task plan and durable T0 design on September 11, 2026. The T1 setup engine is committed locally; the combined connection-assistant UI remains an uncommitted review candidate. T0/T1 completion still requires native Windows host/config/process evidence and explicit real-Tauri UI sign-off. E15 consolidated review remains independently open.
+**Status:** `IN PROGRESS / T1 REVIEW / T3 CANDIDATE` — The user approved the E15.1 task plan and durable T0 design on September 11, 2026. The T1 setup engine and T2 portable guidance are committed locally; the T3 destination-grant backend/protocol candidate is implemented. The combined connection-assistant, optional-guidance, and destination-policy UI remains an uncommitted review candidate. T0/T1 completion still requires native Windows host/config/process evidence and explicit real-Tauri UI sign-off. E15 consolidated review remains independently open.
 
 **Outcome:** A beginner can connect Tarik to supported Windows MCP hosts without editing JSON, optionally install portable Tarik usage guidance, and let an agent export a complete immutable SafeRead query to a bounded user-created destination grant. Tarik continues to own pairing, project permissions, destination selection, export policy, destructive approval, execution, recovery, and audit.
 
@@ -2483,7 +2483,8 @@ Blocked
   - UI gate: keep the complete assistant local and unpushed until real-Tauri review.
   - Notes: Added a bounded one-use `AgentSetupManager`; strict current-user executable/config ownership and reparse checks on Windows; direct no-shell Claude Code/Codex adapters; receipt-bound configure/repair/remove; strict real-output parsers; safe Claude Desktop JSON merge; create-new synced backups; atomic replace; three-backup retention; compare-before-rollback recovery; guided fallback; and host-probe isolation. Isolated temporary-home probes captured Claude Code 2.1.231 and Codex 0.149.1 add/get/list contracts without touching real user configuration. Automated gates pass: 10 focused setup regressions, full Cargo workspace/all-target tests and Clippy, 218 UI tests, 37 Node tests, typecheck, production build, formatting, docs, engine check, and diff checks. ESLint retains only two pre-existing warnings. Cross-compiling the desktop to Windows MSVC remains unavailable from this Linux host because the native MSVC/SQLite linker is absent; no native Windows evidence is claimed.
 
-- [ ] **E15.1-T2 Ship portable Tarik usage guidance**
+- [x] **E15.1-T2 Ship portable Tarik usage guidance**
+  - Status: Implemented and committed locally as `ec2bc61` on September 11, 2026. Native host/UI evidence remains tracked by T0/T1/T5 rather than this portable guidance unit.
   - Depends on: E15.1-T0 approval, E15.1-T1 host model
   - Owns: concise MCP instructions, MCP prompts, Agent Skills package, compatibility/install/remove adapters, and guidance review
   - Deliverables:
@@ -2496,8 +2497,10 @@ Blocked
   - Acceptance: guided agents consistently inspect/classify/use IDs/poll/release and describe limits truthfully, while ignoring the skill cannot weaken backend enforcement; installing or removing guidance never changes pairing or project permissions.
   - Tests: prompt/schema goldens, Agent Skill validation, host install/remove fixtures, prompt-injection rows, capped-vs-full-export language, no-approval claims, and representative model workflow evaluation.
   - Commit: `feat(mcp): add portable agent usage guidance`
+  - Notes: Added seven static bounded MCP prompts, concise server instructions, the packaged `tarik-mcp/SKILL.md`, Pi-only exact-content install/remove plans and receipts, foreign-content/symlink/collision refusal, settings receipt deletion, optional guidance review UI, and Linux/Windows package inclusion. Full Rust/UI/Node/type/build/docs/package checks passed; installing/removing guidance does not pair clients or grant projects.
 
 - [ ] **E15.1-T3 Add reusable export destination grants**
+  - Status: Linux-developed implementation candidate. Schema/repository/path policy, private bridge v2 listing, public listing-only MCP tool, typed desktop commands, native picker flow, and destination policy UI are implemented. Backend/protocol/docs may be committed after full validation; the UI remains uncommitted pending real-Tauri and native Windows review.
   - Depends on: E15.1-T0 approval
   - Owns: destination-grant migration/repository, native folder selection, policy editor, opaque identity, revocation/repair, and authorization checks
   - Deliverables:
@@ -2511,6 +2514,7 @@ Blocked
   - Tests: client/project isolation, ID guessing, local/network/root/app-data/symlink paths, moved/missing directory, format/chunk/byte bounds, collision, revoke/disable/restart, path redaction, and native Windows/Linux picker behavior.
   - Commit: `feat(mcp): add delegated export destinations`
   - UI gate: keep destination-policy UI local and unpushed until real-Tauri review.
+  - Notes: Metadata schema 11 stores non-serializable canonical paths and directory identities behind opaque UUIDs; grants require a paired client, active project, and Analyze, cap at eight per client/project, and cascade on Analyze/grant/client removal. Desktop policy rejects roots, symlinked/reparse ancestors, non-user ownership, remote/network filesystem classes, and Tarik/project overlap; identity is revalidated before readiness/enabling/listing. Bridge protocol v2 and `tarik_list_export_destinations` expose only redacted listing. Focused evidence covers revision/restart/limit/cascade, picker create/repair, cross-owner denial, path redaction, unsafe paths, MCP schema allowlisting, modal lifecycle, typecheck, and owner-bound command calls. Native Windows picker/ACL/reparse/filesystem evidence and real-Tauri UI sign-off remain open, so T3 is unchecked.
 
 - [ ] **E15.1-T4 Expose typed guarded full-query export tools**
   - Depends on: E15.1-T2, E15.1-T3, existing E9 export coordinator, existing E15 classifier/ownership/approval/audit contracts

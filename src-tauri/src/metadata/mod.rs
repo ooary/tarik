@@ -1,4 +1,5 @@
 pub mod agent;
+pub mod agent_destinations;
 pub mod commands;
 mod migrations;
 pub mod projects;
@@ -15,7 +16,7 @@ use std::{
 
 use rusqlite::{Connection, OpenFlags};
 
-pub const LATEST_SCHEMA_VERSION: u32 = 10;
+pub const LATEST_SCHEMA_VERSION: u32 = 11;
 
 #[derive(Debug, thiserror::Error)]
 pub enum MetadataError {

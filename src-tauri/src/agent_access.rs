@@ -1680,6 +1680,16 @@ impl AgentAccessManager {
         Ok((profile_id, grants))
     }
 
+    pub(crate) fn require_analyze_identity(
+        &self,
+        connection_id: &str,
+        project_id: &str,
+    ) -> Result<String, String> {
+        self.require_capability(connection_id, project_id, |grant| grant.analyze, "Analyze")?;
+        self.authenticated_connection(connection_id)
+            .map(|(profile_id, _)| profile_id)
+    }
+
     fn require_inspect(&self, connection_id: &str, project_id: &str) -> Result<(), String> {
         self.require_capability(connection_id, project_id, |grant| grant.inspect, "Inspect")
     }

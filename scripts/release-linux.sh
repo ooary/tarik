@@ -149,7 +149,7 @@ manifest={
   'signed':False,
   'checksums':'SHA256SUMS',
   'artifacts':artifacts,
-  'compatibility':{'metadataSchemaVersion':10,'engineProtocolVersion':1,'duckdbVersion':'1.5.5'},
+  'compatibility':{'metadataSchemaVersion':11,'engineProtocolVersion':1,'duckdbVersion':'1.5.5'},
   'runtime':{'linux':['WebKitGTK 4.1','GTK 3','glibc-compatible x86_64 userspace']},
   'deferredReleaseGates':['E6 final review','E7 final review','E10 manual review']
 }

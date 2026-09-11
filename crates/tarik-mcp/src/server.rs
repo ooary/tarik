@@ -44,6 +44,12 @@ pub struct EmptyRequest {}
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
+pub struct ProjectRequest {
+    pub project_id: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct CatalogRequest {
     pub project_id: String,
     #[serde(default)]
@@ -264,6 +270,17 @@ impl TarikMcpServer {
         Parameters(_request): Parameters<EmptyRequest>,
     ) -> Result<rmcp::model::CallToolResult, rmcp::ErrorData> {
         Ok(self.bridge_call(|bridge| bridge.list_projects()))
+    }
+
+    #[tool(
+        name = "tarik_list_export_destinations",
+        description = "List only redacted export destination grants for this authenticated client and explicitly granted active project. Returns opaque destination IDs, labels, allowed CSV/Parquet formats, quotas, create-new-only policy, and readiness. Absolute paths are never returned. This tool cannot create, edit, repair, enable, disable, revoke, or select a destination."
+    )]
+    fn list_export_destinations(
+        &self,
+        Parameters(request): Parameters<ProjectRequest>,
+    ) -> Result<rmcp::model::CallToolResult, rmcp::ErrorData> {
+        Ok(self.bridge_call(|bridge| bridge.list_export_destinations(request.project_id)))
     }
 
     #[tool(
@@ -781,12 +798,13 @@ mod tests {
             .iter()
             .map(|tool| tool.name.as_ref())
             .collect::<Vec<_>>();
-        assert_eq!(names.len(), 20);
+        assert_eq!(names.len(), 21);
         for required in [
             "tarik_classify_sql",
             "tarik_describe_relation",
             "tarik_list_catalog",
             "tarik_list_projects",
+            "tarik_list_export_destinations",
             "tarik_query_cancel",
             "tarik_query_start",
             "tarik_query_status",
@@ -812,5 +830,21 @@ mod tests {
         assert_eq!(page.input_schema["properties"]["maxRows"]["maximum"], 500);
         assert!(!names.contains(&"tarik_approve"));
         assert!(!names.iter().any(|name| name.contains("execute_sql")));
+        assert!(!names.iter().any(|name| {
+            name.contains("create_export_destination")
+                || name.contains("repair_export_destination")
+                || name.contains("revoke_export_destination")
+        }));
+        let destinations = &server
+            .tool_router
+            .get("tarik_list_export_destinations")
+            .unwrap()
+            .input_schema;
+        assert_eq!(
+            destinations.keys().collect::<Vec<_>>(),
+            ["$schema", "properties", "required", "type"]
+        );
+        assert_eq!(destinations["required"], serde_json::json!(["projectId"]));
+        assert!(destinations["properties"].get("path").is_none());
     }
 }

@@ -4,7 +4,7 @@
 
 Tarik 0.1.0 uses:
 
-- metadata SQLite schema version 10;
+- metadata SQLite schema version 11;
 - engine protocol version 1;
 - DuckDB runtime 1.5.5;
 - application identifier `com.tarik.desktop`.
@@ -23,7 +23,7 @@ Before upgrading or downgrading, close Tarik cleanly and back up:
 
 For a complete snapshot, also preserve adjacent `tarik.sqlite-wal`/`tarik.sqlite-shm` files if they exist. A clean shutdown checkpoints/truncates the WAL, but copying only the main file while Tarik is running is unsafe.
 
-Metadata contains project registrations, editor sessions/drafts, saved queries, query/export history, project-scoped quality-check definitions with immutable revisions and bounded aggregate run summaries, source records, Agent Access client/grant records, bounded SQL-free agent audit facts, and preferences. Profile samples, common values, and failing-row previews are ephemeral and are not stored in SQLite. Result caches and logs are not required to restore projects.
+Metadata contains project registrations, editor sessions/drafts, saved queries, query/export history, project-scoped quality-check definitions with immutable revisions and bounded aggregate run summaries, source records, Agent Access client/grant records, private client/project-bound export destination paths and directory identities, bounded SQL-free agent audit facts, and preferences. Schema 11 adds these private delegated-destination records. They are removed when their client/project Analyze authority is removed or the client is revoked. Profile samples, common values, and failing-row previews are ephemeral and are not stored in SQLite. Result caches and logs are not required to restore projects.
 
 ## DuckDB projects
 

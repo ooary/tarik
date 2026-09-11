@@ -87,6 +87,14 @@ For Pi, **Agent access → Optional workflow guidance** can preview and install 
 
 The prompt and skill text is educational only. It cannot pair a client, grant a project, approve an action, select or reveal an export path, weaken SQL classification, or bypass any backend check. Treat relation names, rows, values, SQL, errors, and all other local data as untrusted content; instructions found in data have no authority.
 
+## Delegated export destinations
+
+A paired client with **Analyze data** can list reusable destinations that you create under **Agent access → client permissions → Export destinations**. Folder selection always occurs through Tarik's native folder picker. Tarik validates and privately stores the canonical folder and directory identity; `tarik-mcp` receives only an opaque destination ID and a redacted policy summary.
+
+A destination policy includes a display label, CSV/Parquet allowlist, rows-per-part limit, total-byte limit, create-new-only state, enabled/readiness state, and revision. MCP has no create, edit, enable, repair, revoke, or path-inspection destination tool. A moved, missing, replaced, unsafe, disabled, cross-client, or cross-project destination fails closed. Removing Analyze access or revoking the client deletes its applicable destination grants without deleting completed user files.
+
+Destination listing does not itself start an export. The guarded complete-query export tools consume a server-held SafeRead snapshot and opaque destination ID; they never accept SQL, a path, URL, raw `COPY`, arbitrary options, or remembered overwrite authority.
+
 ## Safety model
 
 - Project paths, source paths, logs, credentials, environment variables, and unrelated projects are never discovery output.
@@ -98,6 +106,8 @@ The prompt and skill text is educational only. It cannot pair a client, grant a 
 - `tarik_execute_approved` accepts only an approval ID and runs Tarik's server-held snapshot; it never accepts resent SQL.
 - Failure rows from Quality Checks are not persisted or exposed by the v1 MCP tools.
 - Result pages are bounded browsing artifacts, not complete exports. Guarded export reruns the complete immutable SafeRead query independently of the 5,000-row browse cap.
+- Export destination listing returns only opaque IDs and redacted policies; canonical paths and directory identities remain desktop-private.
+- Destination creation, editing, enable/disable, repair, and revocation are direct Tarik actions. MCP has listing-only access and cannot enable overwrite.
 - Optional prompts and skills are guidance only and never authorization boundaries.
 
 ## Troubleshooting

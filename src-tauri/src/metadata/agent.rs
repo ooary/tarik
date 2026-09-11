@@ -138,6 +138,10 @@ impl AgentRepository {
         let mut connection = self.database.connection()?;
         let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
         transaction.execute(
+            "DELETE FROM agent_export_destinations WHERE client_id = ?1",
+            [id],
+        )?;
+        transaction.execute(
             "DELETE FROM agent_project_grants WHERE client_id = ?1",
             [id],
         )?;
@@ -194,15 +198,31 @@ impl AgentRepository {
                 grant.modify_data
             ],
         )?;
+        if !grant.analyze {
+            transaction.execute(
+                "DELETE FROM agent_export_destinations
+                 WHERE client_id = ?1 AND project_id = ?2",
+                params![client_id, grant.project_id],
+            )?;
+        }
         transaction.commit()?;
         Ok(())
     }
 
     pub fn remove_grant(&self, client_id: &str, project_id: &str) -> Result<bool, MetadataError> {
-        Ok(self.database.connection()?.execute(
+        let mut connection = self.database.connection()?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        transaction.execute(
+            "DELETE FROM agent_export_destinations
+             WHERE client_id = ?1 AND project_id = ?2",
+            params![client_id, project_id],
+        )?;
+        let changed = transaction.execute(
             "DELETE FROM agent_project_grants WHERE client_id = ?1 AND project_id = ?2",
             params![client_id, project_id],
-        )? > 0)
+        )? > 0;
+        transaction.commit()?;
+        Ok(changed)
     }
 
     pub fn add_audit(&self, audit: &AgentAuditRecord) -> Result<(), MetadataError> {

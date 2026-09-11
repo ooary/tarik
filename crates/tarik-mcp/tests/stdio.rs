@@ -107,7 +107,7 @@ fn initializes_lists_static_tools_reports_unavailable_and_exits_on_eof() {
     }));
     let tools = process.response();
     let tools = tools["result"]["tools"].as_array().unwrap();
-    assert_eq!(tools.len(), 20);
+    assert_eq!(tools.len(), 21);
     let names = tools
         .iter()
         .map(|tool| tool["name"].as_str().unwrap())
@@ -115,9 +115,26 @@ fn initializes_lists_static_tools_reports_unavailable_and_exits_on_eof() {
     assert!(names.contains(&"tarik_classify_sql"));
     assert!(names.contains(&"tarik_query_start"));
     assert!(names.contains(&"tarik_result_page"));
+    assert!(names.contains(&"tarik_list_export_destinations"));
     assert!(names.contains(&"tarik_approval_status"));
     assert!(names.contains(&"tarik_execute_approved"));
     assert!(!names.contains(&"tarik_approve"));
+    assert!(!names.iter().any(|name| {
+        name.contains("create_export_destination")
+            || name.contains("repair_export_destination")
+            || name.contains("revoke_export_destination")
+    }));
+    let destinations = tools
+        .iter()
+        .find(|tool| tool["name"] == "tarik_list_export_destinations")
+        .unwrap();
+    assert_eq!(
+        destinations["inputSchema"]["required"],
+        json!(["projectId"])
+    );
+    assert!(destinations["inputSchema"]["properties"]
+        .get("path")
+        .is_none());
 
     process.send(json!({
         "jsonrpc": "2.0",

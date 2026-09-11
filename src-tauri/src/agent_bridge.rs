@@ -20,6 +20,7 @@ use tarik_agent_protocol::{BridgeAction, BridgeRequest, BridgeResponse, MAX_BRID
 
 use crate::{
     agent_access::AgentAccessManager,
+    agent_destinations::AgentDestinationManager,
     observability::{AppLogger, EventFields, LogLevel},
 };
 
@@ -39,6 +40,7 @@ pub struct BridgeDescriptor {
 pub struct AgentBridge {
     runtime_dir: PathBuf,
     access: Arc<AgentAccessManager>,
+    destinations: Arc<AgentDestinationManager>,
     logger: Arc<AppLogger>,
     runtime: Mutex<Option<BridgeRuntime>>,
 }
@@ -52,11 +54,13 @@ impl AgentBridge {
     pub fn new(
         runtime_dir: PathBuf,
         access: Arc<AgentAccessManager>,
+        destinations: Arc<AgentDestinationManager>,
         logger: Arc<AppLogger>,
     ) -> Self {
         Self {
             runtime_dir,
             access,
+            destinations,
             logger,
             runtime: Mutex::new(None),
         }
@@ -89,11 +93,21 @@ impl AgentBridge {
         let stop = Arc::new(AtomicBool::new(false));
         let stop_thread = stop.clone();
         let access = self.access.clone();
+        let destinations = self.destinations.clone();
         let logger = self.logger.clone();
         let runtime_dir = self.runtime_dir.clone();
         let thread = thread::Builder::new()
             .name("tarik-agent-bridge".into())
-            .spawn(move || run_listener(listener, stop_thread, access, logger, runtime_dir))
+            .spawn(move || {
+                run_listener(
+                    listener,
+                    stop_thread,
+                    access,
+                    destinations,
+                    logger,
+                    runtime_dir,
+                )
+            })
             .map_err(|error| format!("agent.bridge_start_failed: {error}"))?;
         *runtime = Some(BridgeRuntime {
             stop,
@@ -130,6 +144,7 @@ fn run_listener(
     listener: Listener,
     stop: Arc<AtomicBool>,
     access: Arc<AgentAccessManager>,
+    destinations: Arc<AgentDestinationManager>,
     logger: Arc<AppLogger>,
     runtime_dir: PathBuf,
 ) {
@@ -160,13 +175,17 @@ fn run_listener(
                 let active_connection = active.clone();
                 let stop_connection = stop.clone();
                 let access_connection = access.clone();
+                let destinations_connection = destinations.clone();
                 let logger_connection = logger.clone();
                 match thread::Builder::new()
                     .name("tarik-agent-connection".into())
                     .spawn(move || {
-                        if let Err(error) =
-                            handle_connection(stream, &access_connection, &stop_connection)
-                        {
+                        if let Err(error) = handle_connection(
+                            stream,
+                            &access_connection,
+                            &destinations_connection,
+                            &stop_connection,
+                        ) {
                             logger_connection.record(
                                 LogLevel::Warning,
                                 "agent",
@@ -217,6 +236,7 @@ fn run_listener(
 fn handle_connection(
     stream: interprocess::local_socket::Stream,
     access: &AgentAccessManager,
+    destinations: &AgentDestinationManager,
     stop: &AtomicBool,
 ) -> Result<(), String> {
     stream
@@ -257,10 +277,13 @@ fn handle_connection(
             Ok(request) => {
                 let request_id = request.id.clone();
                 match request.validate() {
-                    Ok(()) => match dispatch(request.action, access, &mut owned_connections) {
-                        Ok(value) => BridgeResponse::success(request_id, value),
-                        Err(error) => failure(request_id, error),
-                    },
+                    Ok(()) => {
+                        match dispatch(request.action, access, destinations, &mut owned_connections)
+                        {
+                            Ok(value) => BridgeResponse::success(request_id, value),
+                            Err(error) => failure(request_id, error),
+                        }
+                    }
                     Err(error) => BridgeResponse::failure(
                         request_id,
                         "agent.invalid_request",
@@ -291,6 +314,7 @@ fn handle_connection(
 fn dispatch(
     action: BridgeAction,
     access: &AgentAccessManager,
+    destinations: &AgentDestinationManager,
     owned_connections: &mut Vec<String>,
 ) -> Result<serde_json::Value, String> {
     match action {
@@ -324,6 +348,14 @@ fn dispatch(
         }
         BridgeAction::ListProjects { connection_id } => {
             serde_json::to_value(access.list_granted_projects(&connection_id)?)
+                .map_err(|error| error.to_string())
+        }
+        BridgeAction::ListExportDestinations {
+            connection_id,
+            project_id,
+        } => {
+            let client_id = access.require_analyze_identity(&connection_id, &project_id)?;
+            serde_json::to_value(destinations.list_for_agent(&client_id, &project_id)?)
                 .map_err(|error| error.to_string())
         }
         BridgeAction::ListCatalog {
@@ -700,7 +732,15 @@ mod tests {
         path::PathBuf,
     };
 
-    use crate::{engine_manager::EngineManager, metadata::MetadataDb, projects::ProjectManager};
+    use tarik_agent_protocol::ProjectGrant;
+
+    use crate::{
+        agent_access::{challenge_proof, derive_verifier, hex, parse_hex_array},
+        agent_destinations::{AgentDestinationManager, DestinationPolicyInput},
+        engine_manager::EngineManager,
+        metadata::{projects::ProjectOwnership, MetadataDb},
+        projects::{ActiveProject, ProjectManager},
+    };
 
     use super::*;
 
@@ -715,12 +755,13 @@ mod tests {
             std::env::temp_dir().join(format!("tarik-agent-bridge-{}", uuid::Uuid::new_v4()));
         let logger = Arc::new(AppLogger::open(root.join("logs")));
         let access = Arc::new(AgentAccessManager::new(
-            database,
-            projects,
+            database.clone(),
+            projects.clone(),
             engine,
             logger.clone(),
         ));
-        let bridge = AgentBridge::new(root.join("runtime"), access.clone(), logger);
+        let destinations = Arc::new(AgentDestinationManager::new(database, projects, Vec::new()));
+        let bridge = AgentBridge::new(root.join("runtime"), access.clone(), destinations, logger);
         (access, bridge, root)
     }
 
@@ -729,6 +770,123 @@ mod tests {
         let (_, bridge, root) = fixture();
         assert!(bridge.start().unwrap_err().contains("Enable Agent Access"));
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn destination_dispatch_requires_authenticated_analyze_and_redacts_paths() {
+        let database = MetadataDb::open_in_memory().unwrap();
+        let root = std::env::temp_dir().join(format!(
+            "tarik-agent-bridge-destination-{}",
+            uuid::Uuid::new_v4()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let project_store = root.join("project-store");
+        let destination_path = root.join("exports");
+        fs::create_dir(&project_store).unwrap();
+        fs::create_dir(&destination_path).unwrap();
+        let project = crate::metadata::projects::ProjectsRepository::new(database.clone())
+            .upsert(
+                "Test",
+                &project_store.join("project.duckdb"),
+                ProjectOwnership::External,
+            )
+            .unwrap();
+        let engine = Arc::new(EngineManager::new(
+            root.join("missing-engine"),
+            root.join("results"),
+        ));
+        let projects = ProjectManager::new(database.clone(), root.join("projects"), engine.clone());
+        projects.set_active_for_test(ActiveProject {
+            id: project.id.clone(),
+            name: project.name,
+            duckdb_path: project.duckdb_path.into(),
+        });
+        let logger = Arc::new(AppLogger::open(root.join("logs")));
+        let access = AgentAccessManager::new(database.clone(), projects.clone(), engine, logger);
+        let destinations = AgentDestinationManager::new(database, projects, Vec::new());
+        let mut owned = Vec::new();
+        access.set_enabled(true).unwrap();
+
+        let unauthenticated = dispatch(
+            BridgeAction::ListExportDestinations {
+                connection_id: "missing".into(),
+                project_id: project.id.clone(),
+            },
+            &access,
+            &destinations,
+            &mut owned,
+        )
+        .unwrap_err();
+        assert!(unauthenticated.contains("authentication_required"));
+
+        let pairing_key = [7u8; 32];
+        let hello = access.hello("", "Pi", Some(&hex(&pairing_key))).unwrap();
+        let profile_id = access
+            .approve_pairing(hello.pairing_request_id.as_deref().unwrap())
+            .unwrap();
+        let salt = parse_hex_array::<32>(&hello.salt).unwrap();
+        let challenge = parse_hex_array::<32>(&hello.challenge).unwrap();
+        let verifier = derive_verifier(&pairing_key, &salt);
+        let proof = challenge_proof(&verifier, &hello.connection_id, &challenge).unwrap();
+        access
+            .authenticate(&hello.connection_id, &profile_id, &hex(&proof))
+            .unwrap();
+
+        let ungranted = dispatch(
+            BridgeAction::ListExportDestinations {
+                connection_id: hello.connection_id.clone(),
+                project_id: project.id.clone(),
+            },
+            &access,
+            &destinations,
+            &mut owned,
+        )
+        .unwrap_err();
+        assert!(ungranted.contains("permission_denied"));
+
+        access
+            .set_project_grant(
+                &profile_id,
+                ProjectGrant {
+                    project_id: project.id.clone(),
+                    inspect: true,
+                    analyze: true,
+                    modify_workspace: false,
+                    modify_data: false,
+                },
+            )
+            .unwrap();
+        let created = destinations
+            .create(
+                &profile_id,
+                &project.id,
+                destination_path.to_str().unwrap(),
+                DestinationPolicyInput {
+                    display_label: "Agent exports".into(),
+                    allow_csv: true,
+                    allow_parquet: false,
+                    maximum_rows_per_part: 10_000,
+                    maximum_total_bytes: 1024 * 1024,
+                },
+            )
+            .unwrap();
+        let value = dispatch(
+            BridgeAction::ListExportDestinations {
+                connection_id: hello.connection_id,
+                project_id: project.id,
+            },
+            &access,
+            &destinations,
+            &mut owned,
+        )
+        .unwrap();
+        let encoded = serde_json::to_string(&value).unwrap();
+        assert!(encoded.contains(&created.destination_id));
+        assert!(encoded.contains("Agent exports"));
+        assert!(!encoded.contains(destination_path.to_str().unwrap()));
+        assert!(!encoded.contains("canonicalPath"));
+        assert!(!encoded.contains("directoryIdentity"));
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

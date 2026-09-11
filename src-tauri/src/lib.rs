@@ -1,5 +1,6 @@
 mod agent_access;
 mod agent_bridge;
+mod agent_destinations;
 mod agent_guidance;
 mod agent_setup;
 mod engine_manager;
@@ -133,9 +134,19 @@ pub fn run() {
                 engine.clone(),
                 logger.clone(),
             ));
+            let agent_destinations = Arc::new(agent_destinations::AgentDestinationManager::new(
+                database.clone(),
+                project_manager.clone(),
+                vec![
+                    directories.data_dir.clone(),
+                    directories.cache_dir.clone(),
+                    directories.log_dir.clone(),
+                ],
+            ));
             let agent_bridge = Arc::new(agent_bridge::AgentBridge::new(
                 directories.data_dir.join("agent"),
                 agent_access.clone(),
+                agent_destinations.clone(),
                 logger.clone(),
             ));
             let agent_setup = agent_setup::AgentSetupManager::new(database.clone());
@@ -192,6 +203,7 @@ pub fn run() {
             app.manage(logger);
             app.manage(agent_access);
             app.manage(agent_bridge);
+            app.manage(agent_destinations);
             app.manage(agent_setup);
             app.manage(agent_guidance);
             app.manage(cleanup);
@@ -258,6 +270,12 @@ pub fn run() {
             agent_guidance::get_agent_skill_status,
             agent_guidance::plan_agent_skill,
             agent_guidance::apply_agent_skill,
+            agent_destinations::list_agent_export_destinations,
+            agent_destinations::create_agent_export_destination,
+            agent_destinations::update_agent_export_destination,
+            agent_destinations::set_agent_export_destination_enabled,
+            agent_destinations::repair_agent_export_destination,
+            agent_destinations::revoke_agent_export_destination,
             startup::get_startup_status,
             engine_resources::get_engine_resources,
             engine_resources::set_engine_resources,

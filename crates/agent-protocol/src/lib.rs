@@ -6,7 +6,7 @@
 
 use serde::{Deserialize, Serialize};
 
-pub const BRIDGE_PROTOCOL_VERSION: u32 = 1;
+pub const BRIDGE_PROTOCOL_VERSION: u32 = 2;
 pub const MAX_BRIDGE_MESSAGE_BYTES: usize = 1024 * 1024;
 pub const MAX_CLIENT_LABEL_BYTES: usize = 80;
 pub const MAX_PROFILE_ID_BYTES: usize = 128;
@@ -161,6 +161,15 @@ impl BridgeRequest {
                     .validate()
                     .map_err(|_| ProtocolError::InvalidProfileRequest)?;
             }
+            BridgeAction::ListExportDestinations {
+                connection_id,
+                project_id,
+            } => {
+                validate_connection_id(connection_id)?;
+                if project_id.trim().is_empty() || project_id.len() > MAX_PROFILE_ID_BYTES {
+                    return Err(ProtocolError::InvalidProjectId);
+                }
+            }
             BridgeAction::ListQuality {
                 connection_id,
                 project_id,
@@ -223,6 +232,10 @@ pub enum BridgeAction {
     },
     ListProjects {
         connection_id: String,
+    },
+    ListExportDestinations {
+        connection_id: String,
+        project_id: String,
     },
     ListCatalog {
         connection_id: String,
@@ -426,6 +439,34 @@ pub struct GrantedProject {
 #[serde(rename_all = "camelCase")]
 pub struct GrantedProjectsResult {
     pub projects: Vec<GrantedProject>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ExportFormat {
+    Csv,
+    Parquet,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportDestinationView {
+    pub destination_id: String,
+    pub label: String,
+    pub formats: Vec<ExportFormat>,
+    pub maximum_rows_per_part: u64,
+    pub maximum_total_bytes: u64,
+    pub create_new_only: bool,
+    pub enabled: bool,
+    pub ready: bool,
+    pub revision: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportDestinationList {
+    pub project_id: String,
+    pub destinations: Vec<ExportDestinationView>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

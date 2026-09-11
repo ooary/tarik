@@ -13,8 +13,8 @@ use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use tarik_agent_protocol::{
     AgentExecutionResult, AgentResultPage, ApprovalResult, AuthenticationResult, BridgeAction,
-    BridgeRequest, BridgeResponse, CatalogPageResult, GrantedProjectsResult, HelloResult,
-    RelationDescriptionResult, SqlSnapshotResult, MAX_BRIDGE_MESSAGE_BYTES,
+    BridgeRequest, BridgeResponse, CatalogPageResult, ExportDestinationList, GrantedProjectsResult,
+    HelloResult, RelationDescriptionResult, SqlSnapshotResult, MAX_BRIDGE_MESSAGE_BYTES,
 };
 use zeroize::Zeroizing;
 
@@ -95,6 +95,16 @@ impl BridgeClient {
     pub fn list_projects(&mut self) -> Result<GrantedProjectsResult, String> {
         self.request(BridgeAction::ListProjects {
             connection_id: self.connection_id()?,
+        })
+    }
+
+    pub fn list_export_destinations(
+        &mut self,
+        project_id: String,
+    ) -> Result<ExportDestinationList, String> {
+        self.request(BridgeAction::ListExportDestinations {
+            connection_id: self.connection_id()?,
+            project_id,
         })
     }
 

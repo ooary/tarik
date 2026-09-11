@@ -150,7 +150,22 @@ Parts are named:
 
 or `.parquet`. Row boundaries are exact even when an Arrow batch crosses them. Zero rows create no files. CSV headers repeat per part when enabled. Closing the dialog does not cancel active work; use **Cancel export**. Completed published parts remain valid on cancellation/failure; the current incomplete hidden stage is removed or recovered at next startup. **Reveal output** is available only for a tracked completed part.
 
-## 9. Diagnostics, logs, and cache
+## 9. Agent access and delegated export destinations
+
+Tarik can expose the active project to a local MCP host through the packaged `tarik-mcp` process. Open **Agent access**, enable the local bridge, approve the visible pairing request, and grant only the project capabilities the client needs. New clients receive no project access. See [`MCP-AGENT-SETUP.md`](MCP-AGENT-SETUP.md) for host setup and the full safety model.
+
+When a paired client has **Analyze data**, its project permissions include **Export destinations**. A destination is a reusable, create-new-only delegation:
+
+1. Choose **Export destinations** under that client and active project.
+2. Use **Choose folder** and select an existing local folder through the operating-system picker.
+3. Give it a non-sensitive display label, choose CSV and/or Parquet, and set rows-per-part and total-byte limits.
+4. Create, edit, disable, repair, or revoke the destination only from visible Tarik controls.
+
+Tarik stores the canonical path and directory identity privately. The MCP client receives only an opaque destination ID, label, allowed formats, quota summary, enabled/readiness state, and revision. It cannot supply a path, discover the absolute folder, enable overwrite, or mutate destination grants. Roots, files, symlinks/reparse points, non-user-owned folders, network/remote filesystems, and folders overlapping Tarik/project storage are rejected. A moved, replaced, or missing folder becomes **Repair required** and cannot be used until you choose a valid replacement directly in Tarik.
+
+Disabling a destination preserves its policy but prevents delegated use. Revoking it deletes the grant. Removing **Analyze data**, removing the project grant, or revoking the client also deletes that client's destination grants for the affected project. These controls do not delete already exported user files. Complete delegated export execution is introduced separately; bounded MCP result pages must not be described as complete exports.
+
+## 10. Diagnostics, logs, and cache
 
 Open **Settings**.
 
@@ -160,7 +175,7 @@ Open **Settings**.
 
 A serious frontend/backend failure shows a friendly incident with a copyable ID and local log action. Keep that ID when reporting a problem. E10's full manual recovery review remains deferred for this pre-release build.
 
-## 10. Data, backup, upgrade, and removal
+## 11. Data, backup, upgrade, and removal
 
 Linux locations:
 
