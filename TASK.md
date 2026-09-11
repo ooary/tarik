@@ -19,26 +19,26 @@ Build a low-memory desktop application that lets a user:
 
 ## Confirmed architecture decisions
 
-| Concern                 | Decision                                                                |
-| ----------------------- | ----------------------------------------------------------------------- |
-| Desktop shell           | Tauri 2                                                                 |
-| Backend                 | Rust control plane plus independently built Rust engine sidecars        |
-| Analytical engine       | Engine-agnostic sidecar protocol; DuckDB is the first adapter           |
-| Engine runtime          | Long-running process; DuckDB uses a pinned prebuilt dynamic library     |
-| Frontend                | React + TypeScript + Vite                                               |
-| SQL editor              | CodeMirror 6                                                            |
-| Result rendering        | Virtualized grid; never materialize the full result in React            |
-| Result transport        | Metadata plus bounded pages; Arrow/IPC stays inside engine/cache layers |
-| Query flow              | XYFlow with deterministic automatic layout                              |
-| Operational metadata    | SQLite                                                                  |
-| Analytical tables       | DuckDB                                                                  |
-| Linked datasets         | Original CSV/Parquet files; SQLite stores source metadata               |
-| Historical queries      | SQLite; diagnostic/runtime events go to rolling log files               |
-| Large temporary results | App cache directory, not SQLite                                         |
-| External integrations   | Out of scope for the current product                                    |
-| Credentials/keychain    | Out of scope; no credential-store module yet                            |
-| Python                  | Not part of the core runtime                                            |
-| Engine extensibility    | Common capabilities plus namespaced engine-specific operations          |
+| Concern                 | Decision                                                                               |
+| ----------------------- | -------------------------------------------------------------------------------------- |
+| Desktop shell           | Tauri 2                                                                                |
+| Backend                 | Rust control plane plus independently built Rust engine sidecars                       |
+| Analytical engine       | Engine-agnostic sidecar protocol; DuckDB is the first adapter                          |
+| Engine runtime          | Long-running process; DuckDB uses a pinned prebuilt dynamic library                    |
+| Frontend                | React + TypeScript + Vite                                                              |
+| SQL editor              | CodeMirror 6                                                                           |
+| Result rendering        | Virtualized grid; never materialize the full result in React                           |
+| Result transport        | Metadata plus bounded pages; Arrow/IPC stays inside engine/cache layers                |
+| Query flow              | XYFlow with deterministic automatic layout                                             |
+| Operational metadata    | SQLite                                                                                 |
+| Analytical tables       | DuckDB                                                                                 |
+| Linked datasets         | Original CSV/Parquet files; SQLite stores source metadata                              |
+| Historical queries      | SQLite; diagnostic/runtime events go to rolling log files                              |
+| Large temporary results | App cache directory, not SQLite                                                        |
+| External integrations   | Local MCP agent gateway is planned in E15; remote/cloud connectors remain out of scope |
+| Credentials/keychain    | Out of scope; E15 uses local pairing/grants and stores no model credentials            |
+| Python                  | Not part of the core runtime                                                           |
+| Engine extensibility    | Common capabilities plus namespaced engine-specific operations                         |
 
 ## Storage boundaries
 
@@ -90,7 +90,7 @@ The MVP is complete when a user can:
 - BigQuery, PostgreSQL, S3, or other remote connectors.
 - Authentication, secrets, or OS credential-store integration.
 - Python runtime, notebooks, or user-defined Python plugins.
-- AI-generated SQL.
+- Embedded AI chat, bundled models, or Tarik-owned AI-generated SQL; external agents may propose SQL only through the guarded E15 MCP boundary.
 - Collaborative/cloud synchronization.
 - Spreadsheet editing, chart builder, or general BI dashboards.
 - Editing source rows directly in the result grid.
@@ -401,6 +401,7 @@ E12 Windows portable        -> native package and platform review
 E13 Desktop UX/lifecycle    -> packaged visual and process review
 E13.5 Interaction/resources -> modal, saved-query, and engine-settings review
 E14 Profiles/quality checks -> beginner workflow and correctness review
+E15 Local Agent Gateway    -> MCP compatibility, guardrails, and approval review
 ```
 
 Only tasks inside the current EPIC may run concurrently, and only when dependencies and path ownership allow it. A later EPIC starts after the current EPIC's explicit user sign-off unless the user authorizes an exception.
@@ -2203,6 +2204,190 @@ The next gate, E1, is the first visual checkpoint. Before E1 code, provide the D
   - Review: `docs/review/E14-PROFILES-QUALITY.md`
 
 **Explicitly deferred beyond E14:** Join/grain coaching and transformation-pipeline DAGs may be planned after E14 review. Generic AI chat, cloud integrations, automatic data repair, and silent SQL rewriting are not part of this EPIC.
+
+---
+
+## EPIC E15 — Local Agent Gateway (MCP) with non-bypassable approvals
+
+**Status:** `APPROVED FOR DESIGN` — The user authorized adding E15 on September 11, 2026 after confirming `origin/main` was current at `7830ea4`. E15-T0 is ready. MCP implementation remains unstarted and must not proceed beyond the approved design task until its threat model, protocol graph, and guardrail review are accepted. E13-T6/E12-T4 Windows acceptance continues independently and still blocks final cross-platform release claims.
+
+**Outcome:** Claude Desktop, Claude Code, Pi, and other standard MCP hosts can inspect explicitly granted local Tarik projects, run bounded analysis, and propose controlled workspace/data changes. Tarik remains model-independent and local-first. Read operations are fail-closed and bounded; mutations require a visible Tarik-owned one-use approval; critical destructive actions additionally require typed confirmation; unsupported or uncontrollable effects are blocked with no approval bypass.
+
+**V1 product boundary:**
+
+- Ship a native Rust `tarik-mcp` executable using standard MCP JSON-RPC over stdio; stdout is protocol-only and diagnostics use stderr.
+- Require the Tarik desktop app to be running with **Agent Access** enabled. The MCP process routes work through an authenticated local desktop bridge rather than opening a competing DuckDB connection.
+- Pair each MCP connection locally and grant access per project and capability. Model-provider credentials, cloud accounts, and a Tarik credential store remain out of scope.
+- Treat MCP-host confirmation as supplemental only. Claude, Pi, or another harness cannot replace, forge, or satisfy Tarik's own approval decision.
+- Allow known-safe catalog inspection, bounded read-only SQL, result paging, cancellation/release, and query explanation after project permission is granted.
+- Require Tarik approval for every DML, DDL, filesystem/source action, export, saved-query mutation, quality-definition mutation, custom-quality execution, history clear, and engine-resource change.
+- Require typed confirmation in addition to **Approve once** for `DROP`, `TRUNCATE`, unfiltered `DELETE`/`UPDATE`, replace/overwrite, source removal/forget, history clear, and any operation classified as potentially whole-relation destructive.
+- Never offer remembered approval for destructive operations. Approval is one-use, client/project/snapshot/revision bound, expires after 120 seconds, and is invalidated by disconnect, restart, project close, catalog change, or access revocation.
+- Completely block MCP v1 extension installation/loading, secret management, arbitrary network access, arbitrary filesystem access in raw SQL, shell/subprocess execution, unsafe security settings/PRAGMAs, explicit transaction control, multiple SQL statements, project-file deletion, arbitrary file deletion, and every operation Tarik cannot classify confidently.
+- Prefer dedicated typed Tarik operations for imports, links, repairs, exports, and workspace changes. Do not treat a `SELECT` prefix or row-returning statement as proof of read-only behavior.
+- Never auto-run generated SQL, silently rewrite it, auto-repair data, or allow an MCP client to approve its own request.
+
+**Approval classes:**
+
+```text
+SafeRead
+  known-safe, one-statement analysis inside an explicitly granted project
+
+ApprovalRequired
+  mutation or controlled workspace/filesystem action; Tarik Approve once or Deny
+
+CriticalConfirmation
+  destructive/whole-relation/overwrite action; Approve once plus typed phrase
+
+Blocked
+  unsupported, ambiguous, security-changing, secret, extension, arbitrary external,
+  multi-statement, transaction-control, process, project-file, or arbitrary-file action
+```
+
+**Approval integrity contract:**
+
+1. `tarik_propose_sql` parses and classifies exactly one immutable SQL snapshot before any execution.
+2. Tarik stores the snapshot server-side with a secure approval ID, SQL hash, MCP client/connection, project, catalog revision, risk class, affected objects, creation time, and expiration.
+3. The visible Tarik dialog shows the requesting client, project, exact SQL, effect class, affected objects, filter detection, filesystem implications, reliable impact evidence, and explicit unknown-impact warnings.
+4. The MCP surface exposes no approve tool. Only direct local interaction with Tarik can approve or deny.
+5. `tarik_execute_approved` accepts only the approval ID; the agent never resubmits or substitutes approved SQL.
+6. Tarik atomically checks and consumes the approval before execution. Any identity, hash, project, revision, expiry, connection, or capability mismatch requires a new proposal and approval.
+7. Approved mutations use an exclusive lane and a DuckDB transaction where supported. Failure/cancellation rolls back; rollback failure becomes a critical recovery state and is never reported as a successful cancellation.
+8. Schema changes refresh catalog identity and invalidate stale results/profiles as required. Every decision and terminal outcome creates a bounded local audit record.
+
+- [ ] **E15-T0 Define the MCP protocol, threat model, and approval design graph**
+  - Depends on: E14-T7 implementation approval; user authorization to begin E15 design
+  - Owns: `docs/design/E15-DESIGN-GRAPH.md`, MCP scope, threat model, capability matrix, effect taxonomy, approval state machine, lifecycle budgets, and implementation inventory
+  - Deliverables:
+    - Reconstruct the existing desktop/sidecar query, result, profile, quality, metadata, and shutdown graphs that MCP may reuse; identify commands that must never be exposed directly.
+    - Specify supported MCP protocol version, initialization/capability negotiation, tool schemas, structured errors, pagination/cursor semantics, cancellation, progress, stdio framing, stdout/stderr discipline, and client compatibility targets.
+    - Threat-model malicious prompts, hostile MCP clients, prompt injection in local data, confused-deputy requests, approval substitution/replay, stale catalog identity, SQL parser disagreement, hidden side effects in CTEs/table functions, filesystem traversal, network access, extension/secret operations, denial of service, sidecar crash, and desktop shutdown.
+    - Define `SafeRead`, `ApprovalRequired`, `CriticalConfirmation`, and `Blocked` from effects, not first keywords. Enumerate DML, DDL, workspace, source, export, filesystem, external-access, settings, and transaction variants.
+    - Evaluate a parser/classifier that supports the pinned DuckDB dialect and nested statements. Lexical scanning may be defense in depth but cannot be the security authority; parse/classification disagreement fails closed.
+    - Define authenticated local IPC and pairing without opening a public TCP listener or storing model credentials. Specify behavior when Tarik is closed, locked, hidden, projectless, or Agent Access is disabled.
+    - Fix bounded defaults: approved-project count, clients, pending approvals (maximum 16), terminal tool records, active executions/results, result pages, rows, bytes, tool duration, rate limits, and disconnect cleanup.
+  - Acceptance: the Graph Protocol is complete; every exposed operation has an A/E/R path, capability, effect class, trust boundary, resource owner, and test layer; no unclassified operation can execute; user explicitly approves the E15 design before T1 begins.
+  - Tests: protocol/schema review, parser spike matrix, adversarial request corpus, lifecycle/resource inventory, and code-to-graph mismatch review.
+  - Commit: `docs(design): define guarded MCP agent gateway`
+
+- [ ] **E15-T1 Add authenticated local bridge, pairing, and project grants**
+  - Depends on: E15-T0 approval
+  - Owns: local endpoint lifecycle, client identity/pairing, project capability grants, Agent Access settings, revocation, and bridge tests
+  - Deliverables:
+    - Create an OS-local authenticated endpoint owned by Tarik with restrictive user-only permissions and no LAN/public binding; reject endpoint/token files with unsafe ownership or permissions.
+    - Pair a newly observed MCP client through visible Tarik UI and bind a random secret to client and connection identity without accepting self-asserted display names as security identity.
+    - Add per-project `Inspect`, `Analyze`, and `Modify workspace/data` grants. Default new clients to no access; do not infer access from an open project.
+    - Provide connected-client, approved-project, revoke-client, revoke-project, disable-all, and bounded recent-activity controls with keyboard/focus and reduced-motion-safe states.
+    - Revoke pending approvals and release/cancel client-owned jobs, previews, and results on disconnect, revocation, project close, Agent Access disable, or app shutdown.
+  - Acceptance: an unpaired, revoked, cross-user, wrong-project, or stale client cannot invoke a Tarik service; no endpoint remains after shutdown; revocation takes effect before subsequent work starts.
+  - Tests: endpoint permissions, token entropy/rotation, pair/deny/reconnect, project isolation, capability downgrade, spoofed identity, replay, disconnect cleanup, concurrent clients, restart invalidation, and Windows/Linux packaged endpoint behavior.
+  - Commit: `feat(mcp): add local pairing and project grants`
+
+- [ ] **E15-T2 Implement the native stdio MCP server and protocol conformance**
+  - Depends on: E15-T0, E15-T1
+  - Owns: new `tarik-mcp` workspace crate/binary, MCP transport/router, schemas, desktop bridge client, process lifecycle, and conformance tests
+  - Deliverables:
+    - Implement initialization, tool discovery/calls, cancellation, ping, structured MCP errors, bounded JSON framing, and graceful EOF/shutdown using a maintained protocol SDK only if its dependency and lifecycle boundaries pass review.
+    - Keep stdout protocol-only; send bounded redacted diagnostics to stderr; reject oversized/malformed frames and unsupported protocol versions without panicking.
+    - Advertise only tools supported by the connected Tarik version and granted capability. Never dynamically mirror all Tauri or engine commands.
+    - Return actionable local guidance when Tarik is unavailable or Agent Access/pairing/project permission is required.
+    - Terminate cleanly when the MCP host closes stdin, and ensure Tarik releases every connection-owned resource.
+  - Acceptance: Claude Desktop, Claude Code, Pi, and a generic MCP inspector can initialize, discover the same typed tool contract, receive structured errors, reconnect, and stop without orphan processes or resources.
+  - Tests: official/independent MCP inspector where available, JSON-RPC golden fixtures, malformed/oversized input, cancellation, EOF, stderr/stdout separation, desktop unavailable, capability negotiation, reconnect, and process leak checks.
+  - Commit: `feat(mcp): add native stdio server`
+
+- [ ] **E15-T3 Expose safe project and catalog discovery tools**
+  - Depends on: E15-T2
+  - Owns: `tarik_server_info`, project list/detail, bounded catalog search/list, relation description, resource identifiers, and authorization filters
+  - Deliverables:
+    - Expose only explicitly granted projects, stable opaque IDs, conservative source state, catalog revision, relation kind, bounded columns/types, and registered-source identity needed for analysis.
+    - Paginate or cap every collection and response by entries and encoded bytes; return continuation metadata instead of truncating silently.
+    - Never expose unrestricted project/source paths, AppData paths, logs, credentials, environment values, or projects granted to another client.
+    - Opening/listing/describing never starts a scan or query and never changes recent-project or editor state.
+  - Acceptance: agents can identify an approved relation and its schema without receiving data rows, hidden filesystem details, another project's metadata, or unbounded catalog output.
+  - Tests: zero/one/many projects, ambiguous names, Unicode/long identifiers, missing links, wide catalogs, pagination/byte caps, grant filtering, revocation during call, and no-engine/no-scan behavior.
+  - Commit: `feat(mcp): expose guarded catalog discovery`
+
+- [ ] **E15-T4 Add bounded read-only query, result, and query-flow tools**
+  - Depends on: E15-T3, E15-T5 classifier contract
+  - Owns: query proposal/start/status/cancel, page/release, Estimate/Actual Flow tools, client ownership, budgets, and result cleanup
+  - Deliverables:
+    - Accept exactly one classifier-approved `SafeRead` snapshot tied to a granted project/catalog revision; no arbitrary project path, engine method, or source path is accepted.
+    - Reuse Tarik's asynchronous coordinator, DuckDB interruption, 500-row pages, safe JSON conversion, NULL/truncation markers, and explicit result release without crossing Arrow over MCP.
+    - Add MCP-specific maximum returned rows/pages/bytes, fixed execution deadline, rate limit, and one agent-owned active result by default; never materialize the complete result for a tool response.
+    - Expose status polling, cancellation, page reads, release, and structured Estimate/Actual Flow. Opening/explaining SQL never executes the original query; Actual Flow remains explicit execution.
+    - Release or cancel client-owned queued/running/results/flows on disconnect, project close, revocation, sidecar restart, timeout, or Tarik shutdown.
+  - Acceptance: an agent can run, inspect, cancel, and release a large read while desktop memory/disk remain bounded; it cannot access another client's execution or bypass project/source policy.
+  - Tests: success/DML-rejection/DDL-rejection/external-read rejection, queued/running/cancelled/error, first/later page, byte/row limit, truncation/NULL fidelity, ownership, expiry, disconnect/restart/revoke cleanup, flow bounds, and fixed-workload memory/residue.
+  - Commit: `feat(mcp): add bounded analysis tools`
+
+- [ ] **E15-T5 Implement parser-backed effect classification and fail-closed policy**
+  - Depends on: E15-T0 approval
+  - Owns: immutable SQL snapshots, DuckDB-dialect parsing/classification, affected-object extraction, source-aware external access, policy decisions, and adversarial fixtures
+  - Deliverables:
+    - Parse exactly one statement and recursively classify nested CTEs, subqueries, returning clauses, table functions, macros, and indirect effects; a SELECT prefix or returned row set is never accepted as proof of safety.
+    - Permit only known-safe catalog reads and functions. Raw arbitrary paths and URLs are rejected; access needed by existing registered linked views is resolved from trusted catalog/source identity rather than MCP arguments.
+    - Classify all DML/DDL and controlled workspace/source/export/settings actions as approval-required or critical. Detect missing top-level filters conservatively and never downgrade risk based on an agent-supplied explanation.
+    - Block extensions, secrets, arbitrary external access, unsafe PRAGMA/SET/CALL, shell/process effects, explicit transactions, multiple statements, project-file/arbitrary-file deletion, unknown AST nodes, and parser/policy disagreement with no approval route.
+    - Keep lexical token checks and DuckDB bind/plan checks as secondary defenses; execute only the immutable classified snapshot through the corresponding safe or approved path.
+  - Acceptance: every adversarial fixture has one deterministic effect decision and reason; unsupported future syntax fails closed; no mutation/external effect reaches SafeRead.
+  - Tests: every DuckDB statement family, nested mutation CTEs, comments/quotes/dollar strings, macros/table functions, registered versus arbitrary files, URLs, extensions/secrets, PRAGMAs/settings, prepared/bind failures, Unicode identifiers, multiple statements, parser disagreement, and fuzz/property corpus.
+  - Commit: `feat(mcp): classify SQL effects fail closed`
+
+- [ ] **E15-T6 Add the Tarik approval center and one-use critical confirmations**
+  - Depends on: E15-T1, E15-T5
+  - Owns: bounded approval registry, immutable hash/revision binding, approval UI, typed confirmation, expiry/denial/revocation, and accessibility tests
+  - Deliverables:
+    - Create at most 16 pending requests with secure IDs, SQL/action snapshot hashes, requesting client/connection, project, catalog revision, action/effect class, affected objects, reliable impact facts, and a 120-second deadline.
+    - Show a visible Tarik-owned dialog/center with exact SQL/action, client, project, objects, filter status, filesystem effects, known or explicitly unknown impact, countdown, Deny, and Approve once.
+    - Require a server-generated typed phrase for critical actions including drop/truncate/unfiltered update-delete/replace-overwrite/source removal/history clear; pasted or mismatched text does not confirm.
+    - Expose proposal and status/execute-by-ID to MCP, but expose no approve operation. Closing/dismissing is denial; timed-out, disconnected, revoked, stale, used, or restarted approvals cannot execute.
+    - Keep focus trapped/restored, status non-color-only, keyboard behavior predictable, and requests understandable at minimum viewport in light/dark/system themes.
+  - Acceptance: the user approves the exact server-held snapshot once; an agent cannot approve, modify, replay, transfer, race, or reuse it; destructive approval can never be remembered.
+  - Tests: approve/deny/dismiss/expire, typed phrase, hash/client/connection/project/revision mismatch, replay/concurrency, registry full, catalog drift, disconnect/revoke/restart, no approve tool, focus/keyboard/screen reader, themes/DPI/minimum viewport, and no hidden execution.
+  - Commit: `feat(mcp): require Tarik-owned action approval`
+
+- [ ] **E15-T7 Execute approved mutations atomically and retain a bounded local audit**
+  - Depends on: E15-T5, E15-T6
+  - Owns: exclusive mutation lane, atomic approval claim, transactional execution, cancellation/rollback, catalog/cache invalidation, audit migration/repository, and recovery states
+  - Deliverables:
+    - Atomically consume one valid approval before entering an exclusive mutation lane; never execute SQL/action resent by the MCP client.
+    - Execute the stored statement/action in one DuckDB transaction where supported, preserving the previous state on execution failure or cancellation. Report cancellation only after confirmed rollback.
+    - Treat rollback failure as a critical recovery state, block further agent mutation for the project, preserve evidence, and guide the user to close/reopen/diagnose rather than claiming safety.
+    - Refresh catalog/source state after DDL or source operations and invalidate stale results, profiles, plans, definitions, or approvals according to their existing ownership contracts.
+    - Persist bounded local audit facts: client, tool, project, risk, SQL/action hash, exact approved snapshot under the saved-SQL privacy boundary, decision, timestamps, affected objects, execution/outcome, rows affected when known, and rollback state. Redacted diagnostic logs contain no SQL or values.
+    - Clearing MCP audit history itself requires critical confirmation and cannot delete projects, source data, query/check history, or exports.
+  - Acceptance: success commits once; error/cancel rolls back or enters an explicit critical state; concurrent work cannot observe a falsely completed mutation; audit is project/client isolated, bounded, restart-safe, and truthful.
+  - Tests: insert/update/delete/merge/create/alter/drop/truncate matrix, filtered/unfiltered risk, commit/error/cancel/rollback-failure injection, exactly-once claim, concurrent executions, catalog/cache invalidation, restart recovery, retention/project isolation, log redaction, and audit-clear isolation.
+  - Commit: `feat(mcp): execute approved changes with audit`
+
+- [ ] **E15-T8 Expose guarded Profile, Quality, and saved-query workflows**
+  - Depends on: E15-T3, E15-T4, E15-T7
+  - Owns: profile and quality inspection tools, current-data failure previews, approved definition/run/save actions, and open-without-execution handoff
+  - Deliverables:
+    - Reuse bounded Profile submission/status/cancel and exact SQL evidence while retaining Exact/Approximate/Sampled provenance and registered-relation identity.
+    - Expose quality definitions, immutable run detail, bounded history, and explicitly labeled **Current-data preview using revision N** without implying historical rows were retained.
+    - Require approval for create/update/delete check, custom-quality execution, suite execution containing custom SQL, saved-query create/update/delete, and history clear according to the effect matrix.
+    - Let an agent open SQL in a Tarik editor tab only after an approved workspace action; opening, copying, inspecting, and saving never execute it automatically.
+    - Preserve profile/check/result coordinator limits and release every preview/profile/result on disconnect, revocation, project close, or shutdown.
+  - Acceptance: an agent can investigate data trust and prepare reusable artifacts without losing provenance/revision truth, persisting failure rows, silently executing SQL, or bypassing workspace approval.
+  - Tests: profile bounds/provenance/cancel, quality revision/history/current-data labels, custom confirmation, definition/save approval and denial, open-without-run, stale targets, preview release, restart, and privacy/resource regression.
+  - Commit: `feat(mcp): expose guarded data trust workflows`
+
+- [ ] **E15-T9 Package and review the complete MCP agent workflow**
+  - Depends on: E15-T2, E15-T3, E15-T4, E15-T5, E15-T6, E15-T7, E15-T8
+  - Owns: `docs/review/E15-MCP-AGENT-GATEWAY.md`, client setup guides, deterministic fixtures, Linux/Windows packaging, protocol/security evidence, and manual sign-off
+  - Deliverables:
+    - Package `tarik-mcp` with Tarik on Linux and Windows and document exact Claude Desktop, Claude Code, Pi, and generic stdio MCP configuration without requiring Node, Rust, admin access, a network listener, or DuckDB installation.
+    - Walk through pair → grant one project → inspect catalog → run/page/release/cancel a bounded read → explain flow → profile → inspect failed check → propose safe workspace action → approve once → propose critical delete/drop → typed approve/deny → disconnect/revoke → restart.
+    - Prove prompt injection in table values cannot create an approval decision; MCP-host approval cannot replace Tarik approval; altered/replayed/stale/cross-client requests fail; blocked operations have no execution path.
+    - Re-run full query/result/profile/quality/export, metadata migration, sidecar recovery, startup/shutdown, memory/cache/disk, privacy/log-redaction, process-lifecycle, Linux package, and native Windows package regressions.
+    - Include light/dark/system, keyboard-only, screen-reader, minimum viewport, and 100/125/150/200% DPI approval-center evidence. E13-T6/E12-T4 remain independently required for final cross-platform acceptance.
+  - Acceptance: each supported host uses the same standard tools and guardrails; all safe, approval, critical, blocked, cancellation, rollback, disconnect, and recovery states are truthful; no orphan MCP/engine process or result/approval residue remains; user explicitly signs off E15.
+  - Tests: MCP conformance and adversarial corpus, full frontend/Node/Rust/docs/package gates, real sidecar workflow, fixed memory/disk budgets, Windows/Linux process cleanup, and signed manual checklist.
+  - Commit: `docs(review): add guarded MCP acceptance packet`
+
+**Explicitly deferred beyond E15:** Embedded chat/model APIs, model credentials, remote/HTTP MCP transport, headless project ownership without Tarik, remembered destructive approval, unrestricted SQL/filesystem/network access, extension installation, secret management, automatic repair, arbitrary project/file deletion, and multi-agent collaboration are not part of E15.
 
 ---
 
