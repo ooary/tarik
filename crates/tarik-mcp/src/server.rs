@@ -11,7 +11,7 @@ use rmcp::{
 };
 use serde::{Deserialize, Serialize};
 use tarik_agent_protocol::{
-    AuthenticationResult, HelloResult, HelloState, MAX_DISCOVERY_PAGE_ITEMS,
+    AuthenticationResult, HelloResult, HelloState, MAX_AGENT_PAGE_ROWS, MAX_DISCOVERY_PAGE_ITEMS,
 };
 use zeroize::Zeroizing;
 
@@ -64,6 +64,42 @@ pub struct DescribeRelationRequest {
 
 fn default_page_limit() -> u32 {
     50
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ClassifySqlRequest {
+    pub project_id: String,
+    pub sql: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SnapshotRequest {
+    pub snapshot_id: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ExecutionRequest {
+    pub execution_id: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ResultPageRequest {
+    pub result_id: String,
+    #[serde(default)]
+    pub offset: u64,
+    #[serde(default = "default_page_limit")]
+    #[schemars(range(min = 1, max = 500))]
+    pub max_rows: u32,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ResultRequest {
+    pub result_id: String,
 }
 
 #[derive(Debug, Clone, Serialize, schemars::JsonSchema)]
@@ -206,6 +242,80 @@ impl TarikMcpServer {
                 request.limit,
             )
         }))
+    }
+
+    #[tool(
+        name = "tarik_classify_sql",
+        description = "Classify exactly one immutable SQL statement against the current granted project catalog without executing it. Safe reads return a one-use snapshotId for tarik_query_start. Mutations return approval or critical classification but cannot use the SafeRead lane. Unknown or external effects are blocked."
+    )]
+    fn classify_sql(
+        &self,
+        Parameters(request): Parameters<ClassifySqlRequest>,
+    ) -> Result<rmcp::model::CallToolResult, rmcp::ErrorData> {
+        Ok(self.bridge_call(|bridge| bridge.classify_sql(request.project_id, request.sql)))
+    }
+
+    #[tool(
+        name = "tarik_query_start",
+        description = "Start a bounded read using only a one-use immutable SafeRead snapshotId returned by tarik_classify_sql. SQL cannot be supplied or changed here. The result is capped at 5000 rows and 60 seconds."
+    )]
+    fn query_start(
+        &self,
+        Parameters(request): Parameters<SnapshotRequest>,
+    ) -> Result<rmcp::model::CallToolResult, rmcp::ErrorData> {
+        Ok(self.bridge_call(|bridge| bridge.start_query(request.snapshot_id)))
+    }
+
+    #[tool(
+        name = "tarik_query_status",
+        description = "Poll one query owned by this authenticated MCP connection. Returns bounded lifecycle and result metadata only."
+    )]
+    fn query_status(
+        &self,
+        Parameters(request): Parameters<ExecutionRequest>,
+    ) -> Result<rmcp::model::CallToolResult, rmcp::ErrorData> {
+        Ok(self.bridge_call(|bridge| bridge.query_status(request.execution_id)))
+    }
+
+    #[tool(
+        name = "tarik_query_cancel",
+        description = "Request cancellation of one query owned by this authenticated MCP connection."
+    )]
+    fn query_cancel(
+        &self,
+        Parameters(request): Parameters<ExecutionRequest>,
+    ) -> Result<rmcp::model::CallToolResult, rmcp::ErrorData> {
+        Ok(self.bridge_call(|bridge| bridge.cancel_query(request.execution_id)))
+    }
+
+    #[tool(
+        name = "tarik_result_page",
+        description = "Read at most 500 rows and 1 MiB from a bounded result owned by this authenticated connection. NULL and truncated-cell metadata are preserved."
+    )]
+    fn result_page(
+        &self,
+        Parameters(request): Parameters<ResultPageRequest>,
+    ) -> Result<rmcp::model::CallToolResult, rmcp::ErrorData> {
+        if request.max_rows == 0 || request.max_rows > MAX_AGENT_PAGE_ROWS {
+            return Ok(tool_error(
+                "agent.invalid_page_limit",
+                "maxRows must be between 1 and 500",
+            ));
+        }
+        Ok(self.bridge_call(|bridge| {
+            bridge.result_page(request.result_id, request.offset, request.max_rows)
+        }))
+    }
+
+    #[tool(
+        name = "tarik_result_release",
+        description = "Explicitly release one bounded result owned by this authenticated MCP connection."
+    )]
+    fn result_release(
+        &self,
+        Parameters(request): Parameters<ResultRequest>,
+    ) -> Result<rmcp::model::CallToolResult, rmcp::ErrorData> {
+        Ok(self.bridge_call(|bridge| bridge.release_result(request.result_id)))
     }
 }
 
@@ -394,25 +504,33 @@ mod tests {
     }
 
     #[test]
-    fn discovery_contract_is_bounded_and_has_no_mutation_or_approval_tool() {
+    fn tool_contract_is_bounded_and_has_no_mutation_or_approval_tool() {
         let server = TarikMcpServer::new("test".into(), "Test".into());
         let tools = server.tool_router.list_all();
         let names = tools
             .iter()
             .map(|tool| tool.name.as_ref())
             .collect::<Vec<_>>();
-        assert_eq!(
-            names,
-            [
-                "tarik_describe_relation",
-                "tarik_list_catalog",
-                "tarik_list_projects",
-                "tarik_server_info",
-            ]
-        );
+        assert_eq!(names.len(), 10);
+        for required in [
+            "tarik_classify_sql",
+            "tarik_describe_relation",
+            "tarik_list_catalog",
+            "tarik_list_projects",
+            "tarik_query_cancel",
+            "tarik_query_start",
+            "tarik_query_status",
+            "tarik_result_page",
+            "tarik_result_release",
+            "tarik_server_info",
+        ] {
+            assert!(names.contains(&required));
+        }
         let catalog = server.tool_router.get("tarik_list_catalog").unwrap();
         assert_eq!(catalog.input_schema["properties"]["limit"]["maximum"], 100);
+        let page = server.tool_router.get("tarik_result_page").unwrap();
+        assert_eq!(page.input_schema["properties"]["maxRows"]["maximum"], 500);
         assert!(!names.iter().any(|name| name.contains("approve")));
-        assert!(!names.iter().any(|name| name.contains("query")));
+        assert!(!names.iter().any(|name| name.contains("execute_sql")));
     }
 }

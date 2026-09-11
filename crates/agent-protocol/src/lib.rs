@@ -15,6 +15,9 @@ pub const PROOF_BYTES: usize = 32;
 pub const MAX_DISCOVERY_PAGE_ITEMS: u32 = 100;
 pub const MAX_DISCOVERY_SEARCH_BYTES: usize = 128;
 pub const MAX_DISCOVERY_RESPONSE_BYTES: usize = 256 * 1024;
+pub const MAX_AGENT_RESULT_ROWS: u64 = 5_000;
+pub const MAX_AGENT_PAGE_ROWS: u32 = 500;
+pub const MAX_AGENT_PAGE_RESPONSE_BYTES: usize = 1024 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -69,6 +72,9 @@ impl BridgeRequest {
             }
             BridgeAction::Status { connection_id }
             | BridgeAction::ListProjects { connection_id }
+            | BridgeAction::QueryStatus { connection_id, .. }
+            | BridgeAction::CancelQuery { connection_id, .. }
+            | BridgeAction::ReleaseResult { connection_id, .. }
             | BridgeAction::Disconnect { connection_id } => {
                 validate_connection_id(connection_id)?;
             }
@@ -102,6 +108,42 @@ impl BridgeRequest {
                     .any(|value| value.trim().is_empty() || value.len() > 1024)
                 {
                     return Err(ProtocolError::InvalidRelationIdentity);
+                }
+            }
+            BridgeAction::ClassifySql {
+                connection_id,
+                project_id,
+                sql,
+            } => {
+                validate_connection_id(connection_id)?;
+                if project_id.trim().is_empty() || project_id.len() > MAX_PROFILE_ID_BYTES {
+                    return Err(ProtocolError::InvalidProjectId);
+                }
+                if sql.trim().is_empty() || sql.len() > 256 * 1024 {
+                    return Err(ProtocolError::InvalidSql);
+                }
+            }
+            BridgeAction::StartQuery {
+                connection_id,
+                snapshot_id,
+            } => {
+                validate_connection_id(connection_id)?;
+                if snapshot_id.trim().is_empty() || snapshot_id.len() > 128 {
+                    return Err(ProtocolError::InvalidSnapshotId);
+                }
+            }
+            BridgeAction::GetResultPage {
+                connection_id,
+                result_id,
+                max_rows,
+                ..
+            } => {
+                validate_connection_id(connection_id)?;
+                if result_id.trim().is_empty() || result_id.len() > 128 {
+                    return Err(ProtocolError::InvalidResultId);
+                }
+                if *max_rows == 0 || *max_rows > MAX_AGENT_PAGE_ROWS {
+                    return Err(ProtocolError::InvalidPageLimit);
                 }
             }
             BridgeAction::Ping => {}
@@ -150,6 +192,33 @@ pub enum BridgeAction {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         cursor: Option<String>,
         limit: u32,
+    },
+    ClassifySql {
+        connection_id: String,
+        project_id: String,
+        sql: String,
+    },
+    StartQuery {
+        connection_id: String,
+        snapshot_id: String,
+    },
+    QueryStatus {
+        connection_id: String,
+        execution_id: String,
+    },
+    CancelQuery {
+        connection_id: String,
+        execution_id: String,
+    },
+    GetResultPage {
+        connection_id: String,
+        result_id: String,
+        offset: u64,
+        max_rows: u32,
+    },
+    ReleaseResult {
+        connection_id: String,
+        result_id: String,
     },
     Disconnect {
         connection_id: String,
@@ -302,6 +371,41 @@ pub struct RelationDescriptionResult {
     pub next_cursor: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SqlSnapshotResult {
+    pub snapshot_id: String,
+    pub project_id: String,
+    pub classification: tarik_engine_protocol::AgentSqlClassification,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentExecutionResult {
+    pub execution_id: String,
+    pub project_id: String,
+    pub state: String,
+    pub duration_ms: u64,
+    pub rows_produced: Option<u64>,
+    pub rows_affected: Option<u64>,
+    pub result_id: Option<String>,
+    pub row_total: Option<u64>,
+    pub row_total_exact: Option<bool>,
+    pub error: Option<tarik_engine_protocol::ErrorEnvelope>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentResultPage {
+    pub result_id: String,
+    pub offset: u64,
+    pub row_total: u64,
+    pub row_total_exact: bool,
+    pub columns: serde_json::Value,
+    pub rows: serde_json::Value,
+    pub truncated_cells: serde_json::Value,
+}
+
 impl ProjectGrant {
     pub fn has_any(&self) -> bool {
         self.inspect || self.analyze || self.modify_workspace || self.modify_data
@@ -365,6 +469,12 @@ pub enum ProtocolError {
     InvalidSearch,
     #[error("invalid relation identity")]
     InvalidRelationIdentity,
+    #[error("SQL must contain 1-262144 bytes")]
+    InvalidSql,
+    #[error("invalid immutable SQL snapshot id")]
+    InvalidSnapshotId,
+    #[error("invalid result id")]
+    InvalidResultId,
     #[error("invalid authentication proof")]
     InvalidProof,
 }

@@ -128,6 +128,7 @@ pub fn run() {
             let agent_access = Arc::new(agent_access::AgentAccessManager::new(
                 database.clone(),
                 project_manager.clone(),
+                engine.clone(),
                 logger.clone(),
             ));
             let agent_bridge = Arc::new(agent_bridge::AgentBridge::new(

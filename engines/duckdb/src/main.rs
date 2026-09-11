@@ -295,6 +295,7 @@ fn dispatch(
             let execution_id = required_string(params, "executionId")?;
             let sql = required_string(params, "sql")?;
             let cache_dir = params.get("cacheDir").and_then(Value::as_str);
+            let row_limit = params.get("rowLimit").and_then(Value::as_u64);
             let connection = sessions.get(&session_id)?.try_clone()?;
             jobs.execute(
                 &session_id,
@@ -302,6 +303,7 @@ fn dispatch(
                 &sql,
                 connection,
                 cache_dir.map(std::path::Path::new),
+                row_limit,
             )?;
             Ok(serde_json::json!({
                 "executionId": execution_id,

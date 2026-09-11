@@ -12,8 +12,9 @@ use interprocess::local_socket::{prelude::*, GenericFilePath, Stream};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use tarik_agent_protocol::{
-    AuthenticationResult, BridgeAction, BridgeRequest, BridgeResponse, CatalogPageResult,
-    GrantedProjectsResult, HelloResult, RelationDescriptionResult, MAX_BRIDGE_MESSAGE_BYTES,
+    AgentExecutionResult, AgentResultPage, AuthenticationResult, BridgeAction, BridgeRequest,
+    BridgeResponse, CatalogPageResult, GrantedProjectsResult, HelloResult,
+    RelationDescriptionResult, SqlSnapshotResult, MAX_BRIDGE_MESSAGE_BYTES,
 };
 use zeroize::Zeroizing;
 
@@ -131,6 +132,60 @@ impl BridgeClient {
             name,
             cursor,
             limit,
+        })
+    }
+
+    pub fn classify_sql(
+        &mut self,
+        project_id: String,
+        sql: String,
+    ) -> Result<SqlSnapshotResult, String> {
+        self.request(BridgeAction::ClassifySql {
+            connection_id: self.connection_id()?,
+            project_id,
+            sql,
+        })
+    }
+
+    pub fn start_query(&mut self, snapshot_id: String) -> Result<AgentExecutionResult, String> {
+        self.request(BridgeAction::StartQuery {
+            connection_id: self.connection_id()?,
+            snapshot_id,
+        })
+    }
+
+    pub fn query_status(&mut self, execution_id: String) -> Result<AgentExecutionResult, String> {
+        self.request(BridgeAction::QueryStatus {
+            connection_id: self.connection_id()?,
+            execution_id,
+        })
+    }
+
+    pub fn cancel_query(&mut self, execution_id: String) -> Result<AgentExecutionResult, String> {
+        self.request(BridgeAction::CancelQuery {
+            connection_id: self.connection_id()?,
+            execution_id,
+        })
+    }
+
+    pub fn result_page(
+        &mut self,
+        result_id: String,
+        offset: u64,
+        max_rows: u32,
+    ) -> Result<AgentResultPage, String> {
+        self.request(BridgeAction::GetResultPage {
+            connection_id: self.connection_id()?,
+            result_id,
+            offset,
+            max_rows,
+        })
+    }
+
+    pub fn release_result(&mut self, result_id: String) -> Result<bool, String> {
+        self.request(BridgeAction::ReleaseResult {
+            connection_id: self.connection_id()?,
+            result_id,
         })
     }
 

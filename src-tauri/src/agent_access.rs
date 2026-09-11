@@ -9,13 +9,16 @@ use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tarik_agent_protocol::{
-    AuthenticationResult, CatalogPageResult, CatalogRelationSummary, ConnectionStatusResult,
-    GrantedProject, GrantedProjectsResult, HelloResult, HelloState, ProjectGrant, RelationColumn,
-    RelationDescriptionResult, CHALLENGE_BYTES, MAX_DISCOVERY_RESPONSE_BYTES, PROOF_BYTES,
+    AgentExecutionResult, AgentResultPage, AuthenticationResult, CatalogPageResult,
+    CatalogRelationSummary, ConnectionStatusResult, GrantedProject, GrantedProjectsResult,
+    HelloResult, HelloState, ProjectGrant, RelationColumn, RelationDescriptionResult,
+    SqlSnapshotResult, CHALLENGE_BYTES, MAX_AGENT_PAGE_RESPONSE_BYTES, MAX_AGENT_RESULT_ROWS,
+    MAX_DISCOVERY_RESPONSE_BYTES, PROOF_BYTES,
 };
 use zeroize::Zeroizing;
 
 use crate::{
+    engine_manager::EngineManager,
     metadata::{
         agent::{AgentClientState, AgentRepository},
         projects::ProjectsRepository,
@@ -32,6 +35,10 @@ const MAX_CONNECTIONS: usize = 4;
 const PAIRING_LIFETIME: Duration = Duration::from_secs(5 * 60);
 const CHALLENGE_LIFETIME: Duration = Duration::from_secs(60);
 const AGENT_ACCESS_ENABLED_KEY: &str = "agent.access.enabled";
+const MAX_SQL_SNAPSHOTS: usize = 32;
+const SQL_SNAPSHOT_LIFETIME: Duration = Duration::from_secs(120);
+const QUERY_LIFETIME: Duration = Duration::from_secs(60);
+const MAX_AGENT_QUERIES_GLOBAL: usize = 4;
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -86,12 +93,30 @@ struct ConnectionRecord {
     authenticated: bool,
 }
 
+struct SqlSnapshot {
+    connection_id: String,
+    project_id: String,
+    sql: String,
+    classification: tarik_engine_protocol::AgentSqlClassification,
+    created_at: Instant,
+}
+
+struct AgentQuery {
+    connection_id: String,
+    project_id: String,
+    execution_id: String,
+    started_at: Instant,
+    result_id: Option<String>,
+}
+
 #[derive(Default)]
 struct AccessState {
     enabled: bool,
     endpoint_ready: bool,
     pending: HashMap<String, PendingPairing>,
     connections: HashMap<String, ConnectionRecord>,
+    sql_snapshots: HashMap<String, SqlSnapshot>,
+    agent_queries: HashMap<String, AgentQuery>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -119,6 +144,7 @@ pub struct AgentAccessManager {
     repository: AgentRepository,
     settings: SettingsRepository,
     projects: ProjectManager,
+    engine: Arc<EngineManager>,
     logger: Arc<AppLogger>,
     state: Mutex<AccessState>,
     cleaner: Arc<dyn AgentResourceCleaner>,
@@ -126,7 +152,12 @@ pub struct AgentAccessManager {
 }
 
 impl AgentAccessManager {
-    pub fn new(database: MetadataDb, projects: ProjectManager, logger: Arc<AppLogger>) -> Self {
+    pub fn new(
+        database: MetadataDb,
+        projects: ProjectManager,
+        engine: Arc<EngineManager>,
+        logger: Arc<AppLogger>,
+    ) -> Self {
         let settings = SettingsRepository::new(database.clone());
         let enabled = settings
             .get::<bool>(AGENT_ACCESS_ENABLED_KEY)
@@ -138,6 +169,7 @@ impl AgentAccessManager {
             repository: AgentRepository::new(database),
             settings,
             projects,
+            engine,
             logger,
             state: Mutex::new(AccessState {
                 enabled,
@@ -623,8 +655,250 @@ impl AgentAccessManager {
         Ok(result)
     }
 
+    pub fn classify_sql(
+        &self,
+        connection_id: &str,
+        project_id: &str,
+        sql: &str,
+    ) -> Result<SqlSnapshotResult, String> {
+        self.require_capability(connection_id, project_id, |grant| grant.analyze, "Analyze")?;
+        let sources = self.registered_sources(project_id)?;
+        let classification = self.engine.classify_agent_sql(sql, &sources)?;
+        self.require_capability(connection_id, project_id, |grant| grant.analyze, "Analyze")?;
+        let snapshot_id = uuid::Uuid::new_v4().to_string();
+        let mut state = self.lock()?;
+        prune(&mut state);
+        if state.sql_snapshots.len() >= MAX_SQL_SNAPSHOTS {
+            return Err("agent.snapshot_limit: Release or wait for existing SQL snapshots.".into());
+        }
+        state.sql_snapshots.insert(
+            snapshot_id.clone(),
+            SqlSnapshot {
+                connection_id: connection_id.to_string(),
+                project_id: project_id.to_string(),
+                sql: sql.to_string(),
+                classification: classification.clone(),
+                created_at: Instant::now(),
+            },
+        );
+        Ok(SqlSnapshotResult {
+            snapshot_id,
+            project_id: project_id.to_string(),
+            classification,
+        })
+    }
+
+    pub fn start_query(
+        &self,
+        connection_id: &str,
+        snapshot_id: &str,
+    ) -> Result<AgentExecutionResult, String> {
+        let (project_id, sql, expected_revision) = {
+            let mut state = self.lock()?;
+            prune(&mut state);
+            if state
+                .agent_queries
+                .values()
+                .any(|query| query.connection_id == connection_id && query.result_id.is_some())
+            {
+                return Err("agent.result_limit: Release the existing agent result first.".into());
+            }
+            if state
+                .agent_queries
+                .values()
+                .filter(|query| query.result_id.is_none())
+                .count()
+                >= MAX_AGENT_QUERIES_GLOBAL
+            {
+                return Err("agent.query_limit: Too many agent queries are active.".into());
+            }
+            if state
+                .agent_queries
+                .values()
+                .any(|query| query.connection_id == connection_id && query.result_id.is_none())
+            {
+                return Err("agent.query_limit: This client already has an active query.".into());
+            }
+            let snapshot = state.sql_snapshots.remove(snapshot_id).ok_or_else(|| {
+                "agent.snapshot_missing: Classify the SQL again before execution.".to_string()
+            })?;
+            if snapshot.connection_id != connection_id {
+                return Err(
+                    "agent.snapshot_owner_mismatch: SQL snapshots cannot be transferred.".into(),
+                );
+            }
+            if snapshot.classification.decision != tarik_engine_protocol::AgentSqlDecision::SafeRead
+            {
+                return Err(
+                    "agent.approval_required: This SQL cannot use the SafeRead lane.".into(),
+                );
+            }
+            (
+                snapshot.project_id,
+                snapshot.sql,
+                snapshot.classification.catalog_revision,
+            )
+        };
+        self.require_capability(connection_id, &project_id, |grant| grant.analyze, "Analyze")?;
+        let current = self
+            .engine
+            .classify_agent_sql(&sql, &self.registered_sources(&project_id)?)?;
+        if current.decision != tarik_engine_protocol::AgentSqlDecision::SafeRead
+            || current.catalog_revision != expected_revision
+        {
+            return Err(
+                "agent.snapshot_stale: Catalog policy changed; classify the SQL again.".into(),
+            );
+        }
+        let execution_id = format!("agent-{}", uuid::Uuid::new_v4());
+        self.engine
+            .execute_query_bounded(&execution_id, &sql, Some(MAX_AGENT_RESULT_ROWS))?;
+        self.lock()?.agent_queries.insert(
+            execution_id.clone(),
+            AgentQuery {
+                connection_id: connection_id.to_string(),
+                project_id: project_id.clone(),
+                execution_id: execution_id.clone(),
+                started_at: Instant::now(),
+                result_id: None,
+            },
+        );
+        Ok(AgentExecutionResult {
+            execution_id,
+            project_id,
+            state: "queued".into(),
+            duration_ms: 0,
+            rows_produced: None,
+            rows_affected: None,
+            result_id: None,
+            row_total: None,
+            row_total_exact: None,
+            error: None,
+        })
+    }
+
+    pub fn query_status(
+        &self,
+        connection_id: &str,
+        execution_id: &str,
+    ) -> Result<AgentExecutionResult, String> {
+        let project_id = self.query_owner(connection_id, execution_id)?.project_id;
+        self.require_capability(connection_id, &project_id, |grant| grant.analyze, "Analyze")?;
+        let mut status = self.engine.query_status(execution_id)?.ok_or_else(|| {
+            "agent.execution_missing: The engine no longer tracks this query.".to_string()
+        })?;
+        let timed_out = self
+            .lock()?
+            .agent_queries
+            .get(execution_id)
+            .is_some_and(|query| query.started_at.elapsed() >= QUERY_LIFETIME);
+        if timed_out
+            && matches!(
+                status.state,
+                tarik_engine_protocol::ExecutionState::Queued
+                    | tarik_engine_protocol::ExecutionState::Running
+            )
+        {
+            let _ = self.engine.cancel_query(execution_id);
+            status = self.engine.query_status(execution_id)?.unwrap_or(status);
+        }
+        if let Some(result) = &status.result {
+            if let Some(query) = self.lock()?.agent_queries.get_mut(execution_id) {
+                query.result_id = Some(result.result_id.clone());
+            }
+        }
+        Ok(execution_result(project_id, status))
+    }
+
+    pub fn cancel_query(
+        &self,
+        connection_id: &str,
+        execution_id: &str,
+    ) -> Result<AgentExecutionResult, String> {
+        let project_id = self.query_owner(connection_id, execution_id)?.project_id;
+        self.require_capability(connection_id, &project_id, |grant| grant.analyze, "Analyze")?;
+        let status = self.engine.cancel_query(execution_id)?.ok_or_else(|| {
+            "agent.execution_missing: The engine no longer tracks this query.".to_string()
+        })?;
+        Ok(execution_result(project_id, status))
+    }
+
+    pub fn result_page(
+        &self,
+        connection_id: &str,
+        result_id: &str,
+        offset: u64,
+        max_rows: u32,
+    ) -> Result<AgentResultPage, String> {
+        let project_id = self.query_owner(connection_id, result_id)?.project_id;
+        self.require_capability(connection_id, &project_id, |grant| grant.analyze, "Analyze")?;
+        let page = self.engine.result_page(result_id, offset, max_rows)?;
+        if serde_json::to_vec(&page)
+            .map_err(|error| error.to_string())?
+            .len()
+            > MAX_AGENT_PAGE_RESPONSE_BYTES
+        {
+            return Err("agent.page_too_large: Request fewer rows.".into());
+        }
+        Ok(AgentResultPage {
+            result_id: page
+                .get("resultId")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or(result_id)
+                .to_string(),
+            offset: page
+                .get("offset")
+                .and_then(serde_json::Value::as_u64)
+                .unwrap_or(offset),
+            row_total: page
+                .get("rowTotal")
+                .and_then(serde_json::Value::as_u64)
+                .unwrap_or(0),
+            row_total_exact: page
+                .get("rowTotalExact")
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false),
+            columns: page
+                .get("columns")
+                .cloned()
+                .unwrap_or(serde_json::Value::Null),
+            rows: page.get("rows").cloned().unwrap_or(serde_json::Value::Null),
+            truncated_cells: page
+                .get("truncatedCells")
+                .cloned()
+                .unwrap_or(serde_json::Value::Null),
+        })
+    }
+
+    pub fn release_result(&self, connection_id: &str, result_id: &str) -> Result<bool, String> {
+        self.query_owner(connection_id, result_id)?;
+        self.engine.release_result(result_id)?;
+        self.lock()?.agent_queries.remove(result_id);
+        Ok(true)
+    }
+
     pub fn disconnect(&self, connection_id: &str) -> Result<bool, String> {
-        let removed = self.lock()?.connections.remove(connection_id).is_some();
+        let (removed, queries) = {
+            let mut state = self.lock()?;
+            let removed = state.connections.remove(connection_id).is_some();
+            state
+                .sql_snapshots
+                .retain(|_, snapshot| snapshot.connection_id != connection_id);
+            let queries = state
+                .agent_queries
+                .values()
+                .filter(|query| query.connection_id == connection_id)
+                .map(|query| query.execution_id.clone())
+                .collect::<Vec<_>>();
+            state
+                .agent_queries
+                .retain(|_, query| query.connection_id != connection_id);
+            (removed, queries)
+        };
+        for query in queries {
+            let _ = self.engine.cancel_query(&query);
+            let _ = self.engine.release_result(&query);
+        }
         if removed {
             self.cleaner.cleanup_connection(connection_id);
         }
@@ -723,12 +997,24 @@ impl AgentAccessManager {
     }
 
     fn require_inspect(&self, connection_id: &str, project_id: &str) -> Result<(), String> {
+        self.require_capability(connection_id, project_id, |grant| grant.inspect, "Inspect")
+    }
+
+    fn require_capability(
+        &self,
+        connection_id: &str,
+        project_id: &str,
+        allowed: impl Fn(&ProjectGrant) -> bool,
+        name: &str,
+    ) -> Result<(), String> {
         let (_, grants) = self.authenticated_connection(connection_id)?;
         if !grants
             .iter()
-            .any(|grant| grant.project_id == project_id && grant.inspect)
+            .any(|grant| grant.project_id == project_id && allowed(grant))
         {
-            return Err("agent.permission_denied: Inspect is not granted for this project.".into());
+            return Err(format!(
+                "agent.permission_denied: {name} is not granted for this project."
+            ));
         }
         let active = self
             .projects
@@ -741,6 +1027,62 @@ impl AgentAccessManager {
             return Err("agent.project_closed: The granted project is not active in Tarik.".into());
         }
         Ok(())
+    }
+
+    fn registered_sources(
+        &self,
+        project_id: &str,
+    ) -> Result<Vec<tarik_engine_protocol::AgentRegisteredSource>, String> {
+        let catalog = self.projects.catalog().map_err(|error| error.to_string())?;
+        let sources = SourcesRepository::new(self.metadata.clone())
+            .list_sources(project_id)
+            .map_err(|error| error.to_string())?;
+        Ok(sources
+            .into_iter()
+            .filter_map(|source| {
+                let object = catalog
+                    .objects
+                    .iter()
+                    .find(|object| object.name == source.duckdb_name)?;
+                Some(tarik_engine_protocol::AgentRegisteredSource {
+                    source_id: source.id,
+                    database: object.database.clone(),
+                    schema: object.schema.clone(),
+                    name: object.name.clone(),
+                    kind: match source.kind {
+                        crate::metadata::sources::SourceKind::DuckdbTable => "duckdb_table",
+                        crate::metadata::sources::SourceKind::LinkedParquet => "linked_parquet",
+                        crate::metadata::sources::SourceKind::LinkedCsv => "linked_csv",
+                    }
+                    .into(),
+                    state: match source.state {
+                        crate::metadata::sources::SourceState::Ready => "ready",
+                        crate::metadata::sources::SourceState::Missing => "missing",
+                        crate::metadata::sources::SourceState::InvalidSchema => "invalid_schema",
+                    }
+                    .into(),
+                })
+            })
+            .collect())
+    }
+
+    fn query_owner(&self, connection_id: &str, execution_id: &str) -> Result<AgentQuery, String> {
+        let state = self.lock()?;
+        let query = state
+            .agent_queries
+            .get(execution_id)
+            .filter(|query| query.connection_id == connection_id)
+            .ok_or_else(|| {
+                "agent.execution_owner_mismatch: This query belongs to another connection."
+                    .to_string()
+            })?;
+        Ok(AgentQuery {
+            connection_id: query.connection_id.clone(),
+            project_id: query.project_id.clone(),
+            execution_id: query.execution_id.clone(),
+            started_at: query.started_at,
+            result_id: query.result_id.clone(),
+        })
     }
 
     fn encode_cursor(
@@ -822,6 +1164,34 @@ impl AgentAccessManager {
     }
 }
 
+fn execution_result(
+    project_id: String,
+    status: tarik_engine_protocol::ExecutionStatus,
+) -> AgentExecutionResult {
+    AgentExecutionResult {
+        execution_id: status.execution_id,
+        project_id,
+        state: match status.state {
+            tarik_engine_protocol::ExecutionState::Queued => "queued",
+            tarik_engine_protocol::ExecutionState::Running => "running",
+            tarik_engine_protocol::ExecutionState::Succeeded => "succeeded",
+            tarik_engine_protocol::ExecutionState::Failed => "failed",
+            tarik_engine_protocol::ExecutionState::Cancelled => "cancelled",
+        }
+        .into(),
+        duration_ms: status.duration_ms,
+        rows_produced: status.rows_produced,
+        rows_affected: status.rows_affected,
+        result_id: status
+            .result
+            .as_ref()
+            .map(|result| result.result_id.clone()),
+        row_total: status.result.as_ref().map(|result| result.row_count),
+        row_total_exact: status.result.as_ref().map(|result| result.row_count_exact),
+        error: status.error,
+    }
+}
+
 fn relation_summary(
     object: &tarik_engine_protocol::CatalogObject,
     columns: &[tarik_engine_protocol::CatalogColumn],
@@ -884,6 +1254,9 @@ fn prune(state: &mut AccessState) {
     state.connections.retain(|_, connection| {
         connection.authenticated || connection.created_at.elapsed() < CHALLENGE_LIFETIME
     });
+    state
+        .sql_snapshots
+        .retain(|_, snapshot| snapshot.created_at.elapsed() < SQL_SNAPSHOT_LIFETIME);
 }
 
 pub(crate) fn derive_verifier(key: &[u8; PROOF_BYTES], salt: &[u8; 32]) -> [u8; 32] {
@@ -1055,7 +1428,7 @@ mod tests {
             PathBuf::from("unused"),
             std::env::temp_dir().join("tarik-agent-results"),
         ));
-        let projects = ProjectManager::new(database.clone(), std::env::temp_dir(), engine);
+        let projects = ProjectManager::new(database.clone(), std::env::temp_dir(), engine.clone());
         projects.set_active_for_test(crate::projects::ActiveProject {
             id: project.id.clone(),
             name: project.name,
@@ -1065,7 +1438,7 @@ mod tests {
             std::env::temp_dir().join(format!("tarik-agent-log-{}", uuid::Uuid::new_v4())),
         ));
         (
-            AgentAccessManager::new(database, projects, logger),
+            AgentAccessManager::new(database, projects, engine, logger),
             project.id,
         )
     }

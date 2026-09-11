@@ -31,6 +31,7 @@ struct JobRecord {
     sql: String,
     connection: Option<Connection>,
     result_root: Option<PathBuf>,
+    row_limit: Option<u64>,
     state: ExecutionState,
     queued_at: Instant,
     started_at: Option<Instant>,
@@ -107,6 +108,7 @@ impl JobRegistry {
         sql: &str,
         connection: Connection,
         result_root: Option<&Path>,
+        row_limit: Option<u64>,
     ) -> Result<(), EngineError> {
         if sql.trim().is_empty() {
             return Err(EngineError::InvalidQuery("sql text contains no statements"));
@@ -125,6 +127,7 @@ impl JobRegistry {
                 sql: sql.to_string(),
                 connection: Some(connection),
                 result_root: result_root.map(Path::to_path_buf),
+                row_limit,
                 state: ExecutionState::Queued,
                 queued_at: Instant::now(),
                 started_at: None,
@@ -422,12 +425,13 @@ fn worker_loop(registry: Arc<JobRegistry>, session_id: &str) {
                     let sql = job.sql.clone();
                     let connection = job.connection.take();
                     let result_root = job.result_root.clone();
-                    (execution_id, sql, connection, result_root)
+                    let row_limit = job.row_limit;
+                    (execution_id, sql, connection, result_root, row_limit)
                 }
                 None => continue,
             }
         };
-        let (execution_id, sql, connection, result_root) = claimed;
+        let (execution_id, sql, connection, result_root, row_limit) = claimed;
         let Some(mut connection) = connection else {
             registry.mark_terminal(
                 &execution_id,
@@ -448,6 +452,7 @@ fn worker_loop(registry: Arc<JobRegistry>, session_id: &str) {
             &sql,
             &mut connection,
             result_root.as_deref(),
+            row_limit,
         );
     }
 }
@@ -458,6 +463,7 @@ fn run_job(
     sql: &str,
     connection: &mut Connection,
     result_root: Option<&Path>,
+    row_limit: Option<u64>,
 ) {
     let interrupt = connection.interrupt_handle();
     registry.set_interrupt(execution_id, interrupt);
@@ -465,7 +471,7 @@ fn run_job(
     // The DuckDB Arrow iterator panics on fetch failure (including interrupt),
     // so the whole execution runs inside catch_unwind.
     let outcome = catch_unwind(AssertUnwindSafe(|| {
-        execute_snapshot(execution_id, connection, sql, result_root)
+        execute_snapshot(execution_id, connection, sql, result_root, row_limit)
     }));
     match outcome {
         Ok(Ok(completed)) => {
@@ -549,6 +555,7 @@ fn execute_snapshot(
     connection: &Connection,
     sql: &str,
     result_root: Option<&Path>,
+    row_limit: Option<u64>,
 ) -> Result<ExecutionOutcome, EngineError> {
     let statements = split_statements(sql);
     if statements.is_empty() {
@@ -586,10 +593,25 @@ fn execute_snapshot(
                 rows_affected += changed;
                 continue;
             }
+            let remaining = row_limit
+                .map(|limit| limit.saturating_sub(statement_rows))
+                .unwrap_or(u64::MAX);
+            if remaining == 0 {
+                break;
+            }
+            let take = batch.num_rows().min(remaining as usize);
+            let batch = if take < batch.num_rows() {
+                batch.slice(0, take)
+            } else {
+                batch
+            };
             if let Some(page_writer) = writer.as_mut() {
                 page_writer.write(&batch)?;
             }
             statement_rows += batch.num_rows() as u64;
+            if row_limit.is_some_and(|limit| statement_rows >= limit) {
+                break;
+            }
         }
         if statement_rows > 0 {
             last_counted_rows = statement_rows;
@@ -609,7 +631,7 @@ fn execute_snapshot(
                         page_dir: final_dir,
                         columns,
                         row_count,
-                        row_count_exact: true,
+                        row_count_exact: row_limit.is_none_or(|limit| row_count < limit),
                         page_rows,
                     },
                 ));

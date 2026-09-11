@@ -358,6 +358,44 @@ fn dispatch(
             limit,
         )?)
         .map_err(|error| error.to_string()),
+        BridgeAction::ClassifySql {
+            connection_id,
+            project_id,
+            sql,
+        } => serde_json::to_value(access.classify_sql(&connection_id, &project_id, &sql)?)
+            .map_err(|error| error.to_string()),
+        BridgeAction::StartQuery {
+            connection_id,
+            snapshot_id,
+        } => serde_json::to_value(access.start_query(&connection_id, &snapshot_id)?)
+            .map_err(|error| error.to_string()),
+        BridgeAction::QueryStatus {
+            connection_id,
+            execution_id,
+        } => serde_json::to_value(access.query_status(&connection_id, &execution_id)?)
+            .map_err(|error| error.to_string()),
+        BridgeAction::CancelQuery {
+            connection_id,
+            execution_id,
+        } => serde_json::to_value(access.cancel_query(&connection_id, &execution_id)?)
+            .map_err(|error| error.to_string()),
+        BridgeAction::GetResultPage {
+            connection_id,
+            result_id,
+            offset,
+            max_rows,
+        } => serde_json::to_value(access.result_page(
+            &connection_id,
+            &result_id,
+            offset,
+            max_rows,
+        )?)
+        .map_err(|error| error.to_string()),
+        BridgeAction::ReleaseResult {
+            connection_id,
+            result_id,
+        } => serde_json::to_value(access.release_result(&connection_id, &result_id)?)
+            .map_err(|error| error.to_string()),
         BridgeAction::Disconnect { connection_id } => {
             owned_connections.retain(|owned| owned != &connection_id);
             Ok(serde_json::json!({ "disconnected": access.disconnect(&connection_id)? }))
@@ -601,11 +639,16 @@ mod tests {
             PathBuf::from("unused"),
             std::env::temp_dir().join("tarik-bridge-results"),
         ));
-        let projects = ProjectManager::new(database.clone(), std::env::temp_dir(), engine);
+        let projects = ProjectManager::new(database.clone(), std::env::temp_dir(), engine.clone());
         let root =
             std::env::temp_dir().join(format!("tarik-agent-bridge-{}", uuid::Uuid::new_v4()));
         let logger = Arc::new(AppLogger::open(root.join("logs")));
-        let access = Arc::new(AgentAccessManager::new(database, projects, logger.clone()));
+        let access = Arc::new(AgentAccessManager::new(
+            database,
+            projects,
+            engine,
+            logger.clone(),
+        ));
         let bridge = AgentBridge::new(root.join("runtime"), access.clone(), logger);
         (access, bridge, root)
     }

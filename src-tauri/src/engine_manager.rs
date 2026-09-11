@@ -453,12 +453,22 @@ impl EngineManager {
     /// Submit an asynchronous query job for the active engine session. Returns
     /// once the job is queued.
     pub fn execute_query(&self, execution_id: &str, sql: &str) -> Result<(), String> {
+        self.execute_query_bounded(execution_id, sql, None)
+    }
+
+    pub fn execute_query_bounded(
+        &self,
+        execution_id: &str,
+        sql: &str,
+        row_limit: Option<u64>,
+    ) -> Result<(), String> {
         self.session_request(
             "query.execute",
             serde_json::json!({
                 "executionId": execution_id,
                 "sql": sql,
                 "cacheDir": self.result_root.to_string_lossy(),
+                "rowLimit": row_limit,
             }),
         )
         .map(|_| ())
