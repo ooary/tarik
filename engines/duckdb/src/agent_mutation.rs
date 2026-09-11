@@ -20,7 +20,17 @@ pub fn execute(
         ));
     }
     let transaction = connection.transaction()?;
-    let rows_affected = transaction.execute(sql, [])? as u64;
+    let rows_affected = match transaction.execute(sql, []) {
+        Ok(rows) => rows as u64,
+        Err(execution_error) => {
+            return match transaction.rollback() {
+                Ok(()) => Err(execution_error.into()),
+                Err(rollback_error) => Err(EngineError::AgentRollbackFailed(format!(
+                    "execution failed ({execution_error}); rollback failed ({rollback_error})"
+                ))),
+            };
+        }
+    };
     transaction.commit()?;
     let catalog_revision = catalog::inspect(connection)?.revision;
     Ok(AgentMutationResult {

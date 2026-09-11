@@ -97,6 +97,15 @@ pub fn capture_and_normalize(
     sql: &str,
     mode: PlanMode,
 ) -> Result<QueryPlan, String> {
+    capture_and_normalize_with_limit(engine, sql, mode, PLAN_POLL_LIMIT)
+}
+
+pub fn capture_and_normalize_with_limit(
+    engine: &EngineManager,
+    sql: &str,
+    mode: PlanMode,
+    poll_limit: usize,
+) -> Result<QueryPlan, String> {
     let sql = sql.trim();
     if sql.is_empty() {
         return Err("plan.empty: SQL text is empty".into());
@@ -108,7 +117,7 @@ pub fn capture_and_normalize(
     };
     engine.execute_query(&execution_id, &format!("{prefix}{sql}"))?;
 
-    let terminal = (0..PLAN_POLL_LIMIT)
+    let terminal = (0..poll_limit)
         .find_map(|_| {
             let status = match engine.query_status(&execution_id) {
                 Ok(status) => status,
@@ -126,7 +135,7 @@ pub fn capture_and_normalize(
                 None
             }
         })
-        .ok_or_else(|| "plan.timeout: engine did not finish within five minutes".to_string())??;
+        .ok_or_else(|| "plan.timeout: engine did not finish within its deadline".to_string())??;
 
     if terminal.state != ExecutionState::Succeeded {
         let error = terminal

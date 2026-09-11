@@ -80,6 +80,7 @@ impl BridgeRequest {
             | BridgeAction::ExecuteApproved { connection_id, .. }
             | BridgeAction::ProfileStatus { connection_id, .. }
             | BridgeAction::CancelProfile { connection_id, .. }
+            | BridgeAction::ExplainSql { connection_id, .. }
             | BridgeAction::Disconnect { connection_id } => {
                 validate_connection_id(connection_id)?;
             }
@@ -292,6 +293,11 @@ pub enum BridgeAction {
     CancelProfile {
         connection_id: String,
         profile_id: String,
+    },
+    ExplainSql {
+        connection_id: String,
+        snapshot_id: String,
+        actual: bool,
     },
     ListQuality {
         connection_id: String,

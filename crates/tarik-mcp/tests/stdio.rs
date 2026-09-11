@@ -107,7 +107,7 @@ fn initializes_lists_static_tools_reports_unavailable_and_exits_on_eof() {
     }));
     let tools = process.response();
     let tools = tools["result"]["tools"].as_array().unwrap();
-    assert_eq!(tools.len(), 19);
+    assert_eq!(tools.len(), 20);
     let names = tools
         .iter()
         .map(|tool| tool["name"].as_str().unwrap())

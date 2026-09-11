@@ -152,6 +152,7 @@ struct AccessState {
     agent_queries: HashMap<String, AgentQuery>,
     approvals: HashMap<String, PendingApproval>,
     profiles: HashMap<String, (String, String)>,
+    critical_projects: HashMap<String, String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -1034,6 +1035,10 @@ impl AgentAccessManager {
                     "agent.approval_owner_mismatch: Approval cannot be transferred.".into(),
                 );
             }
+            if approval.created_at.elapsed() >= APPROVAL_LIFETIME {
+                approval.state = ApprovalState::Expired;
+                return Err("agent.approval_expired: Propose the SQL again.".into());
+            }
             if approval.state != ApprovalState::Approved {
                 return Err(
                     "agent.approval_not_approved: Approve this request inside Tarik first.".into(),
@@ -1048,6 +1053,10 @@ impl AgentAccessManager {
                 approval.snapshot_hash.clone(),
             )
         };
+        if self.lock()?.critical_projects.contains_key(&project_id) {
+            self.mark_approval_failed(approval_id);
+            return Err("agent.critical_recovery: Close and reopen the project before another agent mutation.".into());
+        }
         if let Err(error) = self.require_capability(
             connection_id,
             &project_id,
@@ -1119,6 +1128,12 @@ impl AgentAccessManager {
             }
             Err(error) => {
                 self.mark_approval_failed(approval_id);
+                let rollback_failed = error.contains("agent.rollback_failed");
+                if rollback_failed {
+                    self.lock()?
+                        .critical_projects
+                        .insert(project_id.clone(), "rollback outcome is ambiguous".into());
+                }
                 self.write_audit(
                     &profile_id,
                     connection_id,
@@ -1128,12 +1143,69 @@ impl AgentAccessManager {
                     &snapshot_hash,
                     "failed",
                     None,
-                    "confirmed_by_transaction_drop",
-                    Some("agent.mutation_failed"),
+                    if rollback_failed {
+                        "failed"
+                    } else {
+                        "confirmed"
+                    },
+                    Some(if rollback_failed {
+                        "agent.rollback_failed"
+                    } else {
+                        "agent.mutation_failed"
+                    }),
                 )?;
-                Err(format!("agent.mutation_failed: {error}"))
+                if rollback_failed {
+                    Err(format!("agent.critical_recovery: {error}"))
+                } else {
+                    Err(format!("agent.mutation_failed: {error}"))
+                }
             }
         }
+    }
+
+    pub fn explain_sql(
+        &self,
+        connection_id: &str,
+        snapshot_id: &str,
+        actual: bool,
+    ) -> Result<crate::plan::QueryPlan, String> {
+        let (project_id, sql, expected_revision) = {
+            let mut state = self.lock()?;
+            prune(&mut state);
+            let snapshot = state.sql_snapshots.remove(snapshot_id).ok_or_else(|| {
+                "agent.snapshot_missing: Classify the SQL again before explaining it.".to_string()
+            })?;
+            if snapshot.connection_id != connection_id
+                || snapshot.classification.decision
+                    != tarik_engine_protocol::AgentSqlDecision::SafeRead
+            {
+                return Err("agent.snapshot_owner_mismatch: Only owned SafeRead snapshots can be explained.".into());
+            }
+            (
+                snapshot.project_id,
+                snapshot.sql,
+                snapshot.classification.catalog_revision,
+            )
+        };
+        self.require_capability(connection_id, &project_id, |grant| grant.analyze, "Analyze")?;
+        let current = self
+            .engine
+            .classify_agent_sql(&sql, &self.registered_sources(&project_id)?)?;
+        if current.decision != tarik_engine_protocol::AgentSqlDecision::SafeRead
+            || current.catalog_revision != expected_revision
+        {
+            return Err("agent.snapshot_stale: Catalog policy changed; classify again.".into());
+        }
+        crate::plan::capture_and_normalize_with_limit(
+            &self.engine,
+            &sql,
+            if actual {
+                crate::plan::PlanMode::Profile
+            } else {
+                crate::plan::PlanMode::Explain
+            },
+            if actual { 2_400 } else { 400 },
+        )
     }
 
     pub fn start_profile(
@@ -1367,7 +1439,10 @@ impl AgentAccessManager {
         let approval = state.approvals.get_mut(approval_id).ok_or_else(|| {
             "agent.approval_missing: The approval expired or was already removed.".to_string()
         })?;
-        if approval.state != ApprovalState::Pending {
+        if approval.state != ApprovalState::Pending
+            || approval.created_at.elapsed() >= APPROVAL_LIFETIME
+        {
+            approval.state = ApprovalState::Expired;
             return Err("agent.approval_terminal: This approval is no longer pending.".into());
         }
         if approve {
@@ -1515,6 +1590,7 @@ impl AgentAccessManager {
                 state
                     .profiles
                     .retain(|_, (_, owner_project)| owner_project != project_id);
+                state.critical_projects.remove(project_id);
                 let mut approvals = 0;
                 for approval in state.approvals.values_mut().filter(|approval| {
                     approval.project_id == project_id
@@ -1895,8 +1971,10 @@ fn prune(state: &mut AccessState) {
         .sql_snapshots
         .retain(|_, snapshot| snapshot.created_at.elapsed() < SQL_SNAPSHOT_LIFETIME);
     for approval in state.approvals.values_mut().filter(|approval| {
-        approval.state == ApprovalState::Pending
-            && approval.created_at.elapsed() >= APPROVAL_LIFETIME
+        matches!(
+            approval.state,
+            ApprovalState::Pending | ApprovalState::Approved
+        ) && approval.created_at.elapsed() >= APPROVAL_LIFETIME
     }) {
         approval.state = ApprovalState::Expired;
     }

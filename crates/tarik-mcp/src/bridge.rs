@@ -213,6 +213,18 @@ impl BridgeClient {
         })
     }
 
+    pub fn explain_sql(
+        &mut self,
+        snapshot_id: String,
+        actual: bool,
+    ) -> Result<serde_json::Value, String> {
+        self.request(BridgeAction::ExplainSql {
+            connection_id: self.connection_id()?,
+            snapshot_id,
+            actual,
+        })
+    }
+
     pub fn start_profile(
         &mut self,
         request: tarik_engine_protocol::ProfileRequest,

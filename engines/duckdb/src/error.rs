@@ -49,6 +49,8 @@ pub enum EngineError {
     ResultMissing(String),
     #[error("invalid query request: {0}")]
     InvalidQuery(&'static str),
+    #[error("approved mutation failed and rollback could not be confirmed: {0}")]
+    AgentRollbackFailed(String),
     #[error("invalid engine resource settings: {0}")]
     InvalidResources(String),
     #[error("engine resources cannot change while session work is queued or running")]
@@ -128,6 +130,7 @@ impl EngineError {
             Self::ExportCancelled => "export.cancelled",
             Self::ResultMissing(_) => "result.missing",
             Self::InvalidQuery(_) => "query.invalid",
+            Self::AgentRollbackFailed(_) => "agent.rollback_failed",
             Self::InvalidResources(_) => "resources.invalid",
             Self::ResourcesBusy => "resources.busy",
             Self::WorkerSpawn(_) => "engine.worker_spawn",

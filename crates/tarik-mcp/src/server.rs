@@ -81,6 +81,14 @@ pub struct SnapshotRequest {
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
+pub struct ExplainRequest {
+    pub snapshot_id: String,
+    #[serde(default)]
+    pub actual: bool,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct ExecutionRequest {
     pub execution_id: String,
 }
@@ -409,6 +417,17 @@ impl TarikMcpServer {
     }
 
     #[tool(
+        name = "tarik_query_flow",
+        description = "Explain a one-use immutable SafeRead snapshot. Estimate mode is non-executing; actual=true explicitly runs EXPLAIN ANALYZE under a bounded deadline. The original query is never opened in the editor."
+    )]
+    fn query_flow(
+        &self,
+        Parameters(request): Parameters<ExplainRequest>,
+    ) -> Result<rmcp::model::CallToolResult, rmcp::ErrorData> {
+        Ok(self.bridge_call(|bridge| bridge.explain_sql(request.snapshot_id, request.actual)))
+    }
+
+    #[tool(
         name = "tarik_profile_start",
         description = "Start a bounded exact or approximate profile for an exact relation and selected columns from the current granted catalog. Existing Tarik profile provenance and response budgets apply."
     )]
@@ -701,7 +720,7 @@ mod tests {
             .iter()
             .map(|tool| tool.name.as_ref())
             .collect::<Vec<_>>();
-        assert_eq!(names.len(), 19);
+        assert_eq!(names.len(), 20);
         for required in [
             "tarik_classify_sql",
             "tarik_describe_relation",
@@ -710,6 +729,7 @@ mod tests {
             "tarik_query_cancel",
             "tarik_query_start",
             "tarik_query_status",
+            "tarik_query_flow",
             "tarik_result_page",
             "tarik_result_release",
             "tarik_server_info",

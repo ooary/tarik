@@ -426,6 +426,12 @@ fn dispatch(
             profile_id,
         } => serde_json::to_value(access.cancel_profile(&connection_id, &profile_id)?)
             .map_err(|error| error.to_string()),
+        BridgeAction::ExplainSql {
+            connection_id,
+            snapshot_id,
+            actual,
+        } => serde_json::to_value(access.explain_sql(&connection_id, &snapshot_id, actual)?)
+            .map_err(|error| error.to_string()),
         BridgeAction::ListQuality {
             connection_id,
             project_id,
