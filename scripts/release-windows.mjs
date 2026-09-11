@@ -110,9 +110,15 @@ try {
     [path.join(root, "docs", "release", "COMPATIBILITY.md"), "COMPATIBILITY.md"],
     [path.join(root, "LICENSE"), "LICENSE"],
     [path.join(root, "THIRD_PARTY_NOTICES.md"), "THIRD_PARTY_NOTICES.md"],
+    [
+      path.join(root, "docs", "agent-skills", "tarik-mcp", "SKILL.md"),
+      "agent-skills/tarik-mcp/SKILL.md",
+    ],
   ];
   for (const [source, destination] of copies) {
-    await copyFile(source, path.join(portable, destination));
+    const target = path.join(portable, destination);
+    await mkdir(path.dirname(target), { recursive: true });
+    await copyFile(source, target);
   }
   const internalChecksums = [];
   for (const name of PORTABLE_FILES.filter((name) => name !== "SHA256SUMS")) {

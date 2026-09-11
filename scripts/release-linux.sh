@@ -69,6 +69,8 @@ cp target/release/tarik-mcp "$PORTABLE/tarik-mcp"
 cp target/release/libduckdb.so "$PORTABLE/libduckdb.so"
 cp LICENSE THIRD_PARTY_NOTICES.md README.md "$PORTABLE/"
 cp docs/release/COMPATIBILITY.md "$PORTABLE/COMPATIBILITY.md"
+mkdir -p "$PORTABLE/agent-skills/tarik-mcp"
+cp docs/agent-skills/tarik-mcp/SKILL.md "$PORTABLE/agent-skills/tarik-mcp/SKILL.md"
 cp "$STAGE/THIRD-PARTY-RUST.txt" "$STAGE/THIRD-PARTY-NPM.txt" "$PORTABLE/"
 tar -C "$STAGE" -czf "$ARCHIVE" "$(basename "$PORTABLE")"
 
@@ -107,7 +109,7 @@ DEB=$(find "$STAGE" -maxdepth 1 -name '*.deb' -print -quit)
 APPIMAGE=$(find "$STAGE" -maxdepth 1 -name '*.AppImage' -print -quit)
 DEB_CONTENTS="$STAGE/.deb-contents"
 ar p "$DEB" data.tar.gz | tar -tzf - > "$DEB_CONTENTS"
-for expected in usr/bin/tarik usr/bin/tarik-engine-duckdb usr/bin/tarik-mcp usr/bin/libduckdb.so usr/lib/Tarik/COMPATIBILITY.md usr/lib/Tarik/THIRD_PARTY_NOTICES.md; do
+for expected in usr/bin/tarik usr/bin/tarik-engine-duckdb usr/bin/tarik-mcp usr/bin/libduckdb.so usr/lib/Tarik/COMPATIBILITY.md usr/lib/Tarik/THIRD_PARTY_NOTICES.md usr/lib/Tarik/agent-skills/tarik-mcp/SKILL.md; do
   grep -Fx "$expected" "$DEB_CONTENTS" >/dev/null
 done
 rm "$DEB_CONTENTS"

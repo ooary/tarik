@@ -1,13 +1,19 @@
 use std::{
     borrow::Cow,
+    future::Future,
     path::PathBuf,
     sync::{Arc, Mutex},
 };
 
 use rmcp::{
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
-    model::{Implementation, ProtocolVersion, ServerCapabilities, ServerInfo},
-    schemars, tool, tool_handler, tool_router, ServerHandler,
+    model::{
+        GetPromptRequestParams, GetPromptResponse, Implementation, ListPromptsResult,
+        PaginatedRequestParams, ProtocolVersion, ServerCapabilities, ServerInfo,
+    },
+    schemars,
+    service::RequestContext,
+    tool, tool_handler, tool_router, RoleServer, ServerHandler,
 };
 use serde::{Deserialize, Serialize};
 use tarik_agent_protocol::{
@@ -17,6 +23,7 @@ use zeroize::Zeroizing;
 
 use crate::{
     bridge::{generate_pairing_key, BridgeClient},
+    guidance,
     profile::{self, ClientProfile},
 };
 
@@ -579,11 +586,42 @@ fn tool_error(code: &str, message: &str) -> rmcp::model::CallToolResult {
 #[tool_handler(router = self.tool_router)]
 impl ServerHandler for TarikMcpServer {
     fn get_info(&self) -> ServerInfo {
-        ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
-            .with_server_info(Implementation::new("tarik-mcp", env!("CARGO_PKG_VERSION")))
-            .with_instructions(
-                "Tarik is a local SQL workbench. The desktop owns project access, SQL policy, execution, approvals, and results. Use tarik_server_info first. No tool approval can be performed through MCP.",
-            )
+        ServerInfo::new(
+            ServerCapabilities::builder()
+                .enable_tools()
+                .enable_prompts()
+                .build(),
+        )
+        .with_server_info(Implementation::new("tarik-mcp", env!("CARGO_PKG_VERSION")))
+        .with_instructions(guidance::SERVER_INSTRUCTIONS)
+    }
+
+    fn list_prompts(
+        &self,
+        _request: Option<PaginatedRequestParams>,
+        _context: RequestContext<RoleServer>,
+    ) -> impl Future<Output = Result<ListPromptsResult, rmcp::ErrorData>> + Send + '_ {
+        std::future::ready(Ok(ListPromptsResult {
+            prompts: guidance::prompts(),
+            ..Default::default()
+        }))
+    }
+
+    fn get_prompt(
+        &self,
+        request: GetPromptRequestParams,
+        _context: RequestContext<RoleServer>,
+    ) -> impl Future<Output = Result<GetPromptResponse, rmcp::ErrorData>> + Send + '_ {
+        std::future::ready(
+            guidance::get_prompt(&request.name)
+                .map(Into::into)
+                .ok_or_else(|| {
+                    rmcp::ErrorData::resource_not_found(
+                        "Unknown Tarik prompt",
+                        Some(serde_json::json!({ "name": request.name })),
+                    )
+                }),
+        )
     }
 
     fn supported_protocol_versions(&self) -> Cow<'static, [ProtocolVersion]> {
@@ -727,8 +765,12 @@ mod tests {
         );
         let info = server.get_info();
         assert!(info.capabilities.tools.is_some());
-        assert!(info.capabilities.prompts.is_none());
+        assert!(info.capabilities.prompts.is_some());
         assert!(info.capabilities.resources.is_none());
+        assert_eq!(
+            info.instructions.as_deref(),
+            Some(guidance::SERVER_INSTRUCTIONS)
+        );
     }
 
     #[test]

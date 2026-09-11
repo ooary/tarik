@@ -41,6 +41,11 @@ impl SettingsRepository {
         )?;
         Ok(())
     }
+
+    pub fn delete(&self, key: &str) -> Result<bool, MetadataError> {
+        let connection = self.database.connection()?;
+        Ok(connection.execute("DELETE FROM settings WHERE key = ?1", [key])? > 0)
+    }
 }
 
 #[cfg(test)]
@@ -67,6 +72,9 @@ mod tests {
         assert_eq!(repository.get::<Preference>("workbench").unwrap(), None);
         repository.set("workbench", &preference).unwrap();
         assert_eq!(repository.get("workbench").unwrap(), Some(preference));
+        assert!(repository.delete("workbench").unwrap());
+        assert_eq!(repository.get::<Preference>("workbench").unwrap(), None);
+        assert!(!repository.delete("workbench").unwrap());
     }
 
     #[test]

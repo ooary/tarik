@@ -15,6 +15,7 @@ export const PORTABLE_FILES = [
   "THIRD_PARTY_NOTICES.md",
   "THIRD-PARTY-RUST.txt",
   "THIRD-PARTY-NPM.txt",
+  "agent-skills/tarik-mcp/SKILL.md",
   "SHA256SUMS",
 ];
 
@@ -75,10 +76,19 @@ export async function verifyPortableChecksums(root) {
   const checksumFile = await readFile(path.join(root, "SHA256SUMS"), "utf8");
   const observed = new Map();
   for (const line of checksumFile.trim().split(/\r?\n/)) {
-    const match = line.match(/^([a-f0-9]{64}) {2}([^/\\]+)$/);
+    const match = line.match(/^([a-f0-9]{64}) {2}([A-Za-z0-9._/-]+)$/);
     if (!match) throw new Error(`invalid portable checksum line: ${line}`);
-    if (observed.has(match[2])) throw new Error(`duplicate portable checksum: ${match[2]}`);
-    observed.set(match[2], match[1]);
+    const name = match[2];
+    const segments = name.split("/");
+    if (
+      name.startsWith("/") ||
+      name.includes("\\") ||
+      segments.some((segment) => segment === "" || segment === "." || segment === "..")
+    ) {
+      throw new Error(`unsafe portable checksum path: ${name}`);
+    }
+    if (observed.has(name)) throw new Error(`duplicate portable checksum: ${name}`);
+    observed.set(name, match[1]);
   }
   const expected = PORTABLE_FILES.filter((name) => name !== "SHA256SUMS").sort();
   if (JSON.stringify([...observed.keys()].sort()) !== JSON.stringify(expected)) {

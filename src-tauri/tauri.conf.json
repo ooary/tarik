@@ -33,7 +33,8 @@
     "licenseFile": "../LICENSE",
     "resources": {
       "../THIRD_PARTY_NOTICES.md": "THIRD_PARTY_NOTICES.md",
-      "../docs/release/COMPATIBILITY.md": "COMPATIBILITY.md"
+      "../docs/release/COMPATIBILITY.md": "COMPATIBILITY.md",
+      "../docs/agent-skills/tarik-mcp/SKILL.md": "agent-skills/tarik-mcp/SKILL.md"
     },
     "icon": [
       "icons/32x32.png",

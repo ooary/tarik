@@ -964,7 +964,7 @@ fn is_windows_reparse(metadata: &fs::Metadata) -> bool {
 }
 
 #[cfg(windows)]
-fn verify_windows_owner(path: &Path) -> Result<(), String> {
+pub(crate) fn verify_windows_owner(path: &Path) -> Result<(), String> {
     use std::{os::windows::ffi::OsStrExt, ptr};
     use windows_sys::Win32::{
         Foundation::{CloseHandle, LocalFree, ERROR_INSUFFICIENT_BUFFER, ERROR_SUCCESS},

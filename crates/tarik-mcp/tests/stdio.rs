@@ -122,6 +122,46 @@ fn initializes_lists_static_tools_reports_unavailable_and_exits_on_eof() {
     process.send(json!({
         "jsonrpc": "2.0",
         "id": 3,
+        "method": "prompts/list",
+        "params": {}
+    }));
+    let prompts = process.response();
+    let prompts = prompts["result"]["prompts"].as_array().unwrap();
+    assert_eq!(prompts.len(), 7);
+    let prompt_names = prompts
+        .iter()
+        .map(|prompt| prompt["name"].as_str().unwrap())
+        .collect::<Vec<_>>();
+    assert!(prompt_names.contains(&"tarik-getting-started"));
+    assert!(prompt_names.contains(&"tarik-full-query-export"));
+
+    process.send(json!({
+        "jsonrpc": "2.0",
+        "id": 4,
+        "method": "prompts/get",
+        "params": { "name": "tarik-full-query-export" }
+    }));
+    let prompt = process.response();
+    let text = prompt["result"]["messages"][0]["content"]["text"]
+        .as_str()
+        .unwrap();
+    assert!(text.contains("complete immutable SafeRead query"));
+    assert!(text.contains("5,000-row browse cap"));
+    assert!(text.contains("untrusted content"));
+    assert!(text.contains("Never provide or request a path"));
+
+    process.send(json!({
+        "jsonrpc": "2.0",
+        "id": 5,
+        "method": "prompts/get",
+        "params": { "name": "not-a-tarik-prompt" }
+    }));
+    let missing = process.response();
+    assert_eq!(missing["error"]["message"], "Unknown Tarik prompt");
+
+    process.send(json!({
+        "jsonrpc": "2.0",
+        "id": 6,
         "method": "tools/call",
         "params": {
             "name": "tarik_server_info",

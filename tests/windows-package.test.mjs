@@ -47,6 +47,7 @@ test("portable contents are exact and reject missing or extra files", async () =
   await mkdir(root, { recursive: true });
   try {
     for (const file of PORTABLE_FILES) {
+      await mkdir(path.dirname(path.join(root, file)), { recursive: true });
       const bytes = [
         "Tarik.exe",
         "tarik-engine-duckdb.exe",
@@ -73,13 +74,32 @@ test("portable checksums reject tampering after extraction", async () => {
   await mkdir(root, { recursive: true });
   try {
     const checked = PORTABLE_FILES.filter((name) => name !== "SHA256SUMS");
-    for (const file of checked) await writeFile(path.join(root, file), `MZ${file}`);
+    for (const file of checked) {
+      await mkdir(path.dirname(path.join(root, file)), { recursive: true });
+      await writeFile(path.join(root, file), `MZ${file}`);
+    }
     const lines = [];
     for (const file of checked) lines.push(`${await sha256(path.join(root, file))}  ${file}`);
     await writeFile(path.join(root, "SHA256SUMS"), `${lines.join("\n")}\n`);
     await verifyPortableChecksums(root);
     await writeFile(path.join(root, "duckdb.dll"), "MZtampered");
     await assert.rejects(() => verifyPortableChecksums(root), /checksum mismatch: duckdb.dll/);
+  } finally {
+    await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  }
+});
+
+test("portable checksums reject unsafe nested paths", async () => {
+  const root = path.join(
+    process.env.RUNNER_TEMP || process.env.TEMP || process.env.TMPDIR || "/tmp",
+    `tarik-windows-unsafe-checksum-${Date.now()}-${process.pid}`,
+  );
+  await mkdir(root, { recursive: true });
+  try {
+    await writeFile(path.join(root, "SHA256SUMS"), `${"0".repeat(64)}  ../SKILL.md\n`);
+    await assert.rejects(() => verifyPortableChecksums(root), /unsafe portable checksum path/);
+    await writeFile(path.join(root, "SHA256SUMS"), `${"0".repeat(64)}  agent-skills\\SKILL.md\n`);
+    await assert.rejects(() => verifyPortableChecksums(root), /invalid portable checksum line/);
   } finally {
     await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   }
