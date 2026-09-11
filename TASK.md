@@ -2403,7 +2403,7 @@ Blocked
 
 ## EPIC E15.1 — Agent Connection Assistant, Usage Guidance, and Guarded Export Delegation
 
-**Status:** `PLANNED / T0 READY` — The user approved the E15.1 task plan on September 11, 2026. Implementation remains blocked on a durable E15.1-T0 Graph Protocol and explicit review of that contract. E15 consolidated manual review and native Windows gates remain independently open.
+**Status:** `IN PROGRESS / T1 REVIEW` — The user approved the E15.1 task plan and durable T0 design on September 11, 2026. The T1 setup engine is committed locally; the combined connection-assistant UI remains an uncommitted review candidate. T0/T1 completion still requires native Windows host/config/process evidence and explicit real-Tauri UI sign-off. E15 consolidated review remains independently open.
 
 **Outcome:** A beginner can connect Tarik to supported Windows MCP hosts without editing JSON, optionally install portable Tarik usage guidance, and let an agent export a complete immutable SafeRead query to a bounded user-created destination grant. Tarik continues to own pairing, project permissions, destination selection, export policy, destructive approval, execution, recovery, and audit.
 
