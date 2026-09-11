@@ -2486,13 +2486,10 @@ mod tests {
         manager
             .execute_approved(&connection_id, &critical.approval_id)
             .unwrap();
-        assert_eq!(
-            engine
-                .result_page("missing", 0, 1)
-                .unwrap_err()
-                .contains("result does not exist"),
-            true
-        );
+        assert!(engine
+            .result_page("missing", 0, 1)
+            .unwrap_err()
+            .contains("result does not exist"));
         assert_eq!(
             manager
                 .repository
