@@ -787,9 +787,9 @@ fn safe_scalar_function(name: &str) -> bool {
         "try_cast",
         "typeof",
         "upper",
-        "variance",
         "var_pop",
         "var_samp",
+        "variance",
         "week",
         "year",
     ];
