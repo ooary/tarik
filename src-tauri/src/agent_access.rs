@@ -2335,6 +2335,179 @@ mod tests {
     }
 
     #[test]
+    fn real_sidecar_workflow_classifies_pages_approves_and_commits_once() {
+        let engine_binary = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .join("target/debug")
+            .join(if cfg!(windows) {
+                "tarik-engine-duckdb.exe"
+            } else {
+                "tarik-engine-duckdb"
+            });
+        assert!(engine_binary.exists(), "build the DuckDB engine first");
+        let root = std::env::temp_dir().join(format!("tarik-agent-real-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let project_path = root.join("agent.duckdb");
+        let database = MetadataDb::open_in_memory().unwrap();
+        let project = crate::metadata::projects::ProjectsRepository::new(database.clone())
+            .upsert(
+                "Agent real",
+                &project_path,
+                crate::metadata::projects::ProjectOwnership::External,
+            )
+            .unwrap();
+        let engine = Arc::new(EngineManager::new(engine_binary, root.join("results")));
+        engine.open_session(&project_path).unwrap();
+        let projects = ProjectManager::new(database.clone(), root.clone(), engine.clone());
+        projects.set_active_for_test(crate::projects::ActiveProject {
+            id: project.id.clone(),
+            name: project.name,
+            duckdb_path: project_path.clone(),
+        });
+        let logger = Arc::new(AppLogger::open(root.join("logs")));
+        let manager = AgentAccessManager::new(database, projects, engine.clone(), logger);
+        let (profile_id, connection_id) = pair_and_authenticate(&manager);
+        manager
+            .set_project_grant(
+                &profile_id,
+                ProjectGrant {
+                    project_id: project.id.clone(),
+                    inspect: true,
+                    analyze: true,
+                    modify_workspace: true,
+                    modify_data: true,
+                },
+            )
+            .unwrap();
+
+        let create = manager
+            .classify_sql(
+                &connection_id,
+                &project.id,
+                "CREATE TABLE orders(id INTEGER, amount INTEGER)",
+            )
+            .unwrap();
+        assert_eq!(
+            create.classification.decision,
+            tarik_engine_protocol::AgentSqlDecision::ApprovalRequired
+        );
+        let approval = manager
+            .propose_sql(&connection_id, &create.snapshot_id)
+            .unwrap();
+        manager
+            .decide_approval(&approval.approval_id, true, None)
+            .unwrap();
+        assert_eq!(
+            manager
+                .execute_approved(&connection_id, &approval.approval_id)
+                .unwrap()
+                .state,
+            "succeeded"
+        );
+        assert!(manager
+            .execute_approved(&connection_id, &approval.approval_id)
+            .is_err());
+
+        let insert = manager
+            .classify_sql(
+                &connection_id,
+                &project.id,
+                "INSERT INTO orders VALUES (1, 10), (2, 20)",
+            )
+            .unwrap();
+        let insert_approval = manager
+            .propose_sql(&connection_id, &insert.snapshot_id)
+            .unwrap();
+        manager
+            .decide_approval(&insert_approval.approval_id, true, None)
+            .unwrap();
+        manager
+            .execute_approved(&connection_id, &insert_approval.approval_id)
+            .unwrap();
+
+        let read = manager
+            .classify_sql(
+                &connection_id,
+                &project.id,
+                "SELECT id, amount FROM orders ORDER BY id",
+            )
+            .unwrap();
+        assert_eq!(
+            read.classification.decision,
+            tarik_engine_protocol::AgentSqlDecision::SafeRead
+        );
+        let queued = manager
+            .start_query(&connection_id, &read.snapshot_id)
+            .unwrap();
+        let terminal = (0..400)
+            .find_map(|_| {
+                let status = manager
+                    .query_status(&connection_id, &queued.execution_id)
+                    .unwrap();
+                if status.state == "succeeded" {
+                    Some(status)
+                } else if matches!(status.state.as_str(), "failed" | "cancelled") {
+                    panic!("agent read ended as {}", status.state);
+                } else {
+                    std::thread::sleep(Duration::from_millis(5));
+                    None
+                }
+            })
+            .expect("agent query reached terminal state");
+        let result_id = terminal.result_id.unwrap();
+        let page = manager
+            .result_page(&connection_id, &result_id, 0, 10)
+            .unwrap();
+        assert_eq!(page.rows.as_array().unwrap().len(), 2);
+        manager.release_result(&connection_id, &result_id).unwrap();
+
+        let critical = manager
+            .classify_sql(&connection_id, &project.id, "DELETE FROM orders")
+            .unwrap();
+        assert_eq!(
+            critical.classification.decision,
+            tarik_engine_protocol::AgentSqlDecision::CriticalConfirmation
+        );
+        let critical = manager
+            .propose_sql(&connection_id, &critical.snapshot_id)
+            .unwrap();
+        let phrase = manager
+            .list_pending_approvals()
+            .unwrap()
+            .into_iter()
+            .find(|approval| approval.id == critical.approval_id)
+            .unwrap()
+            .critical_phrase
+            .unwrap();
+        manager
+            .decide_approval(&critical.approval_id, true, Some(&phrase))
+            .unwrap();
+        manager
+            .execute_approved(&connection_id, &critical.approval_id)
+            .unwrap();
+        assert_eq!(
+            engine
+                .result_page("missing", 0, 1)
+                .unwrap_err()
+                .contains("result does not exist"),
+            true
+        );
+        assert_eq!(
+            manager
+                .repository
+                .list_audit(&project.id, 10)
+                .unwrap()
+                .len(),
+            3
+        );
+
+        manager.shutdown();
+        engine.shutdown();
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn wrong_proof_invalidates_connection_and_replay_fails() {
         let (manager, _) = fixture();
         manager.set_enabled(true).unwrap();
