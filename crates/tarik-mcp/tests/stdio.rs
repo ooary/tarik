@@ -107,7 +107,7 @@ fn initializes_lists_static_tools_reports_unavailable_and_exits_on_eof() {
     }));
     let tools = process.response();
     let tools = tools["result"]["tools"].as_array().unwrap();
-    assert_eq!(tools.len(), 10);
+    assert_eq!(tools.len(), 13);
     let names = tools
         .iter()
         .map(|tool| tool["name"].as_str().unwrap())
@@ -115,7 +115,9 @@ fn initializes_lists_static_tools_reports_unavailable_and_exits_on_eof() {
     assert!(names.contains(&"tarik_classify_sql"));
     assert!(names.contains(&"tarik_query_start"));
     assert!(names.contains(&"tarik_result_page"));
-    assert!(!names.iter().any(|name| name.contains("approve")));
+    assert!(names.contains(&"tarik_approval_status"));
+    assert!(names.contains(&"tarik_execute_approved"));
+    assert!(!names.contains(&"tarik_approve"));
 
     process.send(json!({
         "jsonrpc": "2.0",

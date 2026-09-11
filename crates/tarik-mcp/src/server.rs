@@ -102,6 +102,12 @@ pub struct ResultRequest {
     pub result_id: String,
 }
 
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ApprovalRequest {
+    pub approval_id: String,
+}
+
 #[derive(Debug, Clone, Serialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct TarikServerStatus {
@@ -317,6 +323,39 @@ impl TarikMcpServer {
     ) -> Result<rmcp::model::CallToolResult, rmcp::ErrorData> {
         Ok(self.bridge_call(|bridge| bridge.release_result(request.result_id)))
     }
+
+    #[tool(
+        name = "tarik_propose_sql",
+        description = "Create a visible one-use Tarik-owned approval request from an immutable approval-required SQL snapshot. Accepts only snapshotId; SQL cannot be resent. This tool cannot approve the request."
+    )]
+    fn propose_sql(
+        &self,
+        Parameters(request): Parameters<SnapshotRequest>,
+    ) -> Result<rmcp::model::CallToolResult, rmcp::ErrorData> {
+        Ok(self.bridge_call(|bridge| bridge.propose_sql(request.snapshot_id)))
+    }
+
+    #[tool(
+        name = "tarik_approval_status",
+        description = "Read the pending, approved, denied, expired, used, or failed state of an approval owned by this MCP connection. No MCP method can approve it."
+    )]
+    fn approval_status(
+        &self,
+        Parameters(request): Parameters<ApprovalRequest>,
+    ) -> Result<rmcp::model::CallToolResult, rmcp::ErrorData> {
+        Ok(self.bridge_call(|bridge| bridge.approval_status(request.approval_id)))
+    }
+
+    #[tool(
+        name = "tarik_execute_approved",
+        description = "Execute exactly one immutable server-held SQL snapshot after direct approval inside visible Tarik. Accepts only approvalId; SQL and action arguments cannot be supplied."
+    )]
+    fn execute_approved(
+        &self,
+        Parameters(request): Parameters<ApprovalRequest>,
+    ) -> Result<rmcp::model::CallToolResult, rmcp::ErrorData> {
+        Ok(self.bridge_call(|bridge| bridge.execute_approved(request.approval_id)))
+    }
 }
 
 impl TarikMcpServer {
@@ -511,7 +550,7 @@ mod tests {
             .iter()
             .map(|tool| tool.name.as_ref())
             .collect::<Vec<_>>();
-        assert_eq!(names.len(), 10);
+        assert_eq!(names.len(), 13);
         for required in [
             "tarik_classify_sql",
             "tarik_describe_relation",
@@ -523,6 +562,9 @@ mod tests {
             "tarik_result_page",
             "tarik_result_release",
             "tarik_server_info",
+            "tarik_propose_sql",
+            "tarik_approval_status",
+            "tarik_execute_approved",
         ] {
             assert!(names.contains(&required));
         }
@@ -530,7 +572,7 @@ mod tests {
         assert_eq!(catalog.input_schema["properties"]["limit"]["maximum"], 100);
         let page = server.tool_router.get("tarik_result_page").unwrap();
         assert_eq!(page.input_schema["properties"]["maxRows"]["maximum"], 500);
-        assert!(!names.iter().any(|name| name.contains("approve")));
+        assert!(!names.contains(&"tarik_approve"));
         assert!(!names.iter().any(|name| name.contains("execute_sql")));
     }
 }

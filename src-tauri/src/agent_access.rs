@@ -9,11 +9,11 @@ use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tarik_agent_protocol::{
-    AgentExecutionResult, AgentResultPage, AuthenticationResult, CatalogPageResult,
-    CatalogRelationSummary, ConnectionStatusResult, GrantedProject, GrantedProjectsResult,
-    HelloResult, HelloState, ProjectGrant, RelationColumn, RelationDescriptionResult,
-    SqlSnapshotResult, CHALLENGE_BYTES, MAX_AGENT_PAGE_RESPONSE_BYTES, MAX_AGENT_RESULT_ROWS,
-    MAX_DISCOVERY_RESPONSE_BYTES, PROOF_BYTES,
+    AgentExecutionResult, AgentResultPage, ApprovalResult, ApprovalState, AuthenticationResult,
+    CatalogPageResult, CatalogRelationSummary, ConnectionStatusResult, GrantedProject,
+    GrantedProjectsResult, HelloResult, HelloState, ProjectGrant, RelationColumn,
+    RelationDescriptionResult, SqlSnapshotResult, CHALLENGE_BYTES, MAX_AGENT_PAGE_RESPONSE_BYTES,
+    MAX_AGENT_RESULT_ROWS, MAX_DISCOVERY_RESPONSE_BYTES, PROOF_BYTES,
 };
 use zeroize::Zeroizing;
 
@@ -39,6 +39,9 @@ const MAX_SQL_SNAPSHOTS: usize = 32;
 const SQL_SNAPSHOT_LIFETIME: Duration = Duration::from_secs(120);
 const QUERY_LIFETIME: Duration = Duration::from_secs(60);
 const MAX_AGENT_QUERIES_GLOBAL: usize = 4;
+const MAX_PENDING_APPROVALS: usize = 16;
+const MAX_PENDING_APPROVALS_PER_CLIENT: usize = 4;
+const APPROVAL_LIFETIME: Duration = Duration::from_secs(120);
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -77,6 +80,23 @@ pub struct AgentAccessChange {
     pub endpoint_ready: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApprovalRequestView {
+    pub id: String,
+    pub client_name: String,
+    pub project_id: String,
+    pub project_name: String,
+    pub sql: String,
+    pub decision: tarik_engine_protocol::AgentSqlDecision,
+    pub reason_code: String,
+    pub affected_objects: Vec<String>,
+    pub has_top_level_filter: Option<bool>,
+    pub snapshot_hash: String,
+    pub critical_phrase: Option<String>,
+    pub expires_in_seconds: u64,
+}
+
 struct PendingPairing {
     id: String,
     display_name: String,
@@ -109,6 +129,19 @@ struct AgentQuery {
     result_id: Option<String>,
 }
 
+struct PendingApproval {
+    approval_id: String,
+    connection_id: String,
+    profile_id: String,
+    project_id: String,
+    sql: String,
+    classification: tarik_engine_protocol::AgentSqlClassification,
+    snapshot_hash: String,
+    critical_phrase: Option<String>,
+    state: ApprovalState,
+    created_at: Instant,
+}
+
 #[derive(Default)]
 struct AccessState {
     enabled: bool,
@@ -117,6 +150,7 @@ struct AccessState {
     connections: HashMap<String, ConnectionRecord>,
     sql_snapshots: HashMap<String, SqlSnapshot>,
     agent_queries: HashMap<String, AgentQuery>,
+    approvals: HashMap<String, PendingApproval>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -196,6 +230,15 @@ impl AgentAccessManager {
             state.endpoint_ready = false;
             state.pending.clear();
             state.connections.clear();
+            state.sql_snapshots.clear();
+            state.agent_queries.clear();
+            for approval in state
+                .approvals
+                .values_mut()
+                .filter(|approval| approval.state == ApprovalState::Pending)
+            {
+                approval.state = ApprovalState::Denied;
+            }
             self.cleaner.cleanup_all();
         }
         self.logger.record(
@@ -877,6 +920,170 @@ impl AgentAccessManager {
         Ok(true)
     }
 
+    pub fn propose_sql(
+        &self,
+        connection_id: &str,
+        snapshot_id: &str,
+    ) -> Result<ApprovalResult, String> {
+        let (profile_id, _) = self.authenticated_connection(connection_id)?;
+        let mut state = self.lock()?;
+        prune(&mut state);
+        let snapshot = state.sql_snapshots.remove(snapshot_id).ok_or_else(|| {
+            "agent.snapshot_missing: Classify the SQL again before proposing it.".to_string()
+        })?;
+        if snapshot.connection_id != connection_id {
+            return Err(
+                "agent.snapshot_owner_mismatch: SQL snapshots cannot be transferred.".into(),
+            );
+        }
+        if !matches!(
+            snapshot.classification.decision,
+            tarik_engine_protocol::AgentSqlDecision::ApprovalRequired
+                | tarik_engine_protocol::AgentSqlDecision::CriticalConfirmation
+        ) {
+            return Err(
+                "agent.not_approvable: Safe or blocked SQL cannot create an approval.".into(),
+            );
+        }
+        let pending_global = state
+            .approvals
+            .values()
+            .filter(|approval| approval.state == ApprovalState::Pending)
+            .count();
+        let pending_client = state
+            .approvals
+            .values()
+            .filter(|approval| {
+                approval.state == ApprovalState::Pending && approval.profile_id == profile_id
+            })
+            .count();
+        if pending_global >= MAX_PENDING_APPROVALS
+            || pending_client >= MAX_PENDING_APPROVALS_PER_CLIENT
+        {
+            return Err("agent.approval_limit: Resolve an existing approval request first.".into());
+        }
+        let approval_id = uuid::Uuid::new_v4().to_string();
+        let snapshot_hash = sql_snapshot_hash(
+            &snapshot.sql,
+            connection_id,
+            &profile_id,
+            &snapshot.project_id,
+            &snapshot.classification,
+        );
+        let critical_phrase = (snapshot.classification.decision
+            == tarik_engine_protocol::AgentSqlDecision::CriticalConfirmation)
+            .then(|| format!("APPROVE {}", &approval_id[..8].to_ascii_uppercase()));
+        let approval = PendingApproval {
+            approval_id: approval_id.clone(),
+            connection_id: connection_id.to_string(),
+            profile_id,
+            project_id: snapshot.project_id,
+            sql: snapshot.sql,
+            classification: snapshot.classification,
+            snapshot_hash,
+            critical_phrase,
+            state: ApprovalState::Pending,
+            created_at: Instant::now(),
+        };
+        let result = approval_result(&approval);
+        state.approvals.insert(approval_id, approval);
+        Ok(result)
+    }
+
+    pub fn approval_status(
+        &self,
+        connection_id: &str,
+        approval_id: &str,
+    ) -> Result<ApprovalResult, String> {
+        self.authenticated_connection(connection_id)?;
+        let mut state = self.lock()?;
+        prune(&mut state);
+        let approval = state
+            .approvals
+            .get(approval_id)
+            .filter(|approval| approval.connection_id == connection_id)
+            .ok_or_else(|| {
+                "agent.approval_missing: The approval is unknown or belongs to another connection."
+                    .to_string()
+            })?;
+        Ok(approval_result(approval))
+    }
+
+    pub fn list_pending_approvals(&self) -> Result<Vec<ApprovalRequestView>, String> {
+        let mut state = self.lock()?;
+        prune(&mut state);
+        let projects = ProjectsRepository::new(self.metadata.clone());
+        let clients = self
+            .repository
+            .list_clients()
+            .map_err(|error| error.to_string())?;
+        let mut approvals = Vec::new();
+        for approval in state
+            .approvals
+            .values()
+            .filter(|approval| approval.state == ApprovalState::Pending)
+        {
+            let Some(project) = projects
+                .find(&approval.project_id)
+                .map_err(|error| error.to_string())?
+            else {
+                continue;
+            };
+            let client_name = clients
+                .iter()
+                .find(|client| client.id == approval.profile_id)
+                .map(|client| client.display_name.clone())
+                .unwrap_or_else(|| "Revoked client".into());
+            approvals.push(ApprovalRequestView {
+                id: approval.approval_id.clone(),
+                client_name,
+                project_id: approval.project_id.clone(),
+                project_name: project.name,
+                sql: approval.sql.clone(),
+                decision: approval.classification.decision,
+                reason_code: approval.classification.reason_code.clone(),
+                affected_objects: approval.classification.affected_objects.clone(),
+                has_top_level_filter: approval.classification.has_top_level_filter,
+                snapshot_hash: approval.snapshot_hash.clone(),
+                critical_phrase: approval.critical_phrase.clone(),
+                expires_in_seconds: APPROVAL_LIFETIME
+                    .saturating_sub(approval.created_at.elapsed())
+                    .as_secs(),
+            });
+        }
+        approvals.sort_by_key(|approval| approval.expires_in_seconds);
+        Ok(approvals)
+    }
+
+    pub fn decide_approval(
+        &self,
+        approval_id: &str,
+        approve: bool,
+        typed_phrase: Option<&str>,
+    ) -> Result<bool, String> {
+        let mut state = self.lock()?;
+        prune(&mut state);
+        let approval = state.approvals.get_mut(approval_id).ok_or_else(|| {
+            "agent.approval_missing: The approval expired or was already removed.".to_string()
+        })?;
+        if approval.state != ApprovalState::Pending {
+            return Err("agent.approval_terminal: This approval is no longer pending.".into());
+        }
+        if approve {
+            if let Some(expected) = &approval.critical_phrase {
+                if typed_phrase != Some(expected.as_str()) {
+                    return Err(
+                        "agent.confirmation_mismatch: Type the displayed phrase exactly.".into(),
+                    );
+                }
+            }
+            approval.state = ApprovalState::Approved;
+        } else {
+            approval.state = ApprovalState::Denied;
+        }
+        Ok(approve)
+    }
+
     pub fn disconnect(&self, connection_id: &str) -> Result<bool, String> {
         let (removed, queries) = {
             let mut state = self.lock()?;
@@ -884,6 +1091,11 @@ impl AgentAccessManager {
             state
                 .sql_snapshots
                 .retain(|_, snapshot| snapshot.connection_id != connection_id);
+            for approval in state.approvals.values_mut().filter(|approval| {
+                approval.connection_id == connection_id && approval.state == ApprovalState::Pending
+            }) {
+                approval.state = ApprovalState::Denied;
+            }
             let queries = state
                 .agent_queries
                 .values()
@@ -953,6 +1165,11 @@ impl AgentAccessManager {
             state
                 .connections
                 .retain(|_, connection| connection.profile_id != client_id);
+            for approval in state.approvals.values_mut().filter(|approval| {
+                approval.profile_id == client_id && approval.state == ApprovalState::Pending
+            }) {
+                approval.state = ApprovalState::Denied;
+            }
             ids
         };
         for id in connection_ids {
@@ -967,6 +1184,9 @@ impl AgentAccessManager {
             state.endpoint_ready = false;
             state.pending.clear();
             state.connections.clear();
+            state.sql_snapshots.clear();
+            state.agent_queries.clear();
+            state.approvals.clear();
         }
         self.cleaner.cleanup_all();
     }
@@ -1164,6 +1384,48 @@ impl AgentAccessManager {
     }
 }
 
+fn approval_result(approval: &PendingApproval) -> ApprovalResult {
+    ApprovalResult {
+        approval_id: approval.approval_id.clone(),
+        project_id: approval.project_id.clone(),
+        state: approval.state,
+        decision: approval.classification.decision,
+        reason_code: approval.classification.reason_code.clone(),
+        affected_objects: approval.classification.affected_objects.clone(),
+        has_top_level_filter: approval.classification.has_top_level_filter,
+        snapshot_hash: approval.snapshot_hash.clone(),
+        expires_in_seconds: if approval.state == ApprovalState::Pending {
+            APPROVAL_LIFETIME
+                .saturating_sub(approval.created_at.elapsed())
+                .as_secs()
+        } else {
+            0
+        },
+    }
+}
+
+fn sql_snapshot_hash(
+    sql: &str,
+    connection_id: &str,
+    profile_id: &str,
+    project_id: &str,
+    classification: &tarik_engine_protocol::AgentSqlClassification,
+) -> String {
+    let mut hash = Sha256::new();
+    hash.update(b"tarik-agent-sql-snapshot-v1");
+    hash.update(sql.as_bytes());
+    hash.update([0]);
+    hash.update(connection_id.as_bytes());
+    hash.update([0]);
+    hash.update(profile_id.as_bytes());
+    hash.update([0]);
+    hash.update(project_id.as_bytes());
+    hash.update([0]);
+    hash.update(classification.catalog_revision.as_bytes());
+    hash.update([classification.decision as u8]);
+    hex(&hash.finalize())
+}
+
 fn execution_result(
     project_id: String,
     status: tarik_engine_protocol::ExecutionStatus,
@@ -1257,6 +1519,12 @@ fn prune(state: &mut AccessState) {
     state
         .sql_snapshots
         .retain(|_, snapshot| snapshot.created_at.elapsed() < SQL_SNAPSHOT_LIFETIME);
+    for approval in state.approvals.values_mut().filter(|approval| {
+        approval.state == ApprovalState::Pending
+            && approval.created_at.elapsed() >= APPROVAL_LIFETIME
+    }) {
+        approval.state = ApprovalState::Expired;
+    }
 }
 
 pub(crate) fn derive_verifier(key: &[u8; PROOF_BYTES], salt: &[u8; 32]) -> [u8; 32] {
@@ -1392,6 +1660,23 @@ pub fn revoke_agent_client(
     manager: tauri::State<'_, Arc<AgentAccessManager>>,
 ) -> Result<bool, String> {
     manager.revoke_client(&client_id)
+}
+
+#[tauri::command]
+pub fn list_agent_approvals(
+    manager: tauri::State<'_, Arc<AgentAccessManager>>,
+) -> Result<Vec<ApprovalRequestView>, String> {
+    manager.list_pending_approvals()
+}
+
+#[tauri::command]
+pub fn decide_agent_approval(
+    approval_id: String,
+    approve: bool,
+    typed_phrase: Option<String>,
+    manager: tauri::State<'_, Arc<AgentAccessManager>>,
+) -> Result<bool, String> {
+    manager.decide_approval(&approval_id, approve, typed_phrase.as_deref())
 }
 
 #[cfg(test)]
@@ -1537,6 +1822,63 @@ mod tests {
             .list_catalog(&connection_id, "another-project", None, None, 10)
             .unwrap_err()
             .contains("permission_denied"));
+    }
+
+    #[test]
+    fn approval_is_server_held_typed_and_non_transferable() {
+        let (manager, project_id) = fixture();
+        let (profile_id, connection_id) = pair_and_authenticate(&manager);
+        manager
+            .set_project_grant(
+                &profile_id,
+                ProjectGrant {
+                    project_id: project_id.clone(),
+                    inspect: true,
+                    analyze: true,
+                    modify_workspace: true,
+                    modify_data: true,
+                },
+            )
+            .unwrap();
+        manager.lock().unwrap().sql_snapshots.insert(
+            "snapshot-1".into(),
+            SqlSnapshot {
+                connection_id: connection_id.clone(),
+                project_id: project_id.clone(),
+                sql: "DELETE FROM orders".into(),
+                classification: tarik_engine_protocol::AgentSqlClassification {
+                    decision: tarik_engine_protocol::AgentSqlDecision::CriticalConfirmation,
+                    reason_code: "agent.unfiltered_delete_critical".into(),
+                    statement_type: "delete".into(),
+                    catalog_revision: "agent-v1-test".into(),
+                    affected_objects: vec!["orders".into()],
+                    has_top_level_filter: Some(false),
+                },
+                created_at: Instant::now(),
+            },
+        );
+        let proposed = manager.propose_sql(&connection_id, "snapshot-1").unwrap();
+        assert_eq!(proposed.state, ApprovalState::Pending);
+        assert!(manager
+            .decide_approval(&proposed.approval_id, true, Some("wrong"))
+            .is_err());
+        let phrase = manager.list_pending_approvals().unwrap()[0]
+            .critical_phrase
+            .clone()
+            .unwrap();
+        assert!(manager
+            .decide_approval(&proposed.approval_id, true, Some(&phrase))
+            .unwrap());
+        assert_eq!(
+            manager
+                .approval_status(&connection_id, &proposed.approval_id)
+                .unwrap()
+                .state,
+            ApprovalState::Approved
+        );
+        assert!(manager
+            .approval_status("another-connection", &proposed.approval_id)
+            .is_err());
     }
 
     #[test]

@@ -75,6 +75,9 @@ impl BridgeRequest {
             | BridgeAction::QueryStatus { connection_id, .. }
             | BridgeAction::CancelQuery { connection_id, .. }
             | BridgeAction::ReleaseResult { connection_id, .. }
+            | BridgeAction::ProposeSql { connection_id, .. }
+            | BridgeAction::ApprovalStatus { connection_id, .. }
+            | BridgeAction::ExecuteApproved { connection_id, .. }
             | BridgeAction::Disconnect { connection_id } => {
                 validate_connection_id(connection_id)?;
             }
@@ -219,6 +222,18 @@ pub enum BridgeAction {
     ReleaseResult {
         connection_id: String,
         result_id: String,
+    },
+    ProposeSql {
+        connection_id: String,
+        snapshot_id: String,
+    },
+    ApprovalStatus {
+        connection_id: String,
+        approval_id: String,
+    },
+    ExecuteApproved {
+        connection_id: String,
+        approval_id: String,
     },
     Disconnect {
         connection_id: String,
@@ -404,6 +419,31 @@ pub struct AgentResultPage {
     pub columns: serde_json::Value,
     pub rows: serde_json::Value,
     pub truncated_cells: serde_json::Value,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ApprovalState {
+    Pending,
+    Approved,
+    Denied,
+    Expired,
+    Used,
+    Failed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApprovalResult {
+    pub approval_id: String,
+    pub project_id: String,
+    pub state: ApprovalState,
+    pub decision: tarik_engine_protocol::AgentSqlDecision,
+    pub reason_code: String,
+    pub affected_objects: Vec<String>,
+    pub has_top_level_filter: Option<bool>,
+    pub snapshot_hash: String,
+    pub expires_in_seconds: u64,
 }
 
 impl ProjectGrant {

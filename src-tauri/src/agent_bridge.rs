@@ -396,6 +396,20 @@ fn dispatch(
             result_id,
         } => serde_json::to_value(access.release_result(&connection_id, &result_id)?)
             .map_err(|error| error.to_string()),
+        BridgeAction::ProposeSql {
+            connection_id,
+            snapshot_id,
+        } => serde_json::to_value(access.propose_sql(&connection_id, &snapshot_id)?)
+            .map_err(|error| error.to_string()),
+        BridgeAction::ApprovalStatus {
+            connection_id,
+            approval_id,
+        } => serde_json::to_value(access.approval_status(&connection_id, &approval_id)?)
+            .map_err(|error| error.to_string()),
+        BridgeAction::ExecuteApproved { .. } => Err(
+            "agent.not_implemented: Approved execution is not available until the transactional mutation lane is active."
+                .into(),
+        ),
         BridgeAction::Disconnect { connection_id } => {
             owned_connections.retain(|owned| owned != &connection_id);
             Ok(serde_json::json!({ "disconnected": access.disconnect(&connection_id)? }))

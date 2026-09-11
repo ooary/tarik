@@ -12,8 +12,8 @@ use interprocess::local_socket::{prelude::*, GenericFilePath, Stream};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use tarik_agent_protocol::{
-    AgentExecutionResult, AgentResultPage, AuthenticationResult, BridgeAction, BridgeRequest,
-    BridgeResponse, CatalogPageResult, GrantedProjectsResult, HelloResult,
+    AgentExecutionResult, AgentResultPage, ApprovalResult, AuthenticationResult, BridgeAction,
+    BridgeRequest, BridgeResponse, CatalogPageResult, GrantedProjectsResult, HelloResult,
     RelationDescriptionResult, SqlSnapshotResult, MAX_BRIDGE_MESSAGE_BYTES,
 };
 use zeroize::Zeroizing;
@@ -186,6 +186,30 @@ impl BridgeClient {
         self.request(BridgeAction::ReleaseResult {
             connection_id: self.connection_id()?,
             result_id,
+        })
+    }
+
+    pub fn propose_sql(&mut self, snapshot_id: String) -> Result<ApprovalResult, String> {
+        self.request(BridgeAction::ProposeSql {
+            connection_id: self.connection_id()?,
+            snapshot_id,
+        })
+    }
+
+    pub fn approval_status(&mut self, approval_id: String) -> Result<ApprovalResult, String> {
+        self.request(BridgeAction::ApprovalStatus {
+            connection_id: self.connection_id()?,
+            approval_id,
+        })
+    }
+
+    pub fn execute_approved(
+        &mut self,
+        approval_id: String,
+    ) -> Result<AgentExecutionResult, String> {
+        self.request(BridgeAction::ExecuteApproved {
+            connection_id: self.connection_id()?,
+            approval_id,
         })
     }
 
