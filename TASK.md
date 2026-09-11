@@ -2449,6 +2449,7 @@ Blocked
 | MCP-host confirmation                                         | Tool-call permission only; not Tarik approval |
 
 - [ ] **E15.1-T0 Define connection, guidance, and export-delegation contracts**
+  - Status: Durable design approved September 11, 2026; T1 implementation candidate authorized. Native Windows host/config/process confirmation remains required before completion.
   - Depends on: E15 implementation candidate; approved E15.1 task plan
   - Owns: `docs/design/E15-1-DESIGN-GRAPH.md`, host adapters, guidance trust boundary, destination-grant policy, export effect matrix, lifecycle budgets, recovery, and implementation inventory
   - Deliverables:
