@@ -1,6 +1,8 @@
+#[cfg(unix)]
+use std::io::{BufRead, BufReader};
 use std::{
     fs,
-    io::{BufRead, BufReader, Read, Write},
+    io::{Read, Write},
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicBool, AtomicUsize, Ordering},
@@ -10,10 +12,12 @@ use std::{
     time::Duration,
 };
 
+#[cfg(unix)]
+use interprocess::local_socket::GenericFilePath;
 #[cfg(windows)]
 use interprocess::local_socket::GenericNamespaced;
 use interprocess::local_socket::{
-    prelude::*, GenericFilePath, Listener, ListenerNonblockingMode, ListenerOptions, Name,
+    prelude::*, Listener, ListenerNonblockingMode, ListenerOptions, Name,
 };
 use serde::{Deserialize, Serialize};
 use tarik_agent_protocol::{BridgeAction, BridgeRequest, BridgeResponse, MAX_BRIDGE_MESSAGE_BYTES};
@@ -249,16 +253,26 @@ fn handle_connection(
     exports: &Arc<AgentExportManager>,
     stop: &AtomicBool,
 ) -> Result<(), String> {
-    stream
-        .set_recv_timeout(Some(Duration::from_millis(250)))
-        .map_err(|error| format!("agent.bridge_timeout: {error}"))?;
-    stream
-        .set_send_timeout(Some(Duration::from_secs(10)))
-        .map_err(|error| format!("agent.bridge_timeout: {error}"))?;
+    #[cfg(unix)]
+    {
+        stream
+            .set_recv_timeout(Some(Duration::from_millis(250)))
+            .map_err(|error| format!("agent.bridge_timeout: {error}"))?;
+        stream
+            .set_send_timeout(Some(Duration::from_secs(10)))
+            .map_err(|error| format!("agent.bridge_timeout: {error}"))?;
+    }
+    #[cfg(unix)]
     let mut reader = BufReader::new(stream);
+    #[cfg(windows)]
+    let mut stream = stream;
     let mut owned_connections = Vec::new();
+    #[cfg(windows)]
+    let mut bytes = Vec::with_capacity(1024);
     loop {
+        #[cfg(unix)]
         let mut bytes = Vec::with_capacity(1024);
+        #[cfg(unix)]
         let read = match std::io::Read::by_ref(&mut reader)
             .take((MAX_BRIDGE_MESSAGE_BYTES + 1) as u64)
             .read_until(b'\n', &mut bytes)
@@ -270,13 +284,24 @@ fn handle_connection(
                     std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
                 ) && !stop.load(Ordering::Acquire) =>
             {
+                if error.kind() == std::io::ErrorKind::WouldBlock {
+                    thread::sleep(Duration::from_millis(10));
+                }
                 continue;
             }
             Err(error) => return Err(format!("agent.bridge_read: {error}")),
         };
+        #[cfg(unix)]
         if read == 0 || stop.load(Ordering::Acquire) {
             break;
         }
+        #[cfg(windows)]
+        let Some(mut frame) = read_windows_frame(&mut stream, &mut bytes, stop)?
+        else {
+            break;
+        };
+        #[cfg(windows)]
+        let bytes = &mut frame;
         if bytes.len() > MAX_BRIDGE_MESSAGE_BYTES {
             return Err("agent.frame_too_large".into());
         }
@@ -315,8 +340,13 @@ fn handle_connection(
         let mut encoded = serde_json::to_vec(&response)
             .map_err(|error| format!("agent.bridge_encode: {error}"))?;
         encoded.push(b'\n');
+        #[cfg(unix)]
         reader
             .get_mut()
+            .write_all(&encoded)
+            .map_err(|error| format!("agent.bridge_write: {error}"))?;
+        #[cfg(windows)]
+        stream
             .write_all(&encoded)
             .map_err(|error| format!("agent.bridge_write: {error}"))?;
     }
@@ -324,6 +354,72 @@ fn handle_connection(
         let _ = access.disconnect(&connection_id);
     }
     Ok(())
+}
+
+#[cfg(windows)]
+fn read_windows_frame(
+    stream: &mut interprocess::local_socket::Stream,
+    pending: &mut Vec<u8>,
+    stop: &AtomicBool,
+) -> Result<Option<Vec<u8>>, String> {
+    use std::{
+        os::windows::io::{AsHandle, AsRawHandle},
+        ptr,
+    };
+    use windows_sys::Win32::System::Pipes::PeekNamedPipe;
+
+    loop {
+        if let Some(end) = pending.iter().position(|byte| *byte == b'\n') {
+            return Ok(Some(pending.drain(..=end).collect()));
+        }
+        if pending.len() > MAX_BRIDGE_MESSAGE_BYTES {
+            return Err("agent.frame_too_large".into());
+        }
+        if stop.load(Ordering::Acquire) {
+            return Ok(None);
+        }
+
+        let mut available = 0;
+        let handle = match stream {
+            interprocess::local_socket::Stream::NamedPipe(pipe) => pipe.as_handle().as_raw_handle(),
+        };
+        let peeked = unsafe {
+            PeekNamedPipe(
+                handle,
+                ptr::null_mut(),
+                0,
+                ptr::null_mut(),
+                &mut available,
+                ptr::null_mut(),
+            )
+        };
+        if peeked == 0 {
+            let error = std::io::Error::last_os_error();
+            if error.kind() == std::io::ErrorKind::BrokenPipe {
+                return Ok(None);
+            }
+            return Err(format!("agent.bridge_read: {error}"));
+        }
+        if available == 0 {
+            thread::sleep(Duration::from_millis(10));
+            continue;
+        }
+
+        let remaining = MAX_BRIDGE_MESSAGE_BYTES + 1 - pending.len();
+        let mut chunk = vec![
+            0;
+            usize::try_from(available)
+                .unwrap_or(remaining)
+                .min(remaining)
+        ];
+        let read = stream
+            .read(&mut chunk)
+            .map_err(|error| format!("agent.bridge_read: {error}"))?;
+        if read == 0 {
+            return Ok(None);
+        }
+        pending.extend_from_slice(&chunk[..read]);
+    }
 }
 
 fn dispatch(
@@ -555,11 +651,14 @@ fn failure(id: String, error: String) -> BridgeResponse {
     BridgeResponse::failure(id, code, message)
 }
 
-fn descriptor(runtime_dir: &Path) -> BridgeDescriptor {
+fn descriptor(_runtime_dir: &Path) -> BridgeDescriptor {
     let instance_id = uuid::Uuid::new_v4().to_string();
     #[cfg(unix)]
     let (endpoint, transport) = (
-        runtime_dir.join(SOCKET_FILE).to_string_lossy().into_owned(),
+        _runtime_dir
+            .join(SOCKET_FILE)
+            .to_string_lossy()
+            .into_owned(),
         "unix_socket",
     );
     #[cfg(windows)]
@@ -736,10 +835,25 @@ fn remove_stale_runtime_files(path: &Path) -> Result<(), String> {
             }
         }
         #[cfg(windows)]
-        return Err(
-            "agent.bridge_in_use: An existing bridge descriptor must be removed by Tarik shutdown."
-                .into(),
-        );
+        if descriptor.exists() {
+            let existing = read_descriptor(path)?;
+            let name = endpoint_name(&existing)?;
+            match interprocess::local_socket::Stream::connect(name) {
+                Ok(_) => {
+                    return Err(
+                        "agent.bridge_in_use: Another Tarik agent bridge is already active.".into(),
+                    );
+                }
+                Err(error)
+                    if matches!(
+                        error.kind(),
+                        std::io::ErrorKind::NotFound
+                            | std::io::ErrorKind::ConnectionRefused
+                            | std::io::ErrorKind::BrokenPipe
+                    ) => {}
+                Err(error) => return Err(format!("agent.bridge_stale_check: {error}")),
+            }
+        }
     }
     cleanup_runtime(path);
     Ok(())
@@ -1005,6 +1119,26 @@ mod tests {
         }
         bridge.stop();
         assert!(!root.join("runtime").join(DESCRIPTOR_FILE).exists());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn stale_windows_descriptor_is_removed_when_named_pipe_is_gone() {
+        let root =
+            std::env::temp_dir().join(format!("tarik-agent-bridge-stale-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let descriptor = BridgeDescriptor {
+            protocol_version: tarik_agent_protocol::BRIDGE_PROTOCOL_VERSION,
+            endpoint: format!("tarik-agent-missing-{}", uuid::Uuid::new_v4()),
+            transport: "windows_named_pipe",
+            instance_id: uuid::Uuid::new_v4().to_string(),
+        };
+        write_descriptor(&root, &descriptor).unwrap();
+
+        remove_stale_runtime_files(&root).unwrap();
+
+        assert!(!root.join(DESCRIPTOR_FILE).exists());
         let _ = fs::remove_dir_all(root);
     }
 }

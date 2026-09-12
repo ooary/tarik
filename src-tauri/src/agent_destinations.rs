@@ -302,7 +302,7 @@ impl AgentDestinationManager {
         reject_remote_filesystem(&canonical)?;
         self.reject_protected_overlap(&canonical)?;
         Ok(DirectoryIdentity {
-            identity: directory_identity(&canonical_metadata)?,
+            identity: directory_identity(&canonical, &canonical_metadata)?,
             path: canonical,
         })
     }
@@ -426,20 +426,57 @@ fn verify_user_owned(path: &Path, metadata: &fs::Metadata) -> Result<(), String>
 }
 
 #[cfg(unix)]
-fn directory_identity(metadata: &fs::Metadata) -> Result<String, String> {
+fn directory_identity(_path: &Path, metadata: &fs::Metadata) -> Result<String, String> {
     use std::os::unix::fs::MetadataExt;
     Ok(format!("unix:{}:{}", metadata.dev(), metadata.ino()))
 }
 
 #[cfg(windows)]
-fn directory_identity(metadata: &fs::Metadata) -> Result<String, String> {
-    use std::os::windows::fs::MetadataExt;
+fn directory_identity(path: &Path, _metadata: &fs::Metadata) -> Result<String, String> {
+    use std::{os::windows::ffi::OsStrExt, ptr};
+    use windows_sys::Win32::{
+        Foundation::{CloseHandle, INVALID_HANDLE_VALUE},
+        Storage::FileSystem::{
+            CreateFileW, GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION,
+            FILE_FLAG_BACKUP_SEMANTICS, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE,
+            OPEN_EXISTING,
+        },
+    };
+
+    let wide = path
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect::<Vec<_>>();
+    let handle = unsafe {
+        CreateFileW(
+            wide.as_ptr(),
+            0,
+            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+            ptr::null(),
+            OPEN_EXISTING,
+            FILE_FLAG_BACKUP_SEMANTICS,
+            ptr::null_mut(),
+        )
+    };
+    if handle == INVALID_HANDLE_VALUE {
+        return Err(destination_unsafe());
+    }
+
+    let mut information = BY_HANDLE_FILE_INFORMATION::default();
+    let result = unsafe { GetFileInformationByHandle(handle, &mut information) };
+    unsafe {
+        CloseHandle(handle);
+    }
+    if result == 0 {
+        return Err(destination_unsafe());
+    }
+
+    let file_index =
+        (u64::from(information.nFileIndexHigh) << 32) | u64::from(information.nFileIndexLow);
     Ok(format!(
         "windows:{}:{}",
-        metadata
-            .volume_serial_number()
-            .ok_or_else(destination_unsafe)?,
-        metadata.file_index().ok_or_else(destination_unsafe)?
+        information.dwVolumeSerialNumber, file_index
     ))
 }
 
@@ -500,15 +537,24 @@ fn reject_remote_filesystem(_path: &Path) -> Result<(), String> {
 
 #[cfg(windows)]
 fn reject_remote_filesystem(path: &Path) -> Result<(), String> {
-    use std::os::windows::ffi::OsStrExt;
-    use windows_sys::Win32::Storage::FileSystem::{GetDriveTypeW, DRIVE_REMOTE};
-    let text = path.to_string_lossy();
-    if text.starts_with(r"\\") {
-        return Err("agent.destination_unsafe: Network folders cannot be delegated.".into());
-    }
-    let root = path.components().next().ok_or_else(destination_unsafe)?;
-    let mut wide = root.as_os_str().encode_wide().collect::<Vec<_>>();
-    wide.extend(['\\' as u16, 0]);
+    use std::path::Prefix;
+    use windows_sys::Win32::{
+        Storage::FileSystem::GetDriveTypeW, System::WindowsProgramming::DRIVE_REMOTE,
+    };
+
+    let drive = match path.components().next() {
+        Some(Component::Prefix(prefix)) => match prefix.kind() {
+            Prefix::Disk(drive) | Prefix::VerbatimDisk(drive) => drive,
+            Prefix::UNC(..) | Prefix::VerbatimUNC(..) => {
+                return Err(
+                    "agent.destination_unsafe: Network folders cannot be delegated.".into(),
+                );
+            }
+            _ => return Err(destination_unsafe()),
+        },
+        _ => return Err(destination_unsafe()),
+    };
+    let wide = [u16::from(drive), ':' as u16, '\\' as u16, 0];
     if unsafe { GetDriveTypeW(wide.as_ptr()) } == DRIVE_REMOTE {
         return Err("agent.destination_unsafe: Network drives cannot be delegated.".into());
     }

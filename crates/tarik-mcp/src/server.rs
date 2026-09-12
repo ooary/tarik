@@ -696,10 +696,19 @@ impl TarikMcpServer {
             .lock()
             .map_err(|_| "agent.state_unavailable: Local MCP state is unavailable.".to_string())
             .and_then(|mut state| {
+                ensure_authenticated_bridge(&mut state)?;
                 let bridge = state.bridge.as_mut().ok_or_else(|| {
                     "agent.authentication_required: Call tarik_server_info with refresh true and complete pairing in Tarik.".to_string()
                 })?;
-                operation(bridge)
+                let result = operation(bridge);
+                if result.as_ref().is_err_and(|error| bridge_transport_failed(error)) {
+                    state.bridge = None;
+                    state.pending_pairing = None;
+                    state.status = unavailable_status(
+                        "The Tarik desktop connection closed. Retry the tool to reconnect.",
+                    );
+                }
+                result
             });
         match result {
             Ok(value) => structured(value),
@@ -711,6 +720,46 @@ impl TarikMcpServer {
             }
         }
     }
+}
+
+fn ensure_authenticated_bridge(state: &mut ServerState) -> Result<(), String> {
+    let agent_dir = profile::desktop_agent_directory()?;
+    let bridge_is_current = state
+        .bridge
+        .as_ref()
+        .map(|bridge| bridge.endpoint_is_current(&agent_dir))
+        .unwrap_or(false);
+    if !bridge_is_current {
+        state.bridge = None;
+        state.pending_pairing = None;
+    }
+    if bridge_is_current && state.status.authenticated {
+        return Ok(());
+    }
+
+    let status = match connect_state(state) {
+        Ok(status) => status,
+        Err(error) => {
+            state.status = unavailable_status(&error);
+            return Err(error);
+        }
+    };
+    let authenticated = status.authenticated;
+    let guidance = status.guidance.clone();
+    state.status = status;
+    if authenticated {
+        Ok(())
+    } else {
+        Err(format!("agent.authentication_required: {guidance}"))
+    }
+}
+
+fn bridge_transport_failed(error: &str) -> bool {
+    error.starts_with("Tarik closed the local agent connection")
+        || error.starts_with("Tarik did not answer the local agent request")
+        || error.starts_with("Tarik bridge response is too large")
+        || error.starts_with("Tarik returned an invalid local agent response")
+        || error.starts_with("Tarik returned an unexpected local agent response")
 }
 
 fn structured(value: impl Serialize) -> rmcp::model::CallToolResult {
@@ -781,6 +830,15 @@ impl ServerHandler for TarikMcpServer {
 }
 
 fn connect_state(state: &mut ServerState) -> Result<TarikServerStatus, String> {
+    let agent_dir = profile::desktop_agent_directory()?;
+    if state
+        .bridge
+        .as_ref()
+        .is_some_and(|bridge| !bridge.endpoint_is_current(&agent_dir))
+    {
+        state.bridge = None;
+        state.pending_pairing = None;
+    }
     if let Some(pending) = state.pending_pairing.take() {
         let result = state
             .bridge
@@ -812,7 +870,6 @@ fn connect_state(state: &mut ServerState) -> Result<TarikServerStatus, String> {
     }
 
     let profile_dir = profile::profile_directory(&state.profile_name)?;
-    let agent_dir = profile::desktop_agent_directory()?;
     let existing = profile::load(&profile_dir)?;
     let mut bridge = BridgeClient::connect(&agent_dir)?;
     match existing {

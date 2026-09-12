@@ -1061,6 +1061,12 @@ fn find_direct_host_executable(host: HostKind) -> Result<Option<PathBuf>, String
                 .join(file_name),
         );
     }
+    if let Some(app_data) = std::env::var_os("APPDATA") {
+        candidates.extend(npm_host_executable_candidates(
+            host,
+            &PathBuf::from(app_data),
+        ));
+    }
     if let Some(path) = std::env::var_os("PATH") {
         candidates.extend(
             std::env::split_paths(&path)
@@ -1074,6 +1080,47 @@ fn find_direct_host_executable(host: HostKind) -> Result<Option<PathBuf>, String
         }
     }
     Ok(None)
+}
+
+#[cfg(windows)]
+fn npm_host_executable_candidates(host: HostKind, app_data: &Path) -> Vec<PathBuf> {
+    let modules = app_data.join("npm").join("node_modules");
+    match host {
+        HostKind::ClaudeCode => {
+            let package = modules.join("@anthropic-ai").join("claude-code");
+            let native_package = if cfg!(target_arch = "aarch64") {
+                "claude-code-win32-arm64"
+            } else {
+                "claude-code-win32-x64"
+            };
+            vec![
+                package.join("bin").join("claude.exe"),
+                package
+                    .join("node_modules")
+                    .join("@anthropic-ai")
+                    .join(native_package)
+                    .join("claude.exe"),
+            ]
+        }
+        HostKind::Codex => {
+            let (native_package, target) = if cfg!(target_arch = "aarch64") {
+                ("codex-win32-arm64", "aarch64-pc-windows-msvc")
+            } else {
+                ("codex-win32-x64", "x86_64-pc-windows-msvc")
+            };
+            vec![modules
+                .join("@openai")
+                .join("codex")
+                .join("node_modules")
+                .join("@openai")
+                .join(native_package)
+                .join("vendor")
+                .join(target)
+                .join("bin")
+                .join("codex.exe")]
+        }
+        _ => Vec::new(),
+    }
 }
 
 #[cfg(windows)]
@@ -1888,6 +1935,26 @@ mod tests {
         assert_eq!(plan.setup_method, SetupMethod::Guided);
         assert!(plan.command_preview.unwrap().contains("--profile pi"));
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_npm_hosts_include_direct_native_executables() {
+        let app_data = Path::new(r"C:\Users\tester\AppData\Roaming");
+        let claude = npm_host_executable_candidates(HostKind::ClaudeCode, app_data);
+        assert_eq!(claude.len(), 2);
+        assert!(claude[0].ends_with(r"@anthropic-ai\claude-code\bin\claude.exe"));
+        assert!(claude[1].ends_with("claude.exe"));
+
+        let codex = npm_host_executable_candidates(HostKind::Codex, app_data);
+        assert_eq!(codex.len(), 1);
+        assert!(codex[0].ends_with(r"bin\codex.exe"));
+        let expected_package = if cfg!(target_arch = "aarch64") {
+            "codex-win32-arm64"
+        } else {
+            "codex-win32-x64"
+        };
+        assert!(codex[0].to_string_lossy().contains(expected_package));
     }
 
     #[test]

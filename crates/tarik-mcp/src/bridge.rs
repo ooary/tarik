@@ -1,14 +1,17 @@
+#[cfg(unix)]
+use std::time::Duration;
 use std::{
     fs,
     io::{BufRead, BufReader, Read, Write},
     path::Path,
-    time::Duration,
 };
 
 use hmac::{Hmac, Mac};
+#[cfg(unix)]
+use interprocess::local_socket::GenericFilePath;
 #[cfg(windows)]
 use interprocess::local_socket::GenericNamespaced;
-use interprocess::local_socket::{prelude::*, GenericFilePath, Stream};
+use interprocess::local_socket::{prelude::*, Stream};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use tarik_agent_protocol::{
@@ -36,6 +39,7 @@ pub struct BridgeDescriptor {
 pub struct BridgeClient {
     stream: BufReader<Stream>,
     connection_id: Option<String>,
+    instance_id: String,
 }
 
 impl BridgeClient {
@@ -47,16 +51,24 @@ impl BridgeClient {
         let name = endpoint_name(&descriptor)?;
         let stream = Stream::connect(name)
             .map_err(|_| "Tarik is not running or Agent Access is disabled".to_string())?;
-        stream
-            .set_recv_timeout(Some(Duration::from_secs(10)))
-            .map_err(|error| format!("could not configure Tarik bridge: {error}"))?;
-        stream
-            .set_send_timeout(Some(Duration::from_secs(10)))
-            .map_err(|error| format!("could not configure Tarik bridge: {error}"))?;
+        #[cfg(unix)]
+        {
+            stream
+                .set_recv_timeout(Some(Duration::from_secs(10)))
+                .map_err(|error| format!("could not configure Tarik bridge: {error}"))?;
+            stream
+                .set_send_timeout(Some(Duration::from_secs(10)))
+                .map_err(|error| format!("could not configure Tarik bridge: {error}"))?;
+        }
         Ok(Self {
             stream: BufReader::new(stream),
             connection_id: None,
+            instance_id: descriptor.instance_id,
         })
+    }
+
+    pub fn endpoint_is_current(&self, agent_dir: &Path) -> bool {
+        descriptor_matches_instance(agent_dir, &self.instance_id)
     }
 
     pub fn hello(
@@ -408,6 +420,12 @@ fn read_descriptor(agent_dir: &Path) -> Result<BridgeDescriptor, String> {
     serde_json::from_slice(&bytes).map_err(|_| "Tarik agent endpoint descriptor is invalid".into())
 }
 
+fn descriptor_matches_instance(agent_dir: &Path, instance_id: &str) -> bool {
+    read_descriptor(agent_dir)
+        .map(|descriptor| descriptor.instance_id == instance_id)
+        .unwrap_or(false)
+}
+
 fn endpoint_name(
     descriptor: &BridgeDescriptor,
 ) -> Result<interprocess::local_socket::Name<'static>, String> {
@@ -480,6 +498,24 @@ fn decode_hex<const N: usize>(value: &str) -> Result<[u8; N], String> {
 mod tests {
     use super::*;
 
+    fn write_test_descriptor(root: &Path, instance_id: &str) {
+        fs::write(
+            root.join("bridge.json"),
+            serde_json::to_vec(&serde_json::json!({
+                "protocolVersion": tarik_agent_protocol::BRIDGE_PROTOCOL_VERSION,
+                "endpoint": "test-endpoint",
+                "transport": if cfg!(windows) {
+                    "windows_named_pipe"
+                } else {
+                    "unix_socket"
+                },
+                "instanceId": instance_id,
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+    }
+
     #[test]
     fn key_derivation_and_proof_are_deterministic() {
         let key = [7u8; 32];
@@ -491,5 +527,21 @@ mod tests {
             challenge_proof(&first, "connection", &challenge).unwrap(),
             challenge_proof(&first, "connection", &challenge).unwrap()
         );
+    }
+
+    #[test]
+    fn descriptor_instance_change_marks_bridge_stale() {
+        let root = std::env::temp_dir().join(format!(
+            "tarik-mcp-bridge-descriptor-{}",
+            uuid::Uuid::new_v4()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        write_test_descriptor(&root, "first");
+        assert!(descriptor_matches_instance(&root, "first"));
+
+        write_test_descriptor(&root, "second");
+        assert!(!descriptor_matches_instance(&root, "first"));
+
+        fs::remove_dir_all(root).unwrap();
     }
 }
