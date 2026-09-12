@@ -73,6 +73,14 @@ Pi starts and owns the child. Closing Pi closes stdin, and `tarik-mcp` exits cle
 
 Use their stdio MCP-server configuration with the same absolute command and arguments. Tarik supports initialization revisions `2025-06-18` and `2025-11-25`. A later requested handshake revision falls back to the latest reviewed revision rather than enabling newer capabilities.
 
+## Expected adapter processes
+
+Each configured MCP host transport starts and owns one `tarik-mcp` stdio child. Tarik Desktop starts the private bridge listener but does not launch another adapter merely because a project or workspace opens. Multiple hosts, or two intentional transport configurations in one host, can legitimately produce multiple adapter processes.
+
+Use **Activity → Agents** to distinguish paired clients from current authenticated connections. Multiple connections for one paired profile are displayed separately. Adapter PID is shown only if Tarik can independently verify it; otherwise it is explicitly unavailable. Do not treat a self-reported PID as termination authority, impose a machine-wide singleton, or kill every process named `tarik-mcp`.
+
+If an unexpected duplicate appears on Windows, first check for duplicate host configuration entries and record each process command line and parent process. Then test host restart, bridge reconnect, Agent access disable/re-enable, project switching, and host/Tarik shutdown. A Task Manager count alone cannot distinguish a legitimate second transport, transient reconnect overlap, or an orphan.
+
 ## Workflow prompts and optional Agent Skill
 
 `tarik-mcp` publishes seven static MCP prompts for getting started, catalog analysis, JOIN analysis, Query Flow, Profile/Quality investigation, guarded mutation, and complete-query export. Hosts that support MCP prompts can list and select them without installing another package. The initialization instructions carry the same short security contract.

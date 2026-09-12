@@ -56,6 +56,8 @@ const EMPTY_SETUP: AgentSetupStatus = {
   platform: "unknown",
   packagedServerReady: false,
   hosts: [],
+  topologyNote: "Each configured host transport owns its own stdio adapter.",
+  duplicateDiagnosis: "Process identity is unavailable until verified by the operating system.",
 };
 
 const EMPTY_SKILL: AgentSkillStatus = {
@@ -314,6 +316,13 @@ export function AgentAccessDialog({ project }: AgentAccessDialogProps) {
           <p className="agent-setup-warning" role="status">
             Packaged tarik-mcp is unavailable. Host configuration is disabled.
           </p>
+        )}
+        {!setupLoading && (
+          <div className="agent-setup-topology" role="note">
+            <strong>Expected process topology</strong>
+            <p>{setup.topologyNote}</p>
+            <p>{setup.duplicateDiagnosis}</p>
+          </div>
         )}
         {setupLoading && setup.hosts.length === 0 ? (
           <p className="agent-access-empty" role="status">

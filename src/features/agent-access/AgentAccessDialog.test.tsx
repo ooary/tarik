@@ -19,6 +19,8 @@ const emptyStatus = {
 const guidedSetup = {
   platform: "linux",
   packagedServerReady: true,
+  topologyNote: "Each configured MCP host transport owns one adapter child.",
+  duplicateDiagnosis: "Native process parentage is unavailable on this host.",
   hosts: [
     {
       kind: "pi",
@@ -54,6 +56,8 @@ describe("AgentAccessDialog", () => {
     fireEvent.click(trigger);
 
     expect(await screen.findByText("No clients are paired.")).toBeInTheDocument();
+    expect(screen.getByText("Expected process topology")).toBeInTheDocument();
+    expect(screen.getByText(/host transport owns one adapter child/)).toBeInTheDocument();
     expect(screen.getByText("No pending requests.")).toBeInTheDocument();
     const enable = screen.getByRole("button", { name: "Enable" });
     expect(enable).toHaveClass("agent-access-toggle-enable");
@@ -123,6 +127,8 @@ describe("AgentAccessDialog", () => {
     const windowsSetup = {
       platform: "windows",
       packagedServerReady: true,
+      topologyNote: "Each configured MCP host transport owns one adapter child.",
+      duplicateDiagnosis: "Check host configuration and process parentage.",
       hosts: [
         {
           kind: "claude_code",

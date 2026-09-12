@@ -86,7 +86,13 @@ test("agent connection and guidance setup use reviewed typed commands", async ()
     applyAgentSkill,
   } = await loadCommandsModule();
   const calls = [];
-  const status = { platform: "windows", packagedServerReady: true, hosts: [] };
+  const status = {
+    platform: "windows",
+    packagedServerReady: true,
+    hosts: [],
+    topologyNote: "Each configured host transport owns one adapter.",
+    duplicateDiagnosis: "Inspect configuration and parent process identity.",
+  };
   const plan = {
     planId: "plan-1",
     hostKind: "claude_code",

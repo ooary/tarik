@@ -53,6 +53,8 @@ const snapshot = {
     {
       clientProfileId: "client-1",
       clientName: "Claude Desktop",
+      paired: true,
+      connected: true,
       connectionId: "connection-1",
       authenticated: true,
       connectedForMs: 10_000,
@@ -64,6 +66,7 @@ const snapshot = {
       retainedResults: 1,
       retainedCacheBytes: 2_048,
       adapterPid: null,
+      lastConnectedAt: "2026-09-12T00:00:00Z",
     },
   ],
   resources: { memoryLimitMib: 8_192, threads: 4, preset: "balanced" },
@@ -141,6 +144,8 @@ describe("ActivityWorkspace", () => {
     await screen.findByText("Claude Desktop");
     fireEvent.click(screen.getByRole("tab", { name: "Agents" }));
     expect(screen.getByText("Adapter PID")).toBeInTheDocument();
+    expect(screen.getByText("Authenticated")).toBeInTheDocument();
+    expect(screen.getByText("client-1")).toBeInTheDocument();
     expect(screen.getByText("Unavailable")).toBeInTheDocument();
     expect(screen.getByText("1 · 2 KiB")).toBeInTheDocument();
     await waitFor(() => expect(commands.getActivitySnapshot).toHaveBeenCalled());

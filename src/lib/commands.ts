@@ -118,7 +118,9 @@ export interface ActivityAgentQuery {
 export interface ActivityAgentConnection {
   clientProfileId: string;
   clientName: string;
-  connectionId: string;
+  paired: boolean;
+  connected: boolean;
+  connectionId: string | null;
   authenticated: boolean;
   connectedForMs: number;
   lastHeartbeatMsAgo: number;
@@ -129,6 +131,7 @@ export interface ActivityAgentConnection {
   retainedResults: number;
   retainedCacheBytes: number;
   adapterPid: number | null;
+  lastConnectedAt: string | null;
 }
 
 export interface ActivitySnapshot {
@@ -174,6 +177,8 @@ export interface AgentSetupStatus {
   platform: string;
   packagedServerReady: boolean;
   hosts: AgentHostInstallation[];
+  topologyNote: string;
+  duplicateDiagnosis: string;
 }
 
 export interface AgentSetupPlan {

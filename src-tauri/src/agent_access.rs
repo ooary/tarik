@@ -129,7 +129,9 @@ pub struct DesktopAgentQueryDetail {
 pub struct DesktopAgentConnectionSummary {
     pub client_profile_id: String,
     pub client_name: String,
-    pub connection_id: String,
+    pub paired: bool,
+    pub connected: bool,
+    pub connection_id: Option<String>,
     pub authenticated: bool,
     pub connected_for_ms: u64,
     pub last_heartbeat_ms_ago: u64,
@@ -140,6 +142,7 @@ pub struct DesktopAgentConnectionSummary {
     pub retained_results: u32,
     pub retained_cache_bytes: u64,
     pub adapter_pid: Option<u32>,
+    pub last_connected_at: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1717,7 +1720,11 @@ impl AgentAccessManager {
             .list_clients()
             .map_err(|error| error.to_string())?
             .into_iter()
-            .map(|client| (client.id, client.display_name))
+            .filter(|client| client.state == AgentClientState::Paired)
+            .collect::<Vec<_>>();
+        let client_names = clients
+            .iter()
+            .map(|client| (client.id.clone(), client.display_name.clone()))
             .collect::<HashMap<_, _>>();
         let mut queries = state
             .agent_queries
@@ -1725,7 +1732,7 @@ impl AgentAccessManager {
             .filter(|query| query.project_id == project_id)
             .map(|query| DesktopAgentQuerySummary {
                 client_profile_id: query.profile_id.clone(),
-                client_name: clients
+                client_name: client_names
                     .get(&query.profile_id)
                     .cloned()
                     .unwrap_or_else(|| "Unknown client".into()),
@@ -1752,31 +1759,64 @@ impl AgentAccessManager {
             .collect::<Vec<_>>();
         queries.sort_by(|left, right| right.execution_id.cmp(&left.execution_id));
         queries.truncate(64);
-        let mut connections = state
-            .connections
-            .iter()
-            .filter(|(_, connection)| connection.authenticated)
-            .map(|(connection_id, connection)| {
-                let grants = self
-                    .repository
-                    .list_grants(&connection.profile_id)
-                    .unwrap_or_default();
+        let mut connections = Vec::new();
+        for client in clients {
+            let grants = self.repository.list_grants(&client.id).unwrap_or_default();
+            let project_ids = grants
+                .iter()
+                .map(|grant| grant.project_id.clone())
+                .collect::<Vec<_>>();
+            let live = state
+                .connections
+                .iter()
+                .filter(|(_, connection)| {
+                    connection.authenticated && connection.profile_id == client.id
+                })
+                .collect::<Vec<_>>();
+            if live.is_empty() {
+                let owned = state.agent_queries.values().filter(|query| {
+                    query.profile_id == client.id && query.project_id == project_id
+                });
+                let owned = owned.collect::<Vec<_>>();
+                connections.push(DesktopAgentConnectionSummary {
+                    client_profile_id: client.id,
+                    client_name: client.display_name,
+                    paired: true,
+                    connected: false,
+                    connection_id: None,
+                    authenticated: false,
+                    connected_for_ms: 0,
+                    last_heartbeat_ms_ago: 0,
+                    heartbeat_stale: false,
+                    project_ids,
+                    queued_queries: 0,
+                    running_queries: 0,
+                    retained_results: owned
+                        .iter()
+                        .filter(|query| query.result_id.is_some())
+                        .count() as u32,
+                    retained_cache_bytes: owned.iter().filter_map(|query| query.cache_bytes).sum(),
+                    adapter_pid: None,
+                    last_connected_at: client.last_connected_at,
+                });
+                continue;
+            }
+            for (connection_id, connection) in live {
                 let owned = state.agent_queries.values().filter(|query| {
                     query.origin_connection_id == *connection_id && query.project_id == project_id
                 });
                 let owned = owned.collect::<Vec<_>>();
-                DesktopAgentConnectionSummary {
-                    client_profile_id: connection.profile_id.clone(),
-                    client_name: clients
-                        .get(&connection.profile_id)
-                        .cloned()
-                        .unwrap_or_else(|| "Unknown client".into()),
-                    connection_id: connection_id.clone(),
+                connections.push(DesktopAgentConnectionSummary {
+                    client_profile_id: client.id.clone(),
+                    client_name: client.display_name.clone(),
+                    paired: true,
+                    connected: true,
+                    connection_id: Some(connection_id.clone()),
                     authenticated: connection.authenticated,
                     connected_for_ms: connection.created_at.elapsed().as_millis() as u64,
                     last_heartbeat_ms_ago: connection.last_heartbeat.elapsed().as_millis() as u64,
                     heartbeat_stale: connection.last_heartbeat.elapsed() >= CONNECTION_LEASE,
-                    project_ids: grants.into_iter().map(|grant| grant.project_id).collect(),
+                    project_ids: project_ids.clone(),
                     queued_queries: owned
                         .iter()
                         .filter(|query| {
@@ -1795,10 +1835,17 @@ impl AgentAccessManager {
                         .count() as u32,
                     retained_cache_bytes: owned.iter().filter_map(|query| query.cache_bytes).sum(),
                     adapter_pid: None,
-                }
-            })
-            .collect::<Vec<_>>();
-        connections.sort_by(|left, right| left.connection_id.cmp(&right.connection_id));
+                    last_connected_at: client.last_connected_at.clone(),
+                });
+            }
+        }
+        connections.sort_by(|left, right| {
+            right
+                .connected
+                .cmp(&left.connected)
+                .then_with(|| left.client_profile_id.cmp(&right.client_profile_id))
+                .then_with(|| left.connection_id.cmp(&right.connection_id))
+        });
         connections.truncate(32);
         Ok((queries, connections))
     }
@@ -3924,6 +3971,62 @@ mod tests {
             .list_catalog(&connection_id, "another-project", None, None, 10)
             .unwrap_err()
             .contains("permission_denied"));
+    }
+
+    #[test]
+    fn desktop_monitor_separates_paired_clients_and_authenticated_connections() {
+        let (manager, project_id) = fixture();
+        let (profile_id, first_connection) = pair_and_authenticate(&manager);
+        manager
+            .set_project_grant(
+                &profile_id,
+                ProjectGrant {
+                    project_id: project_id.clone(),
+                    inspect: true,
+                    analyze: true,
+                    modify_workspace: false,
+                    modify_data: false,
+                },
+            )
+            .unwrap();
+
+        let second = manager.hello(&profile_id, "Pi second", None).unwrap();
+        let stored = manager
+            .repository
+            .find_client(&profile_id)
+            .unwrap()
+            .unwrap();
+        let proof = challenge_proof(
+            &stored.secret_verifier,
+            &second.connection_id,
+            &parse_hex_array(&second.challenge).unwrap(),
+        )
+        .unwrap();
+        manager
+            .authenticate(&second.connection_id, &profile_id, &hex(&proof))
+            .unwrap();
+
+        let (_, connections) = manager.desktop_activity(&project_id).unwrap();
+        assert_eq!(connections.len(), 2);
+        assert!(connections.iter().all(|connection| {
+            connection.paired
+                && connection.connected
+                && connection.authenticated
+                && connection.connection_id.is_some()
+                && connection.adapter_pid.is_none()
+        }));
+
+        manager.disconnect(&first_connection).unwrap();
+        manager.disconnect(&second.connection_id).unwrap();
+        let (_, connections) = manager.desktop_activity(&project_id).unwrap();
+        assert_eq!(connections.len(), 1);
+        let paired = &connections[0];
+        assert!(paired.paired);
+        assert!(!paired.connected);
+        assert!(!paired.authenticated);
+        assert_eq!(paired.connection_id, None);
+        assert_eq!(paired.client_profile_id, profile_id);
+        assert!(paired.adapter_pid.is_none());
     }
 
     #[test]

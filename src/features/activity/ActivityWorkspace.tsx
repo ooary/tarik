@@ -381,30 +381,50 @@ export function ActivityWorkspace({ projectId, onClose, onOpenSql }: ActivityWor
           <AnalysisLimits />
           {!snapshot || snapshot.agentConnections.length === 0 ? (
             <div className="activity-empty">
-              <strong>No authenticated agent sessions</strong>
-              <span>
-                Paired clients without a live authenticated connection are not shown as active.
-              </span>
+              <strong>No paired agent clients</strong>
+              <span>Pair a host from Agent access to monitor its connections here.</span>
             </div>
           ) : (
             snapshot.agentConnections.map((connection) => (
-              <article className="activity-agent-row" key={connection.connectionId}>
+              <article
+                className="activity-agent-row"
+                key={connection.connectionId ?? `paired:${connection.clientProfileId}`}
+              >
                 <div>
                   <strong>{connection.clientName}</strong>
-                  <code title={connection.connectionId}>{shortId(connection.connectionId)}</code>
+                  <code title={connection.clientProfileId}>{connection.clientProfileId}</code>
+                  {connection.connectionId ? (
+                    <code title={connection.connectionId}>
+                      Connection {shortId(connection.connectionId)}
+                    </code>
+                  ) : (
+                    <span>Paired client · no active connection</span>
+                  )}
                 </div>
                 <dl>
                   <div>
                     <dt>Status</dt>
-                    <dd>{connection.heartbeatStale ? "Heartbeat stale" : "Connected"}</dd>
+                    <dd>
+                      {!connection.connected
+                        ? "Disconnected"
+                        : connection.heartbeatStale
+                          ? "Heartbeat stale"
+                          : "Authenticated"}
+                    </dd>
                   </div>
                   <div>
                     <dt>Connected</dt>
-                    <dd>{duration(connection.connectedForMs)}</dd>
+                    <dd>
+                      {connection.connected ? duration(connection.connectedForMs) : "Not active"}
+                    </dd>
                   </div>
                   <div>
                     <dt>Heartbeat</dt>
-                    <dd>{duration(connection.lastHeartbeatMsAgo)} ago</dd>
+                    <dd>
+                      {connection.connected
+                        ? `${duration(connection.lastHeartbeatMsAgo)} ago`
+                        : (connection.lastConnectedAt ?? "Unavailable")}
+                    </dd>
                   </div>
                   <div>
                     <dt>Queries</dt>
@@ -427,11 +447,19 @@ export function ActivityWorkspace({ projectId, onClose, onOpenSql }: ActivityWor
                   <button
                     className="text-button"
                     onClick={() =>
-                      void act(() => releaseAgentResults({ connectionId: connection.connectionId }))
+                      void act(() =>
+                        releaseAgentResults(
+                          connection.connectionId
+                            ? { connectionId: connection.connectionId }
+                            : { clientProfileId: connection.clientProfileId },
+                        ),
+                      )
                     }
                     type="button"
                   >
-                    Release connection results
+                    {connection.connectionId
+                      ? "Release connection results"
+                      : "Release client results"}
                   </button>
                 )}
               </article>

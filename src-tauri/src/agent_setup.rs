@@ -110,6 +110,8 @@ pub struct AgentSetupStatus {
     pub platform: String,
     pub packaged_server_ready: bool,
     pub hosts: Vec<HostInstallation>,
+    pub topology_note: String,
+    pub duplicate_diagnosis: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -234,6 +236,13 @@ impl AgentSetupManager {
             platform: std::env::consts::OS.into(),
             packaged_server_ready,
             hosts,
+            topology_note: "Each configured MCP host transport owns one tarik-mcp stdio child. Multiple hosts or configured transport instances may legitimately create multiple processes; Tarik Desktop does not spawn adapters and does not enforce a machine-wide singleton.".into(),
+            duplicate_diagnosis: if cfg!(windows) {
+                "Configuration ownership is checked per reviewed host entry. Use Activity → Agents plus Task Manager parent-process details to distinguish legitimate host children, transient reconnect overlap, and orphans; Tarik never kills by executable name."
+            } else {
+                "Native Windows duplicate-process reproduction has not been run on this host. Configuration ownership checks remain available, but process parentage is unverified."
+            }
+            .into(),
         })
     }
 
@@ -1955,6 +1964,32 @@ mod tests {
             "codex-win32-x64"
         };
         assert!(codex[0].to_string_lossy().contains(expected_package));
+    }
+
+    #[test]
+    fn setup_status_documents_host_owned_non_singleton_topology() {
+        let root =
+            std::env::temp_dir().join(format!("tarik-setup-status-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let mcp = root.join(if cfg!(windows) {
+            "tarik-mcp.exe"
+        } else {
+            "tarik-mcp"
+        });
+        std::fs::write(&mcp, b"test executable").unwrap();
+        let manager =
+            AgentSetupManager::new(MetadataDb::open_in_memory().unwrap()).with_packaged_mcp(mcp);
+        let status = manager.status().unwrap();
+        assert!(status.topology_note.contains("host transport owns one"));
+        assert!(status
+            .topology_note
+            .contains("does not enforce a machine-wide singleton"));
+        if !cfg!(windows) {
+            assert!(status
+                .duplicate_diagnosis
+                .contains("has not been run on this host"));
+        }
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]

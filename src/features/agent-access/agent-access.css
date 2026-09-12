@@ -130,6 +130,23 @@
   gap: 8px;
 }
 
+.agent-setup-topology {
+  display: grid;
+  gap: 4px;
+  border-left: 2px solid var(--border-control);
+  padding: 2px 0 2px 10px;
+}
+
+.agent-setup-topology strong {
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.agent-setup-topology p {
+  margin: 0;
+  font-size: 11px;
+}
+
 .agent-host-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
