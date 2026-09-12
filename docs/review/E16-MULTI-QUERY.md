@@ -1,6 +1,6 @@
 # E16 bounded multi-query MCP sessions review
 
-**Status:** Automated implementation candidate. Manual real-Tauri, real Claude Desktop, accessibility, and native Windows process evidence are not approved.
+**Status:** Provisionally approved by the user on September 12, 2026 for commit/push and native Windows build review. This temporary approval covers the automated implementation candidate only; E16-T5, real-Tauri/Claude re-review, accessibility, DPI/mixed-monitor, and native Windows process evidence remain open.
 
 ## Implemented scope
 
@@ -112,4 +112,5 @@ Do not approve based only on Task Manager process count. Do not kill all `tarik-
 - [ ] Keyboard/focus, minimum viewport, light/dark, reduced-motion, and screen-reader review approved.
 - [ ] Native Windows x64 MSVC/WebView2/DPI/mixed-monitor responsiveness approved.
 - [ ] Reported duplicate-process sequence reproduced or closed with recorded parentage/configuration evidence.
-- [ ] User approves E16 product increment.
+- [x] User provisionally approves the automated E16 candidate for commit/push and Windows review.
+- [ ] User gives final E16 product approval after Windows/manual review.

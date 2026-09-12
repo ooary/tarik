@@ -2556,7 +2556,7 @@ Blocked
 
 ## EPIC E16 — Bounded Multi-Query MCP Sessions
 
-**Status:** `IN PROGRESS` — user approved the complete implementation graph, Activity Queries/Agents navigation, desktop-owned customizable analysis limits, extended-analysis policy, and large-result handoff on September 12, 2026. Durable graph: `docs/design/E16-DESIGN-GRAPH.md`; lifecycle delta: `docs/design/E16-LIFECYCLE-INSIGHT-DELTA.md`. Production implementation is authorized; manual/native acceptance remains unclaimed.
+**Status:** `PROVISIONALLY APPROVED PENDING WINDOWS REVIEW` — on September 12, 2026 the user temporarily approved the implemented E16 product candidate and authorized commit/push so they can build and review it on Windows. Durable graph: `docs/design/E16-DESIGN-GRAPH.md`; lifecycle delta: `docs/design/E16-LIFECYCLE-INSIGHT-DELTA.md`. This provisional approval accepts the automated implementation candidate; E16-T5 and native Windows, real Claude Desktop, accessibility, DPI/mixed-monitor, process-parentage/orphan, and final user acceptance gates remain explicitly unclaimed.
 
 **Outcome:** Each authenticated agent connection can retain several completed results and submit multiple immutable SafeRead queries without unbounded execution, cache growth, or authority drift.
 
