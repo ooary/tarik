@@ -680,6 +680,13 @@ pub struct ResultInfo {
     pub columns: Vec<ColumnInfo>,
     pub row_count: u64,
     pub row_count_exact: bool,
+    /// True when collection observed at least one row beyond the retained
+    /// browse cap. The retained result is useful but not complete.
+    #[serde(default)]
+    pub browse_limit_reached: bool,
+    /// Exact bytes occupied by the published Arrow page directory.
+    #[serde(default)]
+    pub cache_bytes: u64,
     /// Location of the bounded page artifact directory.
     pub page_dir: String,
 }

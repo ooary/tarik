@@ -15,10 +15,10 @@ use interprocess::local_socket::{prelude::*, Stream};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use tarik_agent_protocol::{
-    AgentExecutionResult, AgentExportIntent, AgentExportReleaseResult, AgentExportView,
-    AgentResultPage, ApprovalResult, AuthenticationResult, BridgeAction, BridgeRequest,
-    BridgeResponse, CatalogPageResult, ExportDestinationList, GrantedProjectsResult, HelloResult,
-    RelationDescriptionResult, SqlSnapshotResult, MAX_BRIDGE_MESSAGE_BYTES,
+    AgentActiveList, AgentExecutionResult, AgentExportIntent, AgentExportReleaseResult,
+    AgentExportView, AgentResultPage, ApprovalResult, AuthenticationResult, BridgeAction,
+    BridgeRequest, BridgeResponse, CatalogPageResult, ExportDestinationList, GrantedProjectsResult,
+    HelloResult, RelationDescriptionResult, SqlSnapshotResult, MAX_BRIDGE_MESSAGE_BYTES,
 };
 use zeroize::Zeroizing;
 
@@ -107,6 +107,12 @@ impl BridgeClient {
 
     pub fn list_projects(&mut self) -> Result<GrantedProjectsResult, String> {
         self.request(BridgeAction::ListProjects {
+            connection_id: self.connection_id()?,
+        })
+    }
+
+    pub fn list_active(&mut self) -> Result<AgentActiveList, String> {
+        self.request(BridgeAction::ListActive {
             connection_id: self.connection_id()?,
         })
     }

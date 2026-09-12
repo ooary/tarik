@@ -370,14 +370,18 @@ fn dispatch(
             let sql = required_string(params, "sql")?;
             let cache_dir = params.get("cacheDir").and_then(Value::as_str);
             let row_limit = params.get("rowLimit").and_then(Value::as_u64);
+            let maximum_result_bytes = params.get("maximumResultBytes").and_then(Value::as_u64);
             let connection = sessions.get(&session_id)?.try_clone()?;
             jobs.execute(
                 &session_id,
                 &execution_id,
                 &sql,
                 connection,
-                cache_dir.map(std::path::Path::new),
-                row_limit,
+                jobs::QueryJobOptions {
+                    result_root: cache_dir.map(std::path::PathBuf::from),
+                    row_limit,
+                    maximum_result_bytes,
+                },
             )?;
             Ok(serde_json::json!({
                 "executionId": execution_id,

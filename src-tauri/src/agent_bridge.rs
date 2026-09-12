@@ -462,6 +462,10 @@ fn dispatch(
             serde_json::to_value(access.list_granted_projects(&connection_id)?)
                 .map_err(|error| error.to_string())
         }
+        BridgeAction::ListActive { connection_id } => {
+            serde_json::to_value(access.list_active(&connection_id)?)
+                .map_err(|error| error.to_string())
+        }
         BridgeAction::ListExportDestinations {
             connection_id,
             project_id,

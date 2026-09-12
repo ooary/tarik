@@ -354,6 +354,17 @@ impl TarikMcpServer {
     }
 
     #[tool(
+        name = "tarik_list_active",
+        description = "List bounded queries, retained results, active connections, slot state, cache bytes, and effective analysis limits owned by this paired client profile. Use it to recover IDs after reconnecting. It never returns SQL text, rows, paths, credentials, or another profile's activity."
+    )]
+    fn list_active(
+        &self,
+        Parameters(_request): Parameters<EmptyRequest>,
+    ) -> Result<rmcp::model::CallToolResult, rmcp::ErrorData> {
+        Ok(self.bridge_call(|bridge| bridge.list_active()))
+    }
+
+    #[tool(
         name = "tarik_list_export_destinations",
         description = "List only redacted export destination grants for this authenticated client and explicitly granted active project. Returns opaque destination IDs, labels, allowed CSV/Parquet formats, quotas, create-new-only policy, and readiness. Absolute paths are never returned. This tool cannot create, edit, repair, enable, disable, revoke, or select a destination."
     )]
@@ -491,7 +502,7 @@ impl TarikMcpServer {
 
     #[tool(
         name = "tarik_query_status",
-        description = "Poll one query owned by this authenticated MCP connection. Returns bounded lifecycle and result metadata only."
+        description = "Poll one SafeRead query owned by this paired client profile. Returns bounded lifecycle, slot, capped-result, and cache metadata only; use tarik_list_active to recover IDs after reconnecting."
     )]
     fn query_status(
         &self,
@@ -513,7 +524,7 @@ impl TarikMcpServer {
 
     #[tool(
         name = "tarik_result_page",
-        description = "Read at most 500 rows and 1 MiB from a bounded result owned by this authenticated connection. NULL and truncated-cell metadata are preserved."
+        description = "Read at most 500 rows and 1 MiB from a bounded result owned by this paired client profile for the currently granted project. NULL and truncated-cell metadata are preserved."
     )]
     fn result_page(
         &self,
@@ -532,7 +543,7 @@ impl TarikMcpServer {
 
     #[tool(
         name = "tarik_result_release",
-        description = "Explicitly release one bounded result owned by this authenticated MCP connection."
+        description = "Idempotently release one bounded result owned by this paired client profile. Tables, sources, projects, and completed exports are preserved."
     )]
     fn result_release(
         &self,
@@ -989,12 +1000,13 @@ mod tests {
             .iter()
             .map(|tool| tool.name.as_ref())
             .collect::<Vec<_>>();
-        assert_eq!(names.len(), 25);
+        assert_eq!(names.len(), 26);
         for required in [
             "tarik_classify_sql",
             "tarik_describe_relation",
             "tarik_list_catalog",
             "tarik_list_projects",
+            "tarik_list_active",
             "tarik_list_export_destinations",
             "tarik_propose_export",
             "tarik_export_status",

@@ -9,11 +9,12 @@ use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tarik_agent_protocol::{
+    AgentActiveConnection, AgentActiveList, AgentActiveQuery, AgentAnalysisLimits,
     AgentExecutionResult, AgentResultPage, ApprovalResult, ApprovalState, AuthenticationResult,
     CatalogPageResult, CatalogRelationSummary, ConnectionStatusResult, GrantedProject,
     GrantedProjectsResult, HelloResult, HelloState, ProjectGrant, RelationColumn,
     RelationDescriptionResult, SqlSnapshotResult, CHALLENGE_BYTES, MAX_AGENT_PAGE_RESPONSE_BYTES,
-    MAX_AGENT_RESULT_ROWS, MAX_DISCOVERY_RESPONSE_BYTES, PROOF_BYTES,
+    MAX_AGENT_QUERIES_GLOBAL, MAX_AGENT_RESULTS_GLOBAL, MAX_DISCOVERY_RESPONSE_BYTES, PROOF_BYTES,
 };
 use zeroize::Zeroizing;
 
@@ -37,8 +38,6 @@ const CHALLENGE_LIFETIME: Duration = Duration::from_secs(60);
 const AGENT_ACCESS_ENABLED_KEY: &str = "agent.access.enabled";
 const MAX_SQL_SNAPSHOTS: usize = 32;
 const SQL_SNAPSHOT_LIFETIME: Duration = Duration::from_secs(120);
-const QUERY_LIFETIME: Duration = Duration::from_secs(60);
-const MAX_AGENT_QUERIES_GLOBAL: usize = 4;
 const MAX_PENDING_APPROVALS: usize = 16;
 const MAX_PENDING_APPROVALS_PER_CLIENT: usize = 4;
 const APPROVAL_LIFETIME: Duration = Duration::from_secs(120);
@@ -115,12 +114,14 @@ struct ConnectionRecord {
     authenticated: bool,
 }
 
+#[derive(Clone)]
 struct SqlSnapshot {
     connection_id: String,
     project_id: String,
     sql: String,
     classification: tarik_engine_protocol::AgentSqlClassification,
     created_at: Instant,
+    reserved: bool,
 }
 
 pub(crate) struct ConsumedSafeReadSnapshot {
@@ -132,12 +133,24 @@ pub(crate) struct ConsumedSafeReadSnapshot {
     pub snapshot_hash: String,
 }
 
+#[derive(Clone)]
 struct AgentQuery {
-    connection_id: String,
+    profile_id: String,
+    origin_connection_id: String,
     project_id: String,
     execution_id: String,
-    started_at: Instant,
+    admitted_at: Instant,
+    running_at: Option<Instant>,
+    state: tarik_engine_protocol::ExecutionState,
     result_id: Option<String>,
+    rows: Option<u64>,
+    row_total_exact: Option<bool>,
+    browse_limit_reached: bool,
+    cache_bytes: Option<u64>,
+    cancellation_requested: bool,
+    cleanup_pending: bool,
+    error: Option<tarik_engine_protocol::ErrorEnvelope>,
+    limits: AgentAnalysisLimits,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -791,6 +804,7 @@ impl AgentAccessManager {
                 sql: sql.to_string(),
                 classification: classification.clone(),
                 created_at: Instant::now(),
+                reserved: false,
             },
         );
         Ok(SqlSnapshotResult {
@@ -1028,36 +1042,103 @@ impl AgentAccessManager {
         connection_id: &str,
         snapshot_id: &str,
     ) -> Result<AgentExecutionResult, String> {
+        let (profile_id, _) = self.authenticated_connection(connection_id)?;
+        let limits = AgentAnalysisLimits::default();
+        let execution_id = format!("agent-{}", uuid::Uuid::new_v4());
         let (project_id, sql, expected_revision) = {
             let mut state = self.lock()?;
             prune(&mut state);
-            if state
+            let profile_queries = state
                 .agent_queries
                 .values()
-                .any(|query| query.connection_id == connection_id && query.result_id.is_some())
-            {
-                return Err("agent.result_limit: Release the existing agent result first.".into());
-            }
-            if state
+                .filter(|query| query.profile_id == profile_id)
+                .collect::<Vec<_>>();
+            let retained = profile_queries
+                .iter()
+                .filter(|query| query.result_id.is_some())
+                .count();
+            let profile_charged_bytes = profile_queries
+                .iter()
+                .map(|query| query_charged_bytes(query))
+                .sum::<u64>();
+            let global_charged_bytes = state
                 .agent_queries
                 .values()
-                .filter(|query| query.result_id.is_none())
-                .count()
-                >= MAX_AGENT_QUERIES_GLOBAL
+                .map(query_charged_bytes)
+                .sum::<u64>();
+            if profile_charged_bytes.saturating_add(limits.maximum_result_bytes)
+                > limits.profile_cache_bytes
+                || global_charged_bytes.saturating_add(limits.maximum_result_bytes)
+                    > limits.global_cache_bytes
             {
-                return Err("agent.query_limit: Too many agent queries are active.".into());
+                return Err(
+                    "agent.cache_limit: Release an unneeded retained result with tarik_result_release, then retry this same snapshot."
+                        .into(),
+                );
             }
-            if state
+            if retained >= limits.retained_result_limit as usize
+                || state
+                    .agent_queries
+                    .values()
+                    .filter(|query| query.result_id.is_some())
+                    .count()
+                    >= MAX_AGENT_RESULTS_GLOBAL as usize
+            {
+                let ids = profile_queries
+                    .iter()
+                    .filter_map(|query| query.result_id.as_deref())
+                    .take(8)
+                    .collect::<Vec<_>>()
+                    .join(",");
+                return Err(format!(
+                    "agent.result_limit: Release an unneeded result with tarik_result_release; blockingResultIds={ids}"
+                ));
+            }
+            let outstanding = profile_queries
+                .iter()
+                .filter(|query| {
+                    matches!(
+                        query.state,
+                        tarik_engine_protocol::ExecutionState::Queued
+                            | tarik_engine_protocol::ExecutionState::Running
+                    )
+                })
+                .count();
+            let global_outstanding = state
                 .agent_queries
                 .values()
-                .any(|query| query.connection_id == connection_id && query.result_id.is_none())
+                .filter(|query| {
+                    matches!(
+                        query.state,
+                        tarik_engine_protocol::ExecutionState::Queued
+                            | tarik_engine_protocol::ExecutionState::Running
+                    )
+                })
+                .count();
+            if outstanding >= limits.outstanding_query_limit as usize
+                || global_outstanding >= MAX_AGENT_QUERIES_GLOBAL as usize
             {
-                return Err("agent.query_limit: This client already has an active query.".into());
+                let ids = profile_queries
+                    .iter()
+                    .filter(|query| {
+                        matches!(
+                            query.state,
+                            tarik_engine_protocol::ExecutionState::Queued
+                                | tarik_engine_protocol::ExecutionState::Running
+                        )
+                    })
+                    .map(|query| query.execution_id.as_str())
+                    .take(8)
+                    .collect::<Vec<_>>()
+                    .join(",");
+                return Err(format!(
+                    "agent.query_limit: Cancel an unneeded query or wait, then retry this same snapshot; blockingExecutionIds={ids}"
+                ));
             }
-            let snapshot = state.sql_snapshots.remove(snapshot_id).ok_or_else(|| {
+            let snapshot = state.sql_snapshots.get_mut(snapshot_id).ok_or_else(|| {
                 "agent.snapshot_missing: Classify the SQL again before execution.".to_string()
             })?;
-            if snapshot.connection_id != connection_id {
+            if snapshot.connection_id != connection_id || snapshot.reserved {
                 return Err(
                     "agent.snapshot_owner_mismatch: SQL snapshots cannot be transferred.".into(),
                 );
@@ -1068,47 +1149,105 @@ impl AgentAccessManager {
                     "agent.approval_required: This SQL cannot use the SafeRead lane.".into(),
                 );
             }
-            (
-                snapshot.project_id,
-                snapshot.sql,
-                snapshot.classification.catalog_revision,
-            )
-        };
-        self.require_capability(connection_id, &project_id, |grant| grant.analyze, "Analyze")?;
-        let current = self
-            .engine
-            .classify_agent_sql(&sql, &self.registered_sources(&project_id)?)?;
-        if current.decision != tarik_engine_protocol::AgentSqlDecision::SafeRead
-            || current.catalog_revision != expected_revision
-        {
-            return Err(
-                "agent.snapshot_stale: Catalog policy changed; classify the SQL again.".into(),
+            snapshot.reserved = true;
+            let values = (
+                snapshot.project_id.clone(),
+                snapshot.sql.clone(),
+                snapshot.classification.catalog_revision.clone(),
             );
+            state.agent_queries.insert(
+                execution_id.clone(),
+                AgentQuery {
+                    profile_id: profile_id.clone(),
+                    origin_connection_id: connection_id.to_string(),
+                    project_id: values.0.clone(),
+                    execution_id: execution_id.clone(),
+                    admitted_at: Instant::now(),
+                    running_at: None,
+                    state: tarik_engine_protocol::ExecutionState::Queued,
+                    result_id: None,
+                    rows: None,
+                    row_total_exact: None,
+                    browse_limit_reached: false,
+                    cache_bytes: None,
+                    cancellation_requested: false,
+                    cleanup_pending: false,
+                    error: None,
+                    limits: limits.clone(),
+                },
+            );
+            values
+        };
+        let admission = (|| {
+            self.require_capability(connection_id, &project_id, |grant| grant.analyze, "Analyze")?;
+            let current = self
+                .engine
+                .classify_agent_sql(&sql, &self.registered_sources(&project_id)?)?;
+            if current.decision != tarik_engine_protocol::AgentSqlDecision::SafeRead
+                || current.catalog_revision != expected_revision
+            {
+                return Err(
+                    "agent.snapshot_stale: Catalog policy changed; classify the SQL again."
+                        .to_string(),
+                );
+            }
+            self.engine.execute_query_with_limits(
+                &execution_id,
+                &sql,
+                Some(limits.browse_row_cap),
+                Some(limits.maximum_result_bytes),
+            )
+        })();
+        if let Err(error) = admission {
+            let mut state = self.lock()?;
+            state.agent_queries.remove(&execution_id);
+            if let Some(snapshot) = state.sql_snapshots.get_mut(snapshot_id) {
+                snapshot.reserved = false;
+            }
+            return Err(error);
         }
-        let execution_id = format!("agent-{}", uuid::Uuid::new_v4());
-        self.engine
-            .execute_query_bounded(&execution_id, &sql, Some(MAX_AGENT_RESULT_ROWS))?;
-        self.lock()?.agent_queries.insert(
-            execution_id.clone(),
-            AgentQuery {
-                connection_id: connection_id.to_string(),
-                project_id: project_id.clone(),
-                execution_id: execution_id.clone(),
-                started_at: Instant::now(),
-                result_id: None,
-            },
-        );
-        Ok(AgentExecutionResult {
-            execution_id,
-            project_id,
-            state: "queued".into(),
-            duration_ms: 0,
-            rows_produced: None,
-            rows_affected: None,
-            result_id: None,
-            row_total: None,
-            row_total_exact: None,
-            error: None,
+        self.lock()?.sql_snapshots.remove(snapshot_id);
+        Ok(agent_execution_view(
+            self.lock()?
+                .agent_queries
+                .get(&execution_id)
+                .expect("query inserted before engine admission"),
+        ))
+    }
+
+    pub fn list_active(&self, connection_id: &str) -> Result<AgentActiveList, String> {
+        let (profile_id, _) = self.authenticated_connection(connection_id)?;
+        let state = self.lock()?;
+        let connections = state
+            .connections
+            .iter()
+            .filter(|(_, record)| record.profile_id == profile_id && record.authenticated)
+            .take(8)
+            .map(|(id, record)| AgentActiveConnection {
+                connection_id: id.clone(),
+                authenticated: true,
+                connected_for_ms: record.created_at.elapsed().as_millis() as u64,
+            })
+            .collect();
+        let queries = state
+            .agent_queries
+            .values()
+            .filter(|query| query.profile_id == profile_id)
+            .take(64)
+            .map(active_query_view)
+            .collect::<Vec<_>>();
+        let retained_result_count = queries
+            .iter()
+            .filter(|query| query.result_id.is_some())
+            .count() as u32;
+        let retained_cache_bytes = queries.iter().filter_map(|query| query.cache_bytes).sum();
+        Ok(AgentActiveList {
+            client_profile_id: profile_id,
+            limits: AgentAnalysisLimits::default(),
+            connections,
+            queries,
+            retained_result_count,
+            retained_cache_bytes,
         })
     }
 
@@ -1117,32 +1256,36 @@ impl AgentAccessManager {
         connection_id: &str,
         execution_id: &str,
     ) -> Result<AgentExecutionResult, String> {
-        let project_id = self.query_owner(connection_id, execution_id)?.project_id;
-        self.require_capability(connection_id, &project_id, |grant| grant.analyze, "Analyze")?;
-        let mut status = self.engine.query_status(execution_id)?.ok_or_else(|| {
+        let query = self.query_owner(connection_id, execution_id)?;
+        self.require_capability(
+            connection_id,
+            &query.project_id,
+            |grant| grant.analyze,
+            "Analyze",
+        )?;
+        let status = self.engine.query_status(execution_id)?.ok_or_else(|| {
             "agent.execution_missing: The engine no longer tracks this query.".to_string()
         })?;
-        let timed_out = self
-            .lock()?
+        let mut state = self.lock()?;
+        let query = state
             .agent_queries
-            .get(execution_id)
-            .is_some_and(|query| query.started_at.elapsed() >= QUERY_LIFETIME);
-        if timed_out
-            && matches!(
-                status.state,
-                tarik_engine_protocol::ExecutionState::Queued
-                    | tarik_engine_protocol::ExecutionState::Running
-            )
+            .get_mut(execution_id)
+            .ok_or_else(|| "agent.execution_missing: Refresh tarik_list_active.".to_string())?;
+        query.state = status.state;
+        if status.state == tarik_engine_protocol::ExecutionState::Running
+            && query.running_at.is_none()
         {
-            let _ = self.engine.cancel_query(execution_id);
-            status = self.engine.query_status(execution_id)?.unwrap_or(status);
+            query.running_at = Some(Instant::now());
         }
+        query.rows = status.rows_produced;
+        query.error = status.error;
         if let Some(result) = &status.result {
-            if let Some(query) = self.lock()?.agent_queries.get_mut(execution_id) {
-                query.result_id = Some(result.result_id.clone());
-            }
+            query.result_id = Some(result.result_id.clone());
+            query.row_total_exact = Some(result.row_count_exact);
+            query.browse_limit_reached = result.browse_limit_reached;
+            query.cache_bytes = Some(result.cache_bytes);
         }
-        Ok(execution_result(project_id, status))
+        Ok(agent_execution_view(query))
     }
 
     pub fn cancel_query(
@@ -1150,12 +1293,20 @@ impl AgentAccessManager {
         connection_id: &str,
         execution_id: &str,
     ) -> Result<AgentExecutionResult, String> {
-        let project_id = self.query_owner(connection_id, execution_id)?.project_id;
-        self.require_capability(connection_id, &project_id, |grant| grant.analyze, "Analyze")?;
-        let status = self.engine.cancel_query(execution_id)?.ok_or_else(|| {
+        let query = self.query_owner(connection_id, execution_id)?;
+        self.require_capability(
+            connection_id,
+            &query.project_id,
+            |grant| grant.analyze,
+            "Analyze",
+        )?;
+        if let Some(query) = self.lock()?.agent_queries.get_mut(execution_id) {
+            query.cancellation_requested = true;
+        }
+        let _ = self.engine.cancel_query(execution_id)?.ok_or_else(|| {
             "agent.execution_missing: The engine no longer tracks this query.".to_string()
         })?;
-        Ok(execution_result(project_id, status))
+        self.query_status(connection_id, execution_id)
     }
 
     pub fn result_page(
@@ -1165,8 +1316,18 @@ impl AgentAccessManager {
         offset: u64,
         max_rows: u32,
     ) -> Result<AgentResultPage, String> {
-        let project_id = self.query_owner(connection_id, result_id)?.project_id;
-        self.require_capability(connection_id, &project_id, |grant| grant.analyze, "Analyze")?;
+        let query = self.query_owner(connection_id, result_id)?;
+        if query.result_id.as_deref() != Some(result_id) {
+            return Err(
+                "agent.result_missing: Use tarik_list_active to discover retained results.".into(),
+            );
+        }
+        self.require_capability(
+            connection_id,
+            &query.project_id,
+            |grant| grant.analyze,
+            "Analyze",
+        )?;
         let page = self.engine.result_page(result_id, offset, max_rows)?;
         if serde_json::to_vec(&page)
             .map_err(|error| error.to_string())?
@@ -1206,8 +1367,24 @@ impl AgentAccessManager {
     }
 
     pub fn release_result(&self, connection_id: &str, result_id: &str) -> Result<bool, String> {
-        self.query_owner(connection_id, result_id)?;
-        self.engine.release_result(result_id)?;
+        let query = match self.query_owner(connection_id, result_id) {
+            Ok(query) => query,
+            Err(_) => return Ok(false),
+        };
+        if query.result_id.as_deref() != Some(result_id) {
+            return Ok(false);
+        }
+        self.require_capability(
+            connection_id,
+            &query.project_id,
+            |grant| grant.analyze,
+            "Analyze",
+        )?;
+        match self.engine.release_result(result_id) {
+            Ok(()) => {}
+            Err(error) if error.contains("result.missing") => {}
+            Err(error) => return Err(error),
+        }
         self.lock()?.agent_queries.remove(result_id);
         Ok(true)
     }
@@ -1416,6 +1593,15 @@ impl AgentAccessManager {
                     result_id: None,
                     row_total: None,
                     row_total_exact: None,
+                    browse_limit_reached: false,
+                    complete_result_available: false,
+                    limit_reason: None,
+                    browse_row_cap: AgentAnalysisLimits::default().browse_row_cap,
+                    cache_bytes: None,
+                    slot_held: false,
+                    slot_available: true,
+                    cancellation_requested: false,
+                    cleanup_pending: false,
                     error: None,
                 })
             }
@@ -1772,13 +1958,20 @@ impl AgentAccessManager {
             }
             let queries = state
                 .agent_queries
-                .values()
-                .filter(|query| query.connection_id == connection_id)
-                .map(|query| query.execution_id.clone())
+                .values_mut()
+                .filter(|query| {
+                    query.origin_connection_id == connection_id
+                        && matches!(
+                            query.state,
+                            tarik_engine_protocol::ExecutionState::Queued
+                                | tarik_engine_protocol::ExecutionState::Running
+                        )
+                })
+                .map(|query| {
+                    query.cancellation_requested = true;
+                    query.execution_id.clone()
+                })
                 .collect::<Vec<_>>();
-            state
-                .agent_queries
-                .retain(|_, query| query.connection_id != connection_id);
             let profiles = state
                 .profiles
                 .iter()
@@ -1792,7 +1985,6 @@ impl AgentAccessManager {
         };
         for query in queries {
             let _ = self.engine.cancel_query(&query);
-            let _ = self.engine.release_result(&query);
         }
         for profile in profiles {
             let _ = self.engine.cancel_profile(&profile);
@@ -2060,22 +2252,16 @@ impl AgentAccessManager {
     }
 
     fn query_owner(&self, connection_id: &str, execution_id: &str) -> Result<AgentQuery, String> {
-        let state = self.lock()?;
-        let query = state
+        let (profile_id, _) = self.authenticated_connection(connection_id)?;
+        self.lock()?
             .agent_queries
             .get(execution_id)
-            .filter(|query| query.connection_id == connection_id)
+            .filter(|query| query.profile_id == profile_id)
+            .cloned()
             .ok_or_else(|| {
-                "agent.execution_owner_mismatch: This query belongs to another connection."
+                "agent.execution_owner_mismatch: This query belongs to another paired profile."
                     .to_string()
-            })?;
-        Ok(AgentQuery {
-            connection_id: query.connection_id.clone(),
-            project_id: query.project_id.clone(),
-            execution_id: query.execution_id.clone(),
-            started_at: query.started_at,
-            result_id: query.result_id.clone(),
-        })
+            })
     }
 
     fn encode_cursor(
@@ -2199,31 +2385,92 @@ fn sql_snapshot_hash(
     hex(&hash.finalize())
 }
 
-fn execution_result(
-    project_id: String,
-    status: tarik_engine_protocol::ExecutionStatus,
-) -> AgentExecutionResult {
+fn query_charged_bytes(query: &AgentQuery) -> u64 {
+    if let Some(bytes) = query.cache_bytes {
+        bytes
+    } else if matches!(
+        query.state,
+        tarik_engine_protocol::ExecutionState::Queued
+            | tarik_engine_protocol::ExecutionState::Running
+    ) || query.cleanup_pending
+    {
+        query.limits.maximum_result_bytes
+    } else {
+        0
+    }
+}
+
+fn execution_state_name(state: tarik_engine_protocol::ExecutionState) -> &'static str {
+    match state {
+        tarik_engine_protocol::ExecutionState::Queued => "queued",
+        tarik_engine_protocol::ExecutionState::Running => "running",
+        tarik_engine_protocol::ExecutionState::Succeeded => "succeeded",
+        tarik_engine_protocol::ExecutionState::Failed => "failed",
+        tarik_engine_protocol::ExecutionState::Cancelled => "cancelled",
+    }
+}
+
+fn agent_execution_view(query: &AgentQuery) -> AgentExecutionResult {
+    let slot_held = matches!(
+        query.state,
+        tarik_engine_protocol::ExecutionState::Queued
+            | tarik_engine_protocol::ExecutionState::Running
+    ) || query.cleanup_pending;
     AgentExecutionResult {
-        execution_id: status.execution_id,
-        project_id,
-        state: match status.state {
-            tarik_engine_protocol::ExecutionState::Queued => "queued",
-            tarik_engine_protocol::ExecutionState::Running => "running",
-            tarik_engine_protocol::ExecutionState::Succeeded => "succeeded",
-            tarik_engine_protocol::ExecutionState::Failed => "failed",
-            tarik_engine_protocol::ExecutionState::Cancelled => "cancelled",
-        }
-        .into(),
-        duration_ms: status.duration_ms,
-        rows_produced: status.rows_produced,
-        rows_affected: status.rows_affected,
-        result_id: status
-            .result
-            .as_ref()
-            .map(|result| result.result_id.clone()),
-        row_total: status.result.as_ref().map(|result| result.row_count),
-        row_total_exact: status.result.as_ref().map(|result| result.row_count_exact),
-        error: status.error,
+        execution_id: query.execution_id.clone(),
+        project_id: query.project_id.clone(),
+        state: execution_state_name(query.state).into(),
+        duration_ms: query
+            .running_at
+            .unwrap_or(query.admitted_at)
+            .elapsed()
+            .as_millis() as u64,
+        rows_produced: query.rows,
+        rows_affected: None,
+        result_id: query.result_id.clone(),
+        row_total: query.rows,
+        row_total_exact: query.row_total_exact,
+        browse_limit_reached: query.browse_limit_reached,
+        complete_result_available: query.result_id.is_some() && !query.browse_limit_reached,
+        limit_reason: query
+            .browse_limit_reached
+            .then(|| "browse_row_cap".to_string()),
+        browse_row_cap: query.limits.browse_row_cap,
+        cache_bytes: query.cache_bytes,
+        slot_held,
+        slot_available: !slot_held,
+        cancellation_requested: query.cancellation_requested,
+        cleanup_pending: query.cleanup_pending,
+        error: query.error.clone(),
+    }
+}
+
+fn active_query_view(query: &AgentQuery) -> AgentActiveQuery {
+    AgentActiveQuery {
+        execution_id: query.execution_id.clone(),
+        project_id: query.project_id.clone(),
+        origin_connection_id: query.origin_connection_id.clone(),
+        state: execution_state_name(query.state).into(),
+        queue_wait_ms: query
+            .running_at
+            .map(|started| started.duration_since(query.admitted_at).as_millis() as u64)
+            .unwrap_or_else(|| query.admitted_at.elapsed().as_millis() as u64),
+        running_ms: query
+            .running_at
+            .map(|started| started.elapsed().as_millis() as u64)
+            .unwrap_or(0),
+        result_id: query.result_id.clone(),
+        rows: query.rows,
+        row_total_exact: query.row_total_exact,
+        browse_limit_reached: query.browse_limit_reached,
+        cache_bytes: query.cache_bytes,
+        slot_held: matches!(
+            query.state,
+            tarik_engine_protocol::ExecutionState::Queued
+                | tarik_engine_protocol::ExecutionState::Running
+        ) || query.cleanup_pending,
+        cancellation_requested: query.cancellation_requested,
+        cleanup_pending: query.cleanup_pending,
     }
 }
 
@@ -2630,6 +2877,7 @@ mod tests {
                     has_top_level_filter: Some(false),
                 },
                 created_at: Instant::now(),
+                reserved: false,
             },
         );
         let proposed = manager.propose_sql(&connection_id, "snapshot-1").unwrap();
@@ -2782,7 +3030,44 @@ mod tests {
             .result_page(&connection_id, &result_id, 0, 10)
             .unwrap();
         assert_eq!(page.rows.as_array().unwrap().len(), 2);
-        manager.release_result(&connection_id, &result_id).unwrap();
+        let active = manager.list_active(&connection_id).unwrap();
+        assert_eq!(active.retained_result_count, 1);
+        assert_eq!(
+            active.queries[0].result_id.as_deref(),
+            Some(result_id.as_str())
+        );
+
+        let reconnect = manager.hello(&profile_id, "Pi reconnect", None).unwrap();
+        let stored = manager
+            .repository
+            .find_client(&profile_id)
+            .unwrap()
+            .unwrap();
+        let proof = challenge_proof(
+            &stored.secret_verifier,
+            &reconnect.connection_id,
+            &parse_hex_array(&reconnect.challenge).unwrap(),
+        )
+        .unwrap();
+        manager
+            .authenticate(&reconnect.connection_id, &profile_id, &hex(&proof))
+            .unwrap();
+        assert_eq!(
+            manager
+                .result_page(&reconnect.connection_id, &result_id, 0, 10)
+                .unwrap()
+                .rows
+                .as_array()
+                .unwrap()
+                .len(),
+            2
+        );
+        manager
+            .release_result(&reconnect.connection_id, &result_id)
+            .unwrap();
+        assert!(!manager
+            .release_result(&reconnect.connection_id, &result_id)
+            .unwrap());
 
         let critical = manager
             .classify_sql(&connection_id, &project.id, "DELETE FROM orders")

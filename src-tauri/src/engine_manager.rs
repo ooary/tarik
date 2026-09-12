@@ -499,6 +499,16 @@ impl EngineManager {
         sql: &str,
         row_limit: Option<u64>,
     ) -> Result<(), String> {
+        self.execute_query_with_limits(execution_id, sql, row_limit, None)
+    }
+
+    pub fn execute_query_with_limits(
+        &self,
+        execution_id: &str,
+        sql: &str,
+        row_limit: Option<u64>,
+        maximum_result_bytes: Option<u64>,
+    ) -> Result<(), String> {
         self.session_request(
             "query.execute",
             serde_json::json!({
@@ -506,6 +516,7 @@ impl EngineManager {
                 "sql": sql,
                 "cacheDir": self.result_root.to_string_lossy(),
                 "rowLimit": row_limit,
+                "maximumResultBytes": maximum_result_bytes,
             }),
         )
         .map(|_| ())

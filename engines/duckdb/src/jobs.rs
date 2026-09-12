@@ -32,6 +32,7 @@ struct JobRecord {
     connection: Option<Connection>,
     result_root: Option<PathBuf>,
     row_limit: Option<u64>,
+    maximum_result_bytes: Option<u64>,
     state: ExecutionState,
     queued_at: Instant,
     started_at: Option<Instant>,
@@ -46,6 +47,8 @@ pub struct PublishedResult {
     pub columns: Vec<Map<String, Value>>,
     pub row_count: u64,
     pub row_count_exact: bool,
+    pub browse_limit_reached: bool,
+    pub cache_bytes: u64,
     pub page_rows: u32,
 }
 
@@ -83,6 +86,13 @@ impl Registry {
     }
 }
 
+/// Bounded publication options captured when an execution is admitted.
+pub struct QueryJobOptions {
+    pub result_root: Option<PathBuf>,
+    pub row_limit: Option<u64>,
+    pub maximum_result_bytes: Option<u64>,
+}
+
 /// Registry of asynchronous engine jobs keyed by execution id.
 pub struct JobRegistry {
     inner: Mutex<Registry>,
@@ -107,8 +117,7 @@ impl JobRegistry {
         execution_id: &str,
         sql: &str,
         connection: Connection,
-        result_root: Option<&Path>,
-        row_limit: Option<u64>,
+        options: QueryJobOptions,
     ) -> Result<(), EngineError> {
         if sql.trim().is_empty() {
             return Err(EngineError::InvalidQuery("sql text contains no statements"));
@@ -126,8 +135,9 @@ impl JobRegistry {
                 session_id: session_id.to_string(),
                 sql: sql.to_string(),
                 connection: Some(connection),
-                result_root: result_root.map(Path::to_path_buf),
-                row_limit,
+                result_root: options.result_root,
+                row_limit: options.row_limit,
+                maximum_result_bytes: options.maximum_result_bytes,
                 state: ExecutionState::Queued,
                 queued_at: Instant::now(),
                 started_at: None,
@@ -299,6 +309,8 @@ impl JobRegistry {
                 .collect(),
             row_count: result.row_count,
             row_count_exact: result.row_count_exact,
+            browse_limit_reached: result.browse_limit_reached,
+            cache_bytes: result.cache_bytes,
             page_dir: result.page_dir.to_string_lossy().to_string(),
         });
         let status = ExecutionStatus {
@@ -399,6 +411,8 @@ fn clone_result_meta(result: &PublishedResult) -> PublishedResult {
         columns: result.columns.clone(),
         row_count: result.row_count,
         row_count_exact: result.row_count_exact,
+        browse_limit_reached: result.browse_limit_reached,
+        cache_bytes: result.cache_bytes,
         page_rows: result.page_rows,
     }
 }
@@ -426,12 +440,20 @@ fn worker_loop(registry: Arc<JobRegistry>, session_id: &str) {
                     let connection = job.connection.take();
                     let result_root = job.result_root.clone();
                     let row_limit = job.row_limit;
-                    (execution_id, sql, connection, result_root, row_limit)
+                    let maximum_result_bytes = job.maximum_result_bytes;
+                    (
+                        execution_id,
+                        sql,
+                        connection,
+                        result_root,
+                        row_limit,
+                        maximum_result_bytes,
+                    )
                 }
                 None => continue,
             }
         };
-        let (execution_id, sql, connection, result_root, row_limit) = claimed;
+        let (execution_id, sql, connection, result_root, row_limit, maximum_result_bytes) = claimed;
         let Some(mut connection) = connection else {
             registry.mark_terminal(
                 &execution_id,
@@ -453,6 +475,7 @@ fn worker_loop(registry: Arc<JobRegistry>, session_id: &str) {
             &mut connection,
             result_root.as_deref(),
             row_limit,
+            maximum_result_bytes,
         );
     }
 }
@@ -464,6 +487,7 @@ fn run_job(
     connection: &mut Connection,
     result_root: Option<&Path>,
     row_limit: Option<u64>,
+    maximum_result_bytes: Option<u64>,
 ) {
     let interrupt = connection.interrupt_handle();
     registry.set_interrupt(execution_id, interrupt);
@@ -471,7 +495,14 @@ fn run_job(
     // The DuckDB Arrow iterator panics on fetch failure (including interrupt),
     // so the whole execution runs inside catch_unwind.
     let outcome = catch_unwind(AssertUnwindSafe(|| {
-        execute_snapshot(execution_id, connection, sql, result_root, row_limit)
+        execute_snapshot(
+            execution_id,
+            connection,
+            sql,
+            result_root,
+            row_limit,
+            maximum_result_bytes,
+        )
     }));
     match outcome {
         Ok(Ok(completed)) => {
@@ -556,6 +587,7 @@ fn execute_snapshot(
     sql: &str,
     result_root: Option<&Path>,
     row_limit: Option<u64>,
+    maximum_result_bytes: Option<u64>,
 ) -> Result<ExecutionOutcome, EngineError> {
     let statements = split_statements(sql);
     if statements.is_empty() {
@@ -580,11 +612,15 @@ fn execute_snapshot(
                 pages::discard_dir(&previous.page_dir);
             }
             let tmp = root.join(format!("{execution_id}.tmp"));
-            Some(pages::PageWriter::create(tmp)?)
+            Some(pages::PageWriter::create_bounded(
+                tmp,
+                maximum_result_bytes,
+            )?)
         } else {
             None
         };
         let mut statement_rows: u64 = 0;
+        let mut browse_limit_reached = false;
 
         for batch in batches.by_ref() {
             // DuckDB reports DML as a one-row "Count" result set; surface it
@@ -597,9 +633,13 @@ fn execute_snapshot(
                 .map(|limit| limit.saturating_sub(statement_rows))
                 .unwrap_or(u64::MAX);
             if remaining == 0 {
+                browse_limit_reached = true;
                 break;
             }
             let take = batch.num_rows().min(remaining as usize);
+            if take < batch.num_rows() {
+                browse_limit_reached = true;
+            }
             let batch = if take < batch.num_rows() {
                 batch.slice(0, take)
             } else {
@@ -609,7 +649,7 @@ fn execute_snapshot(
                 page_writer.write(&batch)?;
             }
             statement_rows += batch.num_rows() as u64;
-            if row_limit.is_some_and(|limit| statement_rows >= limit) {
+            if browse_limit_reached {
                 break;
             }
         }
@@ -622,6 +662,8 @@ fn execute_snapshot(
             let row_count = page_writer.total_rows();
             let page_rows = page_writer.page_rows();
             let columns = pages::column_metadata(&schema);
+            page_writer.finish()?;
+            let cache_bytes = page_writer.bytes_written();
             if let Some(root) = result_root {
                 let final_dir = root.join(execution_id);
                 page_writer.publish(&final_dir)?;
@@ -631,7 +673,9 @@ fn execute_snapshot(
                         page_dir: final_dir,
                         columns,
                         row_count,
-                        row_count_exact: row_limit.is_none_or(|limit| row_count < limit),
+                        row_count_exact: !browse_limit_reached,
+                        browse_limit_reached,
+                        cache_bytes,
                         page_rows,
                     },
                 ));

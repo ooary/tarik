@@ -6,7 +6,7 @@
 
 use serde::{Deserialize, Serialize};
 
-pub const BRIDGE_PROTOCOL_VERSION: u32 = 3;
+pub const BRIDGE_PROTOCOL_VERSION: u32 = 4;
 pub const MAX_BRIDGE_MESSAGE_BYTES: usize = 1024 * 1024;
 pub const MAX_CLIENT_LABEL_BYTES: usize = 80;
 pub const MAX_PROFILE_ID_BYTES: usize = 128;
@@ -16,6 +16,13 @@ pub const MAX_DISCOVERY_PAGE_ITEMS: u32 = 100;
 pub const MAX_DISCOVERY_SEARCH_BYTES: usize = 128;
 pub const MAX_DISCOVERY_RESPONSE_BYTES: usize = 256 * 1024;
 pub const MAX_AGENT_RESULT_ROWS: u64 = 5_000;
+pub const MAX_AGENT_RESULT_BYTES: u64 = 32 * 1024 * 1024;
+pub const MAX_AGENT_RESULTS_PER_PROFILE: u32 = 8;
+pub const MAX_AGENT_QUERIES_PER_PROFILE: u32 = 4;
+pub const MAX_AGENT_QUERIES_GLOBAL: u32 = 16;
+pub const MAX_AGENT_RESULTS_GLOBAL: u32 = 32;
+pub const MAX_AGENT_CACHE_BYTES_PER_PROFILE: u64 = 128 * 1024 * 1024;
+pub const MAX_AGENT_CACHE_BYTES_GLOBAL: u64 = 512 * 1024 * 1024;
 pub const MAX_AGENT_PAGE_ROWS: u32 = 500;
 pub const MAX_AGENT_PAGE_RESPONSE_BYTES: usize = 1024 * 1024;
 pub const MAX_AGENT_EXPORT_BASE_NAME_BYTES: usize = 64;
@@ -75,6 +82,7 @@ impl BridgeRequest {
             }
             BridgeAction::Status { connection_id }
             | BridgeAction::ListProjects { connection_id }
+            | BridgeAction::ListActive { connection_id }
             | BridgeAction::QueryStatus { connection_id, .. }
             | BridgeAction::CancelQuery { connection_id, .. }
             | BridgeAction::ReleaseResult { connection_id, .. }
@@ -258,6 +266,9 @@ pub enum BridgeAction {
         connection_id: String,
     },
     ListProjects {
+        connection_id: String,
+    },
+    ListActive {
         connection_id: String,
     },
     ListExportDestinations {
@@ -710,7 +721,82 @@ pub struct AgentExecutionResult {
     pub result_id: Option<String>,
     pub row_total: Option<u64>,
     pub row_total_exact: Option<bool>,
+    pub browse_limit_reached: bool,
+    pub complete_result_available: bool,
+    pub limit_reason: Option<String>,
+    pub browse_row_cap: u64,
+    pub cache_bytes: Option<u64>,
+    pub slot_held: bool,
+    pub slot_available: bool,
+    pub cancellation_requested: bool,
+    pub cleanup_pending: bool,
     pub error: Option<tarik_engine_protocol::ErrorEnvelope>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentAnalysisLimits {
+    pub browse_row_cap: u64,
+    pub maximum_result_bytes: u64,
+    pub retained_result_limit: u32,
+    pub outstanding_query_limit: u32,
+    pub profile_cache_bytes: u64,
+    pub global_cache_bytes: u64,
+    pub queue_deadline_seconds: u64,
+    pub execution_deadline_seconds: u64,
+}
+
+impl Default for AgentAnalysisLimits {
+    fn default() -> Self {
+        Self {
+            browse_row_cap: MAX_AGENT_RESULT_ROWS,
+            maximum_result_bytes: MAX_AGENT_RESULT_BYTES,
+            retained_result_limit: MAX_AGENT_RESULTS_PER_PROFILE,
+            outstanding_query_limit: MAX_AGENT_QUERIES_PER_PROFILE,
+            profile_cache_bytes: MAX_AGENT_CACHE_BYTES_PER_PROFILE,
+            global_cache_bytes: MAX_AGENT_CACHE_BYTES_GLOBAL,
+            queue_deadline_seconds: 60,
+            execution_deadline_seconds: 60,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentActiveQuery {
+    pub execution_id: String,
+    pub project_id: String,
+    pub origin_connection_id: String,
+    pub state: String,
+    pub queue_wait_ms: u64,
+    pub running_ms: u64,
+    pub result_id: Option<String>,
+    pub rows: Option<u64>,
+    pub row_total_exact: Option<bool>,
+    pub browse_limit_reached: bool,
+    pub cache_bytes: Option<u64>,
+    pub slot_held: bool,
+    pub cancellation_requested: bool,
+    pub cleanup_pending: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentActiveConnection {
+    pub connection_id: String,
+    pub authenticated: bool,
+    pub connected_for_ms: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentActiveList {
+    pub client_profile_id: String,
+    pub limits: AgentAnalysisLimits,
+    pub connections: Vec<AgentActiveConnection>,
+    pub queries: Vec<AgentActiveQuery>,
+    pub retained_result_count: u32,
+    pub retained_cache_bytes: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

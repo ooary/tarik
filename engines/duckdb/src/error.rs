@@ -51,6 +51,8 @@ pub enum EngineError {
     ExportRecoveryRequired(String),
     #[error("result does not exist: {0}")]
     ResultMissing(String),
+    #[error("result exceeded its configured byte limit")]
+    ResultQuotaExceeded,
     #[error("invalid query request: {0}")]
     InvalidQuery(&'static str),
     #[error("approved mutation failed and rollback could not be confirmed: {0}")]
@@ -147,6 +149,7 @@ impl EngineError {
             Self::ExportQuotaExceeded => "export.quota_exceeded",
             Self::ExportRecoveryRequired(_) => "export.recovery_required",
             Self::ResultMissing(_) => "result.missing",
+            Self::ResultQuotaExceeded => "result.quota_exceeded",
             Self::InvalidQuery(_) => "query.invalid",
             Self::AgentRollbackFailed(_) => "agent.rollback_failed",
             Self::InvalidResources(_) => "resources.invalid",

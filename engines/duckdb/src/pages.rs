@@ -41,11 +41,13 @@ pub struct PageWriter {
     buffered_rows: usize,
     page_index: usize,
     total_rows: u64,
+    bytes_written: u64,
+    maximum_bytes: Option<u64>,
     bytes_per_row: Option<usize>,
 }
 
 impl PageWriter {
-    pub fn create(dir: PathBuf) -> Result<Self, EngineError> {
+    pub fn create_bounded(dir: PathBuf, maximum_bytes: Option<u64>) -> Result<Self, EngineError> {
         fs::create_dir_all(&dir).map_err(|error| EngineError::CacheIo {
             path: dir.clone(),
             source: error.into(),
@@ -58,6 +60,8 @@ impl PageWriter {
             buffered_rows: 0,
             page_index: 0,
             total_rows: 0,
+            bytes_written: 0,
+            maximum_bytes,
             bytes_per_row: None,
         })
     }
@@ -68,6 +72,10 @@ impl PageWriter {
 
     pub fn total_rows(&self) -> u64 {
         self.total_rows
+    }
+
+    pub fn bytes_written(&self) -> u64 {
+        self.bytes_written
     }
 
     /// Accept one streamed batch, splitting it across page boundaries.
@@ -134,6 +142,19 @@ impl PageWriter {
             path: path.clone(),
             source: error.into(),
         })?;
+        let page_bytes = fs::metadata(&path)
+            .map_err(|error| EngineError::CacheIo {
+                path: path.clone(),
+                source: error.into(),
+            })?
+            .len();
+        self.bytes_written = self.bytes_written.saturating_add(page_bytes);
+        if self
+            .maximum_bytes
+            .is_some_and(|maximum| self.bytes_written > maximum)
+        {
+            return Err(EngineError::ResultQuotaExceeded);
+        }
         self.page_index += 1;
         self.buffered_rows = 0;
         Ok(())
