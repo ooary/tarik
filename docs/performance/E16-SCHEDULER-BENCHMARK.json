@@ -1,0 +1,194 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-09-12T15:34:52Z",
+  "machine": {
+    "os": "Linux-7.1.8-arch1-3-x86_64-with-glibc2.44",
+    "architecture": "x86_64",
+    "logicalCpuCount": 12,
+    "rustc": "rustc 1.91.0 (f8297e351 2025-10-28)",
+    "gitRevision": "8a81f23f65b1a9222cb8fe219e3e887caddfb9d4",
+    "engine": "target/release/tarik-engine-duckdb"
+  },
+  "engine": {
+    "capabilities": {
+      "boundedPages": true,
+      "cancelQuery": true,
+      "dataProfiling": true,
+      "explain": true,
+      "exportCsv": true,
+      "exportParquet": true,
+      "importCsv": true,
+      "importParquet": true,
+      "linkParquet": true,
+      "profile": true,
+      "resourceControls": true,
+      "schemas": true,
+      "transactions": true,
+      "views": true
+    },
+    "engineId": "duckdb",
+    "engineName": "DuckDB",
+    "engineVersion": "0.1.0",
+    "metadata": {},
+    "protocolVersion": 2
+  },
+  "resources": {
+    "sequential": {
+      "preset": "custom",
+      "memoryLimitMib": 4096,
+      "threads": 4
+    },
+    "concurrentPerQuery": {
+      "preset": "custom",
+      "memoryLimitMib": 4096,
+      "threads": 2
+    },
+    "concurrentAggregateThreads": 4,
+    "memoryLimitScope": "shared engine process"
+  },
+  "dataset": {
+    "rows": 20000000,
+    "physicalDatabaseBytes": 151793664,
+    "parquetBytes": 182258337,
+    "returnedRowsPerQuery": 97
+  },
+  "scenarios": {
+    "physicalTable": {
+      "sequential": {
+        "mode": "sequential",
+        "heavyExecutionPolicy": "serial",
+        "totalDurationMs": 411,
+        "individualLatencyMs": [208, 202],
+        "statusResponseP50Ms": 0.186,
+        "statusResponseP95Ms": 0.317,
+        "allProtocolResponseP95Ms": 0.308,
+        "statesSeen": {
+          "table-sequential-a": ["running", "succeeded"],
+          "table-sequential-b": ["queued", "running", "succeeded"]
+        },
+        "cacheBytesBeforeRelease": 4356,
+        "cacheBytesAfterRelease": 0,
+        "process": {
+          "peakRssKiB": 245904,
+          "peakHwmKiB": 420360,
+          "cpuMs": 1590,
+          "peakCacheBytes": 4356
+        }
+      },
+      "queuedPair": {
+        "mode": "queued_pair",
+        "heavyExecutionPolicy": "serial",
+        "totalDurationMs": 394,
+        "individualLatencyMs": [201, 392],
+        "statusResponseP50Ms": 0.075,
+        "statusResponseP95Ms": 0.203,
+        "allProtocolResponseP95Ms": 0.21,
+        "statesSeen": {
+          "table-queued-a": ["running", "succeeded"],
+          "table-queued-b": ["queued", "running", "succeeded"]
+        },
+        "cacheBytesBeforeRelease": 4356,
+        "cacheBytesAfterRelease": 0,
+        "process": {
+          "peakRssKiB": 247440,
+          "peakHwmKiB": 420360,
+          "cpuMs": 1530,
+          "peakCacheBytes": 2178
+        }
+      },
+      "concurrentPair": {
+        "mode": "concurrent_pair",
+        "heavyExecutionPolicy": "concurrent_benchmark_only",
+        "totalDurationMs": 476,
+        "individualLatencyMs": [475, 404],
+        "statusResponseP50Ms": 0.168,
+        "statusResponseP95Ms": 0.298,
+        "allProtocolResponseP95Ms": 0.288,
+        "statesSeen": {
+          "table-concurrent-a": ["running", "succeeded"],
+          "table-concurrent-b": ["running", "succeeded"]
+        },
+        "cacheBytesBeforeRelease": 4356,
+        "cacheBytesAfterRelease": 0,
+        "process": {
+          "peakRssKiB": 553656,
+          "peakHwmKiB": 555184,
+          "cpuMs": 1740,
+          "peakCacheBytes": 4356
+        }
+      }
+    },
+    "parquet": {
+      "sequential": {
+        "mode": "sequential",
+        "heavyExecutionPolicy": "serial",
+        "totalDurationMs": 751,
+        "individualLatencyMs": [366, 383],
+        "statusResponseP50Ms": 0.178,
+        "statusResponseP95Ms": 0.272,
+        "allProtocolResponseP95Ms": 0.262,
+        "statesSeen": {
+          "parquet-sequential-a": ["running", "succeeded"],
+          "parquet-sequential-b": ["running", "succeeded"]
+        },
+        "cacheBytesBeforeRelease": 4356,
+        "cacheBytesAfterRelease": 0,
+        "process": {
+          "peakRssKiB": 576092,
+          "peakHwmKiB": 576092,
+          "cpuMs": 2850,
+          "peakCacheBytes": 4356
+        }
+      },
+      "queuedPair": {
+        "mode": "queued_pair",
+        "heavyExecutionPolicy": "serial",
+        "totalDurationMs": 829,
+        "individualLatencyMs": [394, 827],
+        "statusResponseP50Ms": 0.182,
+        "statusResponseP95Ms": 0.304,
+        "allProtocolResponseP95Ms": 0.284,
+        "statesSeen": {
+          "parquet-queued-a": ["running", "succeeded"],
+          "parquet-queued-b": ["queued", "running", "succeeded"]
+        },
+        "cacheBytesBeforeRelease": 4356,
+        "cacheBytesAfterRelease": 0,
+        "process": {
+          "peakRssKiB": 574392,
+          "peakHwmKiB": 575088,
+          "cpuMs": 3210,
+          "peakCacheBytes": 2178
+        }
+      },
+      "concurrentPair": {
+        "mode": "concurrent_pair",
+        "heavyExecutionPolicy": "concurrent_benchmark_only",
+        "totalDurationMs": 892,
+        "individualLatencyMs": [891, 790],
+        "statusResponseP50Ms": 0.164,
+        "statusResponseP95Ms": 0.293,
+        "allProtocolResponseP95Ms": 0.27,
+        "statesSeen": {
+          "parquet-concurrent-a": ["running", "succeeded"],
+          "parquet-concurrent-b": ["queued", "running", "succeeded"]
+        },
+        "cacheBytesBeforeRelease": 4356,
+        "cacheBytesAfterRelease": 0,
+        "process": {
+          "peakRssKiB": 591100,
+          "peakHwmKiB": 591100,
+          "cpuMs": 3310,
+          "peakCacheBytes": 4356
+        }
+      }
+    }
+  },
+  "resultCacheResidueBytes": 0,
+  "verdict": "retain_serial_heavy_execution",
+  "limitations": [
+    "Linux sidecar benchmark; no WebView2 or native Windows process evidence.",
+    "True concurrent pairs run only in isolated benchmark sessions; production remains serial.",
+    "Peak RSS/HWM and CPU are process-level observations, not per-query attribution."
+  ]
+}

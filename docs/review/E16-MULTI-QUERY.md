@@ -23,9 +23,37 @@ Activity → Agents now distinguishes paired-but-disconnected clients from each 
 
 The user-reported Windows sequence (Tarik/workspace first, Claude Desktop second, sometimes two `tarik-mcp` processes) is **not reproduced or diagnosed on this Linux development host**. It must remain open until native Windows evidence records command lines, parent PIDs, transport/profile mapping, timing, configuration entries, and residual processes after host/Tarik shutdown.
 
+## Linux scheduler benchmark
+
+The reproducible harness is `scripts/benchmark-e16-scheduler.py`; the versioned result is `docs/performance/E16-SCHEDULER-BENCHMARK.json`. It drove the real release DuckDB sidecar over newline JSON on Linux with a generated 20,000,000-row physical table (151,793,664 bytes) and Zstd Parquet file (182,258,337 bytes). Every query scanned the full source but returned only 97 aggregate rows. Sequential and production-style queued work used one 4-thread session. Benchmark-only true concurrency used two sessions at two threads each, preserving four aggregate threads and the same shared 4 GiB process memory limit.
+
+| Source         |                            Mode |  Total | Individual latency | Status p95 |    Peak RSS |      CPU | Cache after release |
+| -------------- | ------------------------------: | -----: | -----------------: | ---------: | ----------: | -------: | ------------------: |
+| Physical table |                      Sequential | 411 ms |       208 / 202 ms |   0.317 ms | 245,904 KiB | 1,590 ms |             0 bytes |
+| Physical table |              Two queued, serial | 394 ms |       201 / 392 ms |   0.203 ms | 247,440 KiB | 1,530 ms |             0 bytes |
+| Physical table | True concurrent, benchmark only | 476 ms |       475 / 404 ms |   0.298 ms | 553,656 KiB | 1,740 ms |             0 bytes |
+| Parquet        |                      Sequential | 751 ms |       366 / 383 ms |   0.272 ms | 576,092 KiB | 2,850 ms |             0 bytes |
+| Parquet        |              Two queued, serial | 829 ms |       394 / 827 ms |   0.304 ms | 574,392 KiB | 3,210 ms |             0 bytes |
+| Parquet        | True concurrent, benchmark only | 892 ms |       891 / 790 ms |   0.293 ms | 591,100 KiB | 3,310 ms |             0 bytes |
+
+True concurrency was 15.8% slower for the physical-table pair and increased peak RSS by 125.2%. It was also 18.8% slower for the Parquet pair while increasing peak RSS by 2.6%; both individual concurrent queries had substantially higher latency than their sequential counterparts. Production-style queued work kept status responses below 0.304 ms p95, visibly passed through queued → running → succeeded, published only 4,356 aggregate-result bytes for each pair, and left zero result-cache residue after release.
+
+**Verdict:** retain one heavy execution. The measured Parquet throughput gain is too small and inconsistent to justify the physical-table regression, memory amplification, extra lifecycle surface, or a concurrency graph change. This benchmark does not authorize production parallelism. Peak RSS/HWM and CPU are process-level observations, not per-query attribution, and this Linux sidecar run does not cover WebView2, Windows file locking, mixed-monitor UI, multiple real hosts, or host process parentage.
+
 ## Automated evidence
 
-Run after the E16 implementation units:
+The final Linux candidate validation passed:
+
+- Rust workspace/all targets: all suites passed, including 148 Tarik library tests, 43 DuckDB unit tests, 22 engine protocol tests, 4 plan fixture tests, 12 engine-protocol crate tests, 10 MCP unit tests, and 3 MCP stdio tests.
+- Clippy passed with `-D warnings` across workspace/all targets.
+- Vitest: 32 files, 230 tests passed. An initial parallel run had one transient AgentAccessDialog timing failure; its isolated 10-test suite and a complete 230-test rerun passed without a code change.
+- Node: 40 tests passed.
+- Typecheck and production Vite build passed. Vite retained its existing large-chunk advisory.
+- ESLint passed with only the two pre-existing warnings in `ResultGrid.tsx` and `NewTableDialog.tsx`.
+- Documentation (49 Markdown files), engine protocol/handshake, Prettier, Python benchmark syntax, and `git diff --check` passed.
+- Linux release produced portable tarball, DEB, and AppImage; package-content checks, current-source release sidecar handshake, clean-start smokes, and SHA-256 verification for all three artifacts passed. The pre-commit package manifest truthfully records `sourceDirty=true`, unsigned artifacts, and deferred manual gates.
+
+Commands run after the E16 implementation units:
 
 - `cargo test --workspace --all-targets`
 - `cargo clippy --workspace --all-targets -- -D warnings`
@@ -74,9 +102,11 @@ Do not approve based only on Task Manager process count. Do not kill all `tarik-
 
 ## Acceptance checklist
 
-- [x] Automated Rust, MCP, UI, Node, type, build, docs, engine, format, and diff gates pass for implementation candidate.
+- [x] Automated Rust, MCP, UI, Node, type, build, docs, engine, format, diff, Linux package-content, checksum, handshake, and clean-start gates pass for implementation candidate.
 - [x] Multiple bounded results, recovery, expiry, cleanup, scheduling, watchdogs, guidance, Activity, and desktop-owned limits are implemented.
 - [x] Agent Monitor distinguishes paired clients and authenticated connections; unknown PID is labelled unavailable.
+- [x] Reproducible 20-million-row physical-table/Parquet sequential, queued, and benchmark-only concurrent evidence records latency, responsiveness, process CPU/RSS, cache bytes, and zero cleanup residue.
+- [x] Benchmark verdict retains one heavy production execution; no concurrency expansion is implied.
 - [ ] Real Tauri desktop workflow approved.
 - [ ] Real Claude Desktop multi-query/reconnect/capped-result workflow approved.
 - [ ] Keyboard/focus, minimum viewport, light/dark, reduced-motion, and screen-reader review approved.
