@@ -1508,8 +1508,9 @@ mod tests {
             .contains(fixture.output.to_str().unwrap()));
 
         let cancellation = Fixture::new("cancel", policy());
-        let snapshot = cancellation
-            .classify("SELECT i, lpad('x', 1000, 'x') AS payload FROM range(0, 1000000) t(i)");
+        let snapshot = cancellation.classify(
+            "SELECT i, lpad('x', 1000, 'x') AS payload FROM range(0, 1000000) t(i) ORDER BY i DESC",
+        );
         let proposed = cancellation
             .manager
             .propose(
