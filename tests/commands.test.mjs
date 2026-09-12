@@ -33,6 +33,49 @@ test("getRuntimeInfo invokes the typed Tauri command", async () => {
   assert.deepEqual(result, expected);
 });
 
+test("activity monitoring uses bounded desktop-owned commands", async () => {
+  const {
+    getAgentAnalysisLimits,
+    setAgentAnalysisLimits,
+    getActivitySnapshot,
+    getAgentQueryDetail,
+    getDesktopQueryDetail,
+    cancelAgentActivityQuery,
+    cancelDesktopActivityQuery,
+    releaseAgentActivityResult,
+    releaseAgentResults,
+  } = await loadCommandsModule();
+  const calls = [];
+  const invoke = async (command, args) => {
+    calls.push({ command, args });
+    return command === "get_activity_snapshot" ? { projectId: "project-1" } : undefined;
+  };
+
+  await getAgentAnalysisLimits(invoke);
+  await setAgentAnalysisLimits({ browseRowCap: 5_000 }, invoke);
+  assert.deepEqual(await getActivitySnapshot("project-1", invoke), { projectId: "project-1" });
+  await getAgentQueryDetail("execution-1", invoke);
+  await getDesktopQueryDetail("execution-2", invoke);
+  await cancelAgentActivityQuery("execution-1", invoke);
+  await cancelDesktopActivityQuery("execution-2", invoke);
+  await releaseAgentActivityResult("result-1", invoke);
+  await releaseAgentResults({ connectionId: "connection-1" }, invoke);
+  assert.equal(
+    JSON.stringify(calls),
+    JSON.stringify([
+      { command: "get_agent_analysis_limits", args: undefined },
+      { command: "set_agent_analysis_limits", args: { limits: { browseRowCap: 5_000 } } },
+      { command: "get_activity_snapshot", args: { projectId: "project-1" } },
+      { command: "get_agent_query_detail", args: { executionId: "execution-1" } },
+      { command: "get_desktop_query_detail", args: { executionId: "execution-2" } },
+      { command: "cancel_agent_activity_query", args: { executionId: "execution-1" } },
+      { command: "cancel_desktop_activity_query", args: { executionId: "execution-2" } },
+      { command: "release_agent_activity_result", args: { resultId: "result-1" } },
+      { command: "release_agent_results", args: { scope: { connectionId: "connection-1" } } },
+    ]),
+  );
+});
+
 test("agent connection and guidance setup use reviewed typed commands", async () => {
   const {
     getAgentSetupStatus,

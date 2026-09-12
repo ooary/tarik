@@ -1,4 +1,5 @@
 import {
+  ActivityIcon,
   DatabaseIcon,
   DotsThreeIcon,
   FolderOpenIcon,
@@ -31,6 +32,7 @@ import {
 import { ChecksWorkspace } from "./features/quality/ChecksWorkspace";
 import { SupportIncidentNotice } from "./app/SupportIncidentNotice";
 import { AgentAccessDialog } from "./features/agent-access/AgentAccessDialog";
+import { ActivityWorkspace } from "./features/activity/ActivityWorkspace";
 import { StartupScreen, type StartupPhase } from "./app/StartupScreen";
 import {
   createWorkbenchPreferencesRepository,
@@ -169,6 +171,7 @@ function App() {
   const [interactionError, setInteractionError] = useState<string | null>(null);
   const [profileIntent, setProfileIntent] = useState<ProfileIntent | null>(null);
   const [checksOpen, setChecksOpen] = useState(false);
+  const [activityOpen, setActivityOpen] = useState(false);
   const [profileHandoff, setProfileHandoff] = useState<ProfileCheckPrefill | null>(null);
   const profileTriggerRef = useRef<HTMLElement | null>(null);
   const shutdownInFlight = useRef(false);
@@ -791,6 +794,16 @@ function App() {
             </>
           )}
           <AgentAccessDialog project={project} />
+          <button
+            aria-pressed={activityOpen}
+            className="text-button activity-trigger"
+            disabled={!project}
+            onClick={() => setActivityOpen((open) => !open)}
+            type="button"
+          >
+            <ActivityIcon aria-hidden="true" size={14} />
+            Activity
+          </button>
           <Dialog
             description="Choose how Tarik appears on this device. This setting is stored locally."
             title="Appearance"
@@ -1086,7 +1099,16 @@ function App() {
         </aside>
 
         <div aria-hidden="true" className="sidebar-resize-handle" onPointerDown={resizeSidebar} />
-        {checksOpen && project ? (
+        {activityOpen && project ? (
+          <ActivityWorkspace
+            onClose={() => setActivityOpen(false)}
+            onOpenSql={(sql, title) => {
+              queryWorkspaceActionsRef.current?.openPreview(sql, title);
+              setActivityOpen(false);
+            }}
+            projectId={project.id}
+          />
+        ) : checksOpen && project ? (
           <ChecksWorkspace
             catalog={catalog}
             onClose={closeChecks}
@@ -1123,7 +1145,7 @@ function App() {
           onToggleBottom={() => updatePreferences({ bottomPanelOpen: !bottomOpen })}
           effectiveTheme={effectiveTheme}
           hidden={Boolean(
-            checksOpen || (profileIntent && project?.id === profileIntent.projectId),
+            activityOpen || checksOpen || (profileIntent && project?.id === profileIntent.projectId),
           )}
           projectId={project?.id ?? ""}
           ref={queryWorkspaceActionsRef}

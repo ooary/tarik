@@ -395,6 +395,19 @@ body:has(.startup-screen) .app-shell {
   gap: 8px;
 }
 
+.activity-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.activity-trigger[aria-pressed="true"] {
+  border-color: var(--accent-solid);
+  color: var(--text-primary);
+  background: var(--accent-soft);
+}
+
 .icon-button,
 .text-button,
 .toolbar-button,

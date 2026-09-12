@@ -1,0 +1,415 @@
+.activity-workspace {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+  color: var(--text-primary);
+  background: var(--surface-app);
+}
+
+.activity-header {
+  display: flex;
+  min-height: 58px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid var(--border-default);
+  padding: 10px 14px;
+  background: var(--surface-raised);
+}
+
+.activity-header > div,
+.activity-detail-heading > div,
+.activity-query-main,
+.activity-empty,
+.activity-agent-row > div {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.activity-header h1 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 690;
+  letter-spacing: -0.01em;
+}
+
+.activity-header span,
+.activity-sql-heading span,
+.activity-sql-unavailable {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.activity-stale {
+  color: var(--status-warning) !important;
+}
+
+.activity-tabs {
+  display: flex;
+  min-height: 38px;
+  align-items: end;
+  gap: 2px;
+  border-bottom: 1px solid var(--border-default);
+  padding: 0 12px;
+  background: var(--surface-raised);
+}
+
+.activity-tabs button {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  gap: 6px;
+  border-bottom: 2px solid transparent;
+  padding: 0 10px;
+  color: var(--text-secondary);
+  background: transparent;
+  cursor: pointer;
+}
+
+.activity-tabs button[aria-selected="true"] {
+  border-bottom-color: var(--accent-solid);
+  color: var(--text-primary);
+  font-weight: 650;
+}
+
+.activity-error,
+.activity-limit-note {
+  margin: 0;
+  border-bottom: 1px solid var(--status-error-border);
+  padding: 8px 14px;
+  color: var(--status-error);
+  background: var(--status-error-surface);
+  line-height: 1.4;
+}
+
+.activity-query-layout {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  grid-template-columns: minmax(300px, 0.9fr) minmax(360px, 1.1fr);
+}
+
+.activity-list,
+.activity-agents {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+}
+
+.activity-list {
+  border-right: 1px solid var(--border-default);
+}
+
+.activity-query-row {
+  display: grid;
+  width: 100%;
+  min-height: 52px;
+  grid-template-columns: 10px minmax(0, 1fr) minmax(90px, auto) 62px;
+  align-items: center;
+  gap: 9px;
+  border-bottom: 1px solid var(--border-subtle);
+  padding: 7px 12px;
+  color: var(--text-primary);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.activity-query-row:hover,
+.activity-query-row[aria-selected="true"] {
+  background: var(--surface-hover);
+}
+
+.activity-query-row[aria-selected="true"] {
+  box-shadow: inset 2px 0 var(--accent-solid);
+}
+
+.activity-state {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-faint);
+}
+
+.activity-state-running,
+.activity-state-succeeded {
+  background: var(--status-ready);
+}
+
+.activity-state-queued {
+  background: var(--status-warning);
+}
+
+.activity-state-failed {
+  background: var(--status-error);
+}
+
+.activity-query-main strong,
+.activity-query-main code,
+.activity-detail-heading code,
+.activity-agent-row code {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.activity-query-main strong {
+  font-size: 12px;
+}
+
+.activity-query-main code,
+.activity-detail-heading code,
+.activity-agent-row code,
+.activity-query-time,
+.activity-metrics dd,
+.activity-sql {
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.activity-query-main code,
+.activity-query-state,
+.activity-query-time {
+  color: var(--text-muted);
+}
+
+.activity-query-state {
+  text-transform: capitalize;
+}
+
+.activity-query-time {
+  text-align: right;
+}
+
+.activity-detail {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: 14px;
+}
+
+.activity-detail-heading,
+.activity-sql-heading,
+.activity-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.activity-detail-heading > span {
+  color: var(--text-secondary);
+  text-transform: capitalize;
+}
+
+.activity-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 14px 0;
+  border-top: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.activity-metrics > div {
+  display: grid;
+  gap: 3px;
+  padding: 8px 0;
+}
+
+.activity-metrics dt,
+.activity-agent-row dt {
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.activity-metrics dd,
+.activity-agent-row dd {
+  margin: 0;
+  color: var(--text-primary);
+}
+
+.activity-limit-note {
+  margin-bottom: 14px;
+  border: 1px solid var(--status-warning-border, var(--border-default));
+  border-radius: var(--radius-control);
+  color: var(--text-secondary);
+  background: var(--status-warning-surface, var(--surface-control));
+}
+
+.activity-sql-heading {
+  align-items: baseline;
+  margin-bottom: 7px;
+}
+
+.activity-sql,
+.activity-sql-unavailable {
+  min-height: 120px;
+  max-height: 280px;
+  margin: 0;
+  overflow: auto;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-control);
+  padding: 10px;
+  color: var(--code-text);
+  background: var(--surface-editor);
+  line-height: 1.55;
+  white-space: pre-wrap;
+  user-select: text;
+}
+
+.activity-sql-unavailable {
+  display: grid;
+  place-items: center;
+}
+
+.activity-actions {
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  margin-top: 10px;
+}
+
+.activity-actions .text-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.activity-danger {
+  color: var(--status-error);
+  border-color: var(--status-error-border);
+}
+
+.activity-empty {
+  place-content: center;
+  min-height: 180px;
+  padding: 24px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.activity-empty strong {
+  color: var(--text-primary);
+}
+
+.activity-agents {
+  padding: 0 14px 14px;
+}
+
+.activity-agent-row {
+  display: grid;
+  grid-template-columns: minmax(140px, 0.65fr) minmax(0, 2fr) auto;
+  align-items: center;
+  gap: 18px;
+  border-bottom: 1px solid var(--border-subtle);
+  padding: 14px 0;
+}
+
+.activity-agent-row dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(90px, 1fr));
+  gap: 10px 16px;
+  margin: 0;
+}
+
+.activity-agent-row dl > div {
+  display: grid;
+  gap: 2px;
+}
+
+.analysis-limits {
+  display: grid;
+  gap: 10px;
+  border-bottom: 1px solid var(--border-default);
+  padding: 14px 0;
+}
+
+.analysis-limits > div:first-child {
+  display: grid;
+  gap: 3px;
+}
+
+.analysis-limits > div:first-child span,
+.analysis-limit-actions > span {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.analysis-preset {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.analysis-preset button {
+  min-height: 28px;
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-control);
+  padding: 0 9px;
+  color: var(--text-secondary);
+  background: var(--surface-control);
+  cursor: pointer;
+}
+
+.analysis-preset button[aria-pressed="true"] {
+  border-color: var(--accent-solid);
+  color: var(--text-primary);
+  background: var(--accent-soft);
+}
+
+.analysis-limit-fields {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(120px, 1fr));
+  gap: 8px;
+}
+
+.analysis-limit-fields label {
+  display: grid;
+  gap: 4px;
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.analysis-limit-fields input {
+  width: 100%;
+  min-height: 30px;
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-control);
+  padding: 0 7px;
+  color: var(--text-primary);
+  background: var(--surface-control);
+  font-family: var(--font-mono);
+}
+
+.analysis-limit-fields input:disabled {
+  color: var(--text-secondary);
+  opacity: 1;
+}
+
+.analysis-limit-actions {
+  display: flex;
+  min-height: 30px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+@media (max-width: 920px) {
+  .activity-query-layout {
+    grid-template-columns: minmax(250px, 0.8fr) minmax(300px, 1.2fr);
+  }
+
+  .activity-query-row {
+    grid-template-columns: 10px minmax(0, 1fr) 58px;
+  }
+
+  .activity-query-state {
+    display: none;
+  }
+
+  .activity-agent-row {
+    grid-template-columns: 1fr;
+  }
+}

@@ -36,6 +36,7 @@ const MAX_CONNECTIONS: usize = 4;
 const PAIRING_LIFETIME: Duration = Duration::from_secs(5 * 60);
 const CHALLENGE_LIFETIME: Duration = Duration::from_secs(60);
 const AGENT_ACCESS_ENABLED_KEY: &str = "agent.access.enabled";
+const AGENT_ANALYSIS_LIMITS_KEY: &str = "agent.analysis.limits";
 const MAX_SQL_SNAPSHOTS: usize = 32;
 const SQL_SNAPSHOT_LIFETIME: Duration = Duration::from_secs(120);
 const CONNECTION_LEASE: Duration = Duration::from_secs(120);
@@ -43,8 +44,6 @@ const MAINTENANCE_INTERVAL: Duration = Duration::from_secs(5);
 const RESUME_SAFE_GRACE: Duration = Duration::from_secs(30);
 const RESULT_IDLE_LIFETIME: Duration = Duration::from_secs(10 * 60);
 const RESULT_ABSOLUTE_LIFETIME: Duration = Duration::from_secs(30 * 60);
-const AGENT_QUEUE_DEADLINE: Duration = Duration::from_secs(60);
-const AGENT_EXECUTION_DEADLINE: Duration = Duration::from_secs(60);
 const MAX_CLEANUP_PENDING: usize = 16;
 const CLEANUP_RETRY_BASE: Duration = Duration::from_secs(2);
 const CLEANUP_RETRY_MAX: Duration = Duration::from_secs(60);
@@ -94,6 +93,53 @@ pub struct AgentAccessChange {
 pub struct AgentResultReleaseScope {
     pub client_profile_id: Option<String>,
     pub connection_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DesktopAgentQuerySummary {
+    pub client_profile_id: String,
+    pub client_name: String,
+    pub execution_id: String,
+    pub project_id: String,
+    pub origin_connection_id: String,
+    pub state: String,
+    pub queue_wait_ms: u64,
+    pub running_ms: u64,
+    pub result_id: Option<String>,
+    pub rows: Option<u64>,
+    pub row_total_exact: Option<bool>,
+    pub browse_limit_reached: bool,
+    pub cache_bytes: Option<u64>,
+    pub slot_held: bool,
+    pub cancellation_requested: bool,
+    pub cleanup_pending: bool,
+    pub limits: AgentAnalysisLimits,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DesktopAgentQueryDetail {
+    pub execution_id: String,
+    pub sql: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DesktopAgentConnectionSummary {
+    pub client_profile_id: String,
+    pub client_name: String,
+    pub connection_id: String,
+    pub authenticated: bool,
+    pub connected_for_ms: u64,
+    pub last_heartbeat_ms_ago: u64,
+    pub heartbeat_stale: bool,
+    pub project_ids: Vec<String>,
+    pub queued_queries: u32,
+    pub running_queries: u32,
+    pub retained_results: u32,
+    pub retained_cache_bytes: u64,
+    pub adapter_pid: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -165,6 +211,7 @@ struct AgentQuery {
     scheduler_claimed: bool,
     admitted_at: Instant,
     running_at: Option<Instant>,
+    terminal_duration_ms: Option<u64>,
     state: tarik_engine_protocol::ExecutionState,
     result_id: Option<String>,
     rows: Option<u64>,
@@ -347,6 +394,27 @@ impl AgentAccessManager {
             },
         );
         Ok(change)
+    }
+
+    pub fn analysis_limits(&self) -> Result<AgentAnalysisLimits, String> {
+        let limits = self
+            .settings
+            .get::<AgentAnalysisLimits>(AGENT_ANALYSIS_LIMITS_KEY)
+            .map_err(|error| error.to_string())?
+            .unwrap_or_default();
+        validate_analysis_limits(&limits)?;
+        Ok(limits)
+    }
+
+    pub fn set_analysis_limits(
+        &self,
+        limits: AgentAnalysisLimits,
+    ) -> Result<AgentAnalysisLimits, String> {
+        validate_analysis_limits(&limits)?;
+        self.settings
+            .set(AGENT_ANALYSIS_LIMITS_KEY, &limits)
+            .map_err(|error| error.to_string())?;
+        Ok(limits)
     }
 
     pub fn enabled(&self) -> bool {
@@ -1107,7 +1175,7 @@ impl AgentAccessManager {
         snapshot_id: &str,
     ) -> Result<AgentExecutionResult, String> {
         let (profile_id, _) = self.authenticated_connection(connection_id)?;
-        let limits = AgentAnalysisLimits::default();
+        let limits = self.analysis_limits()?;
         let execution_id = format!("agent-{}", uuid::Uuid::new_v4());
         let (project_id, sql, expected_revision) = {
             let mut state = self.lock()?;
@@ -1245,6 +1313,7 @@ impl AgentAccessManager {
                     scheduler_claimed: false,
                     admitted_at: Instant::now(),
                     running_at: None,
+                    terminal_duration_ms: None,
                     state: tarik_engine_protocol::ExecutionState::Queued,
                     result_id: None,
                     rows: None,
@@ -1336,7 +1405,8 @@ impl AgentAccessManager {
                 .filter(|query| {
                     !query.engine_accepted
                         && query.state == tarik_engine_protocol::ExecutionState::Queued
-                        && now.duration_since(query.admitted_at) >= AGENT_QUEUE_DEADLINE
+                        && now.duration_since(query.admitted_at)
+                            >= Duration::from_secs(query.limits.queue_deadline_seconds)
                 })
                 .map(|query| query.execution_id.clone())
                 .collect::<Vec<_>>();
@@ -1351,7 +1421,8 @@ impl AgentAccessManager {
                                 | tarik_engine_protocol::ExecutionState::Running
                         )
                         && query.running_at.is_some_and(|started| {
-                            now.duration_since(started) >= AGENT_EXECUTION_DEADLINE
+                            now.duration_since(started)
+                                >= Duration::from_secs(query.limits.execution_deadline_seconds)
                         })
                 })
                 .map(|query| query.execution_id.clone())
@@ -1604,6 +1675,14 @@ impl AgentAccessManager {
             return;
         };
         query.state = status.state;
+        if matches!(
+            status.state,
+            tarik_engine_protocol::ExecutionState::Succeeded
+                | tarik_engine_protocol::ExecutionState::Failed
+                | tarik_engine_protocol::ExecutionState::Cancelled
+        ) {
+            query.terminal_duration_ms = Some(status.duration_ms);
+        }
         if status.state == tarik_engine_protocol::ExecutionState::Running
             && query.running_at.is_none()
         {
@@ -1620,6 +1699,176 @@ impl AgentAccessManager {
             query.published_at.get_or_insert(now);
             query.last_accessed_at.get_or_insert(now);
         }
+    }
+
+    pub fn desktop_activity(
+        &self,
+        project_id: &str,
+    ) -> Result<
+        (
+            Vec<DesktopAgentQuerySummary>,
+            Vec<DesktopAgentConnectionSummary>,
+        ),
+        String,
+    > {
+        let state = self.lock()?;
+        let clients = self
+            .repository
+            .list_clients()
+            .map_err(|error| error.to_string())?
+            .into_iter()
+            .map(|client| (client.id, client.display_name))
+            .collect::<HashMap<_, _>>();
+        let mut queries = state
+            .agent_queries
+            .values()
+            .filter(|query| query.project_id == project_id)
+            .map(|query| DesktopAgentQuerySummary {
+                client_profile_id: query.profile_id.clone(),
+                client_name: clients
+                    .get(&query.profile_id)
+                    .cloned()
+                    .unwrap_or_else(|| "Unknown client".into()),
+                execution_id: query.execution_id.clone(),
+                project_id: query.project_id.clone(),
+                origin_connection_id: query.origin_connection_id.clone(),
+                state: execution_state_name(query.state).into(),
+                queue_wait_ms: active_query_view(query).queue_wait_ms,
+                running_ms: active_query_view(query).running_ms,
+                result_id: query.result_id.clone(),
+                rows: query.rows,
+                row_total_exact: query.row_total_exact,
+                browse_limit_reached: query.browse_limit_reached,
+                cache_bytes: query.cache_bytes,
+                slot_held: matches!(
+                    query.state,
+                    tarik_engine_protocol::ExecutionState::Queued
+                        | tarik_engine_protocol::ExecutionState::Running
+                ) || query.cleanup_pending,
+                cancellation_requested: query.cancellation_requested,
+                cleanup_pending: query.cleanup_pending,
+                limits: query.limits.clone(),
+            })
+            .collect::<Vec<_>>();
+        queries.sort_by(|left, right| right.execution_id.cmp(&left.execution_id));
+        queries.truncate(64);
+        let mut connections = state
+            .connections
+            .iter()
+            .filter(|(_, connection)| connection.authenticated)
+            .map(|(connection_id, connection)| {
+                let grants = self
+                    .repository
+                    .list_grants(&connection.profile_id)
+                    .unwrap_or_default();
+                let owned = state.agent_queries.values().filter(|query| {
+                    query.origin_connection_id == *connection_id && query.project_id == project_id
+                });
+                let owned = owned.collect::<Vec<_>>();
+                DesktopAgentConnectionSummary {
+                    client_profile_id: connection.profile_id.clone(),
+                    client_name: clients
+                        .get(&connection.profile_id)
+                        .cloned()
+                        .unwrap_or_else(|| "Unknown client".into()),
+                    connection_id: connection_id.clone(),
+                    authenticated: connection.authenticated,
+                    connected_for_ms: connection.created_at.elapsed().as_millis() as u64,
+                    last_heartbeat_ms_ago: connection.last_heartbeat.elapsed().as_millis() as u64,
+                    heartbeat_stale: connection.last_heartbeat.elapsed() >= CONNECTION_LEASE,
+                    project_ids: grants.into_iter().map(|grant| grant.project_id).collect(),
+                    queued_queries: owned
+                        .iter()
+                        .filter(|query| {
+                            query.state == tarik_engine_protocol::ExecutionState::Queued
+                        })
+                        .count() as u32,
+                    running_queries: owned
+                        .iter()
+                        .filter(|query| {
+                            query.state == tarik_engine_protocol::ExecutionState::Running
+                        })
+                        .count() as u32,
+                    retained_results: owned
+                        .iter()
+                        .filter(|query| query.result_id.is_some())
+                        .count() as u32,
+                    retained_cache_bytes: owned.iter().filter_map(|query| query.cache_bytes).sum(),
+                    adapter_pid: None,
+                }
+            })
+            .collect::<Vec<_>>();
+        connections.sort_by(|left, right| left.connection_id.cmp(&right.connection_id));
+        connections.truncate(32);
+        Ok((queries, connections))
+    }
+
+    pub fn desktop_query_detail(
+        &self,
+        execution_id: &str,
+    ) -> Result<DesktopAgentQueryDetail, String> {
+        let state = self.lock()?;
+        let query = state
+            .agent_queries
+            .get(execution_id)
+            .ok_or_else(|| "agent.execution_missing: Refresh Activity.".to_string())?;
+        Ok(DesktopAgentQueryDetail {
+            execution_id: execution_id.into(),
+            sql: truncate_utf8(&query.sql, 256 * 1024),
+        })
+    }
+
+    pub fn desktop_cancel_query(&self, execution_id: &str) -> Result<(), String> {
+        let query = self
+            .lock()?
+            .agent_queries
+            .get(execution_id)
+            .cloned()
+            .ok_or_else(|| "agent.execution_missing: Refresh Activity.".to_string())?;
+        if !matches!(
+            query.state,
+            tarik_engine_protocol::ExecutionState::Queued
+                | tarik_engine_protocol::ExecutionState::Running
+        ) {
+            return Ok(());
+        }
+        if !query.engine_accepted {
+            let mut state = self.lock()?;
+            let snapshot_id = state
+                .agent_queries
+                .get_mut(execution_id)
+                .and_then(|tracked| {
+                    tracked.cancellation_requested = true;
+                    tracked.state = tarik_engine_protocol::ExecutionState::Cancelled;
+                    tracked.terminal_duration_ms =
+                        Some(tracked.admitted_at.elapsed().as_millis() as u64);
+                    tracked.snapshot_id.take()
+                });
+            if let Some(snapshot_id) = snapshot_id {
+                if let Some(snapshot) = state.sql_snapshots.get_mut(&snapshot_id) {
+                    snapshot.reserved = false;
+                }
+            }
+            return Ok(());
+        }
+        if let Some(tracked) = self.lock()?.agent_queries.get_mut(execution_id) {
+            tracked.cancellation_requested = true;
+        }
+        self.engine.cancel_query(execution_id).map(|_| ())
+    }
+
+    pub fn desktop_release_result(&self, result_id: &str) -> Result<bool, String> {
+        let query = self
+            .lock()?
+            .agent_queries
+            .get(result_id)
+            .cloned()
+            .ok_or_else(|| "agent.result_missing: Refresh Activity.".to_string())?;
+        if query.result_id.as_deref() != Some(result_id) {
+            return Ok(false);
+        }
+        self.remove_result_authority(result_id);
+        Ok(true)
     }
 
     pub fn list_active(&self, connection_id: &str) -> Result<AgentActiveList, String> {
@@ -1650,7 +1899,7 @@ impl AgentAccessManager {
         let retained_cache_bytes = queries.iter().filter_map(|query| query.cache_bytes).sum();
         Ok(AgentActiveList {
             client_profile_id: profile_id,
-            limits: AgentAnalysisLimits::default(),
+            limits: self.analysis_limits()?,
             connections,
             queries,
             retained_result_count,
@@ -2416,9 +2665,31 @@ impl AgentAccessManager {
                 })
                 .map(|query| {
                     query.cancellation_requested = true;
-                    query.execution_id.clone()
+                    (
+                        query.execution_id.clone(),
+                        query.engine_accepted,
+                        query.snapshot_id.take(),
+                    )
                 })
                 .collect::<Vec<_>>();
+            for (_, accepted, snapshot_id) in &queries {
+                if !accepted {
+                    if let Some(snapshot_id) = snapshot_id {
+                        if let Some(snapshot) = state.sql_snapshots.get_mut(snapshot_id) {
+                            snapshot.reserved = false;
+                        }
+                    }
+                }
+            }
+            for (id, accepted, _) in &queries {
+                if !accepted {
+                    if let Some(query) = state.agent_queries.get_mut(id) {
+                        query.state = tarik_engine_protocol::ExecutionState::Cancelled;
+                        query.terminal_duration_ms =
+                            Some(query.admitted_at.elapsed().as_millis() as u64);
+                    }
+                }
+            }
             let profiles = state
                 .profiles
                 .iter()
@@ -2430,8 +2701,10 @@ impl AgentAccessManager {
                 .retain(|_, (owner, _)| owner != connection_id);
             (removed, queries, profiles)
         };
-        for query in queries {
-            let _ = self.engine.cancel_query(&query);
+        for (query, accepted, _) in queries {
+            if accepted {
+                let _ = self.engine.cancel_query(&query);
+            }
         }
         for profile in profiles {
             let _ = self.engine.cancel_profile(&profile);
@@ -2907,6 +3180,42 @@ fn sql_snapshot_hash(
     hex(&hash.finalize())
 }
 
+fn validate_analysis_limits(limits: &AgentAnalysisLimits) -> Result<(), String> {
+    const MIB: u64 = 1024 * 1024;
+    if !(100..=50_000).contains(&limits.browse_row_cap)
+        || !(8 * MIB..=128 * MIB).contains(&limits.maximum_result_bytes)
+        || !(1..=16).contains(&limits.retained_result_limit)
+        || !(1..=8).contains(&limits.outstanding_query_limit)
+        || !(32 * MIB..=512 * MIB).contains(&limits.profile_cache_bytes)
+        || !(128 * MIB..=1024 * MIB).contains(&limits.global_cache_bytes)
+        || !(10..=60).contains(&limits.queue_deadline_seconds)
+        || !(10..=300).contains(&limits.execution_deadline_seconds)
+        || limits.maximum_result_bytes > limits.profile_cache_bytes
+        || limits.profile_cache_bytes > limits.global_cache_bytes
+        || limits
+            .maximum_result_bytes
+            .saturating_mul(u64::from(limits.retained_result_limit))
+            < limits.profile_cache_bytes
+    {
+        return Err(
+            "agent.invalid_analysis_limits: Choose limits within Tarik's hard ceilings; result ≤ profile ≤ global bytes, and retained results must cover the profile budget."
+                .into(),
+        );
+    }
+    Ok(())
+}
+
+fn truncate_utf8(value: &str, maximum_bytes: usize) -> String {
+    if value.len() <= maximum_bytes {
+        return value.to_string();
+    }
+    let mut end = maximum_bytes;
+    while !value.is_char_boundary(end) {
+        end -= 1;
+    }
+    format!("{}\n-- SQL detail truncated by Tarik", &value[..end])
+}
+
 fn result_expired(
     now: Instant,
     published_at: Option<Instant>,
@@ -2960,11 +3269,13 @@ fn agent_execution_view(query: &AgentQuery) -> AgentExecutionResult {
         execution_id: query.execution_id.clone(),
         project_id: query.project_id.clone(),
         state: execution_state_name(query.state).into(),
-        duration_ms: query
-            .running_at
-            .unwrap_or(query.admitted_at)
-            .elapsed()
-            .as_millis() as u64,
+        duration_ms: query.terminal_duration_ms.unwrap_or_else(|| {
+            query
+                .running_at
+                .unwrap_or(query.admitted_at)
+                .elapsed()
+                .as_millis() as u64
+        }),
         rows_produced: query.rows,
         rows_affected: None,
         result_id: query.result_id.clone(),
@@ -3001,10 +3312,12 @@ fn active_query_view(query: &AgentQuery) -> AgentActiveQuery {
                     query.admitted_at.elapsed().as_millis() as u64
                 }
             }),
-        running_ms: query
-            .running_at
-            .map(|started| started.elapsed().as_millis() as u64)
-            .unwrap_or(0),
+        running_ms: query.terminal_duration_ms.unwrap_or_else(|| {
+            query
+                .running_at
+                .map(|started| started.elapsed().as_millis() as u64)
+                .unwrap_or(0)
+        }),
         result_id: query.result_id.clone(),
         rows: query.rows,
         row_total_exact: query.row_total_exact,
@@ -3231,6 +3544,45 @@ pub fn revoke_agent_client(
 }
 
 #[tauri::command]
+pub fn get_agent_analysis_limits(
+    manager: tauri::State<'_, Arc<AgentAccessManager>>,
+) -> Result<AgentAnalysisLimits, String> {
+    manager.analysis_limits()
+}
+
+#[tauri::command]
+pub fn set_agent_analysis_limits(
+    limits: AgentAnalysisLimits,
+    manager: tauri::State<'_, Arc<AgentAccessManager>>,
+) -> Result<AgentAnalysisLimits, String> {
+    manager.set_analysis_limits(limits)
+}
+
+#[tauri::command]
+pub fn get_agent_query_detail(
+    execution_id: String,
+    manager: tauri::State<'_, Arc<AgentAccessManager>>,
+) -> Result<DesktopAgentQueryDetail, String> {
+    manager.desktop_query_detail(&execution_id)
+}
+
+#[tauri::command]
+pub fn cancel_agent_activity_query(
+    execution_id: String,
+    manager: tauri::State<'_, Arc<AgentAccessManager>>,
+) -> Result<(), String> {
+    manager.desktop_cancel_query(&execution_id)
+}
+
+#[tauri::command]
+pub fn release_agent_activity_result(
+    result_id: String,
+    manager: tauri::State<'_, Arc<AgentAccessManager>>,
+) -> Result<bool, String> {
+    manager.desktop_release_result(&result_id)
+}
+
+#[tauri::command]
 pub fn release_agent_results(
     scope: AgentResultReleaseScope,
     manager: tauri::State<'_, Arc<AgentAccessManager>>,
@@ -3359,6 +3711,25 @@ mod tests {
     }
 
     #[test]
+    fn analysis_limits_validate_combinations_and_persist() {
+        let (manager, _) = fixture();
+        let limits = AgentAnalysisLimits {
+            execution_deadline_seconds: 300,
+            ..AgentAnalysisLimits::default()
+        };
+        assert_eq!(manager.set_analysis_limits(limits.clone()).unwrap(), limits);
+        assert_eq!(manager.analysis_limits().unwrap(), limits);
+
+        let mut invalid = limits;
+        invalid.maximum_result_bytes = 128 * 1024 * 1024;
+        invalid.profile_cache_bytes = 32 * 1024 * 1024;
+        assert!(manager
+            .set_analysis_limits(invalid)
+            .unwrap_err()
+            .contains("agent.invalid_analysis_limits"));
+    }
+
+    #[test]
     fn maintenance_sleep_gap_adds_grace_without_refreshing_heartbeat() {
         let (manager, _) = fixture();
         let (_, connection_id) = pair_and_authenticate(&manager);
@@ -3436,6 +3807,7 @@ mod tests {
             scheduler_claimed: false,
             admitted_at,
             running_at: None,
+            terminal_duration_ms: None,
             state: tarik_engine_protocol::ExecutionState::Queued,
             result_id: None,
             rows: None,
@@ -3482,7 +3854,9 @@ mod tests {
                 },
             );
         }
-        manager.maintain_at(now + AGENT_QUEUE_DEADLINE + Duration::from_secs(1));
+        manager.maintain_at(
+            now + Duration::from_secs(limits.queue_deadline_seconds) + Duration::from_secs(1),
+        );
         let state = manager.lock().unwrap();
         assert_eq!(
             state.agent_queries.get("b-old").unwrap().state,

@@ -57,6 +57,28 @@ pub struct ExecutionView {
     pub row_total: Option<u64>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ActivityExecutionSummary {
+    pub execution_id: String,
+    pub project_id: String,
+    pub tab_id: String,
+    pub state: ExecutionState,
+    pub duration_ms: u64,
+    pub rows_produced: Option<u64>,
+    pub rows_affected: Option<u64>,
+    pub error: Option<ExecutionErrorView>,
+    pub result_id: Option<String>,
+    pub row_total: Option<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DesktopQueryDetail {
+    pub execution_id: String,
+    pub sql: String,
+}
+
 struct ExecutionRecord {
     project_id: String,
     tab_id: String,
@@ -192,6 +214,45 @@ impl QueryCoordinator {
 
     pub fn status(&self, execution_id: &str) -> Option<ExecutionView> {
         self.view(execution_id)
+    }
+
+    pub fn activity_detail(&self, execution_id: &str) -> Result<DesktopQueryDetail, String> {
+        let executions = self
+            .executions
+            .lock()
+            .map_err(|_| "execution registry poisoned".to_string())?;
+        let record = executions
+            .get(execution_id)
+            .ok_or_else(|| "query.execution_missing: Refresh Activity.".to_string())?;
+        Ok(DesktopQueryDetail {
+            execution_id: execution_id.to_string(),
+            sql: truncate_utf8(&record.sql, 256 * 1024),
+        })
+    }
+
+    pub fn activity(&self, project_id: &str) -> Vec<ActivityExecutionSummary> {
+        let Ok(executions) = self.executions.lock() else {
+            return Vec::new();
+        };
+        let mut rows = executions
+            .iter()
+            .filter(|(_, record)| record.project_id == project_id)
+            .map(|(id, record)| ActivityExecutionSummary {
+                execution_id: id.clone(),
+                project_id: record.project_id.clone(),
+                tab_id: record.tab_id.clone(),
+                state: record.state,
+                duration_ms: record.duration_ms,
+                rows_produced: record.rows_produced,
+                rows_affected: record.rows_affected,
+                error: record.error.clone(),
+                result_id: record.result_id.clone(),
+                row_total: record.row_total,
+            })
+            .collect::<Vec<_>>();
+        rows.sort_by(|left, right| right.execution_id.cmp(&left.execution_id));
+        rows.truncate(64);
+        rows
     }
 
     pub fn latest_for_tab(&self, project_id: &str, tab_id: &str) -> Option<ExecutionView> {
@@ -414,6 +475,17 @@ impl QueryCoordinator {
             eprintln!("tarik: could not persist query history: {error}");
         }
     }
+}
+
+fn truncate_utf8(value: &str, maximum_bytes: usize) -> String {
+    if value.len() <= maximum_bytes {
+        return value.to_string();
+    }
+    let mut end = maximum_bytes;
+    while !value.is_char_boundary(end) {
+        end -= 1;
+    }
+    format!("{}\n-- SQL detail truncated by Tarik", &value[..end])
 }
 
 #[cfg(test)]

@@ -1,3 +1,4 @@
+mod activity;
 mod agent_access;
 mod agent_bridge;
 mod agent_destinations;
@@ -277,6 +278,11 @@ pub fn run() {
             agent_access::deny_agent_pairing,
             agent_access::set_agent_project_grant,
             agent_access::revoke_agent_client,
+            agent_access::get_agent_analysis_limits,
+            agent_access::set_agent_analysis_limits,
+            agent_access::get_agent_query_detail,
+            agent_access::cancel_agent_activity_query,
+            agent_access::release_agent_activity_result,
             agent_access::release_agent_results,
             agent_access::list_agent_approvals,
             agent_access::decide_agent_approval,
@@ -368,6 +374,9 @@ pub fn run() {
             export::commands::get_export_status,
             export::commands::cancel_export,
             export::commands::reveal_export_part,
+            activity::get_activity_snapshot,
+            activity::get_desktop_query_detail,
+            activity::cancel_desktop_activity_query,
             results::get_result_page,
             results::release_result,
             results::release_all_results

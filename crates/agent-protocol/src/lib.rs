@@ -745,7 +745,7 @@ pub struct AgentExecutionResult {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AgentAnalysisLimits {
     pub browse_row_cap: u64,
     pub maximum_result_bytes: u64,

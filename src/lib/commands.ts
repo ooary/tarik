@@ -71,6 +71,80 @@ export interface AgentAccessChange {
   endpointReady: boolean;
 }
 
+export interface AgentAnalysisLimits {
+  browseRowCap: number;
+  maximumResultBytes: number;
+  retainedResultLimit: number;
+  outstandingQueryLimit: number;
+  profileCacheBytes: number;
+  globalCacheBytes: number;
+  queueDeadlineSeconds: number;
+  executionDeadlineSeconds: number;
+}
+
+export interface ActivityDesktopQuery {
+  executionId: string;
+  projectId: string;
+  tabId: string;
+  state: "queued" | "running" | "succeeded" | "failed" | "cancelled";
+  durationMs: number;
+  rowsProduced: number | null;
+  rowsAffected: number | null;
+  error: { code: string; message: string } | null;
+  resultId: string | null;
+  rowTotal: number | null;
+}
+
+export interface ActivityAgentQuery {
+  clientProfileId: string;
+  clientName: string;
+  executionId: string;
+  projectId: string;
+  originConnectionId: string;
+  state: "queued" | "running" | "succeeded" | "failed" | "cancelled";
+  queueWaitMs: number;
+  runningMs: number;
+  resultId: string | null;
+  rows: number | null;
+  rowTotalExact: boolean | null;
+  browseLimitReached: boolean;
+  cacheBytes: number | null;
+  slotHeld: boolean;
+  cancellationRequested: boolean;
+  cleanupPending: boolean;
+  limits: AgentAnalysisLimits;
+}
+
+export interface ActivityAgentConnection {
+  clientProfileId: string;
+  clientName: string;
+  connectionId: string;
+  authenticated: boolean;
+  connectedForMs: number;
+  lastHeartbeatMsAgo: number;
+  heartbeatStale: boolean;
+  projectIds: string[];
+  queuedQueries: number;
+  runningQueries: number;
+  retainedResults: number;
+  retainedCacheBytes: number;
+  adapterPid: number | null;
+}
+
+export interface ActivitySnapshot {
+  projectId: string;
+  desktopQueries: ActivityDesktopQuery[];
+  agentQueries: ActivityAgentQuery[];
+  agentConnections: ActivityAgentConnection[];
+  resources: { memoryLimitMib: number; threads: number; preset: string } | null;
+  progressAvailable: false;
+}
+
+export interface AgentQueryDetail {
+  executionId: string;
+  sql: string;
+}
+
 export type AgentHostKind =
   "claude_desktop" | "claude_code" | "codex" | "pi" | "cursor" | "vs_code" | "generic";
 
@@ -448,6 +522,68 @@ export function getLastSupportIncident(
 
 export function clearCache(invokeCommand: InvokeCommand = invoke): Promise<CleanupSummary> {
   return invokeCommand<CleanupSummary>("clear_cache");
+}
+
+export function getAgentAnalysisLimits(
+  invokeCommand: InvokeCommand = invoke,
+): Promise<AgentAnalysisLimits> {
+  return invokeCommand<AgentAnalysisLimits>("get_agent_analysis_limits");
+}
+
+export function setAgentAnalysisLimits(
+  limits: AgentAnalysisLimits,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<AgentAnalysisLimits> {
+  return invokeCommand<AgentAnalysisLimits>("set_agent_analysis_limits", { limits });
+}
+
+export function getActivitySnapshot(
+  projectId: string,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<ActivitySnapshot> {
+  return invokeCommand<ActivitySnapshot>("get_activity_snapshot", { projectId });
+}
+
+export function getDesktopQueryDetail(
+  executionId: string,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<AgentQueryDetail> {
+  return invokeCommand<AgentQueryDetail>("get_desktop_query_detail", { executionId });
+}
+
+export function getAgentQueryDetail(
+  executionId: string,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<AgentQueryDetail> {
+  return invokeCommand<AgentQueryDetail>("get_agent_query_detail", { executionId });
+}
+
+export function cancelAgentActivityQuery(
+  executionId: string,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<void> {
+  return invokeCommand<void>("cancel_agent_activity_query", { executionId });
+}
+
+export function cancelDesktopActivityQuery(
+  executionId: string,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<ActivityDesktopQuery> {
+  return invokeCommand<ActivityDesktopQuery>("cancel_desktop_activity_query", { executionId });
+}
+
+export function releaseAgentActivityResult(
+  resultId: string,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<boolean> {
+  return invokeCommand<boolean>("release_agent_activity_result", { resultId });
+}
+
+export function releaseAgentResults(
+  scope: { clientProfileId?: string; connectionId?: string },
+  invokeCommand: InvokeCommand = invoke,
+): Promise<number> {
+  return invokeCommand<number>("release_agent_results", { scope });
 }
 
 export function getAgentAccessStatus(
