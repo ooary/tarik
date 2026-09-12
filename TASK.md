@@ -2554,6 +2554,83 @@ Blocked
 
 ---
 
+## EPIC E16 — Bounded Multi-Query MCP Sessions
+
+**Status:** `PLANNED` — user approved recording the proposed multi-result and queued-query design as a new EPIC. No implementation or manual acceptance is claimed.
+
+**Outcome:** Each authenticated agent connection can retain several completed results and submit multiple immutable SafeRead queries without unbounded execution, cache growth, or authority drift.
+
+**Delivery order:** Finish and review the current E4.1 large-import improvement first. Preserve E15-T9, E15.1, and existing Windows/release acceptance gates; this plan does not waive them. Render the detailed implementation graph and resolve task-level boundary questions before editing production code.
+
+**Design direction:** Separate query admission, execution permits, and retained result leases. Multiple retained results and a bounded fair queue are the baseline; unrestricted parallel execution is not. Completed results retain bounded page files and metadata, not live DuckDB workers/connections. Heavy work initially runs serially within the active project under one shared engine resource budget.
+
+### Candidate budgets — benchmark before finalizing
+
+| Resource | Initial candidate |
+| --- | --- |
+| Retained results | 8 per connection; 32 globally |
+| Outstanding queries | 4 per connection (1 running plus up to 3 queued); 16 globally |
+| Heavy execution | 1 analytical job at a time for the active project |
+| Browse limits | Existing 5,000 rows/result; 500 rows/page; 1 MiB/page response |
+| Result cache storage | 32 MiB/result; 128 MiB/connection; 512 MiB globally |
+| Result expiration | 10 minutes idle; maximum lifetime 30 minutes |
+| Execution deadline | 60 seconds from actual execution start |
+| Queue deadline | Separate 60-second maximum wait |
+
+Apply aggregate paired-client quotas across its connections so additional connections cannot bypass limits. T0 must pin exact client-wide budgets, staging reservations, terminal-history bounds, and cleanup-backlog admission policy. These numbers are candidate guardrails, not measured performance claims, and do not implicitly resolve existing D4.
+
+- [ ] **E16-T0 Define lifecycle, budgets, and scheduler delta graph**
+  - Depends on: E4.1 completion/review and explicit scheduling of E16; existing E15 authority and E15.1 export contracts
+  - Owns: `docs/design/E16-DESIGN-GRAPH.md`, protocol contracts, budget decisions
+  - Deliverables: Separate queued/running jobs from retained-result leases; specify atomic admission/reservation, client/connection/global bounds, fair scheduling, monotonic deadlines, cancellation races, terminal retention, byte accounting, and restart cleanup. Audit engine queue/catalog visibility and all analytical work admission paths.
+  - Acceptance: source/catalog/capability revalidation occurs at worker claim; snapshot consumption and reservation failure are deterministic; result expiry never reruns SQL; protocol/tool compatibility changes are explicit.
+  - Tests: design completeness and adversarial lifecycle matrix.
+  - Commit: `docs(design): define bounded multi-query MCP sessions`
+
+- [ ] **E16-T1 Add bounded owner-scoped result leases and discovery**
+  - Depends on: E16-T0
+  - Owns: agent result registry, engine page writer/cache, protocol DTOs, MCP result tools
+  - Deliverables: Multiple retained results; atomic count/byte reservations including staging; writer-side byte enforcement; bounded `tarik_list_results`; caller-owned idempotent release; summaries with IDs, sizes, and expiry; explicit quota errors with bounded actionable caller-owned result information.
+  - Acceptance: retained results do not block new queries below quota; wide values cannot bypass byte limits; existing row/page caps remain; no live worker is retained for completed pages; unexpired results are not silently evicted to admit new work; foreign IDs and private paths never leak.
+  - Tests: concurrent admission, oversized rows, count/byte boundaries, failed publication, unknown/foreign/repeated release, bounded discovery.
+  - Commit: `feat(mcp): retain bounded multiple query results`
+
+- [ ] **E16-T2 Add lease expiry and race-safe cleanup**
+  - Depends on: E16-T1
+  - Owns: background expiry, cache read leases, disconnect/revocation cleanup, startup recovery
+  - Deliverables: Idle and absolute expiry independent of agent polling; release on lifecycle invalidation; protect in-flight page reads; bounded retry for Windows file locks; cleanup-pending files remain charged until deletion; bounded cleanup backlog with admission backpressure.
+  - Acceptance: abandoned results expire without host activity; release/expiry cannot delete files during active reads; restart never treats stale results as valid or reruns their SQL; completed user exports remain untouched.
+  - Tests: fake clock expiry, read/release races, disconnect/revoke/disable/project-close, locked-file retry, crash/startup cleanup and budget conservation.
+  - Commit: `feat(mcp): expire result leases safely`
+
+- [ ] **E16-T3 Queue queries fairly under shared execution admission**
+  - Depends on: E16-T0, E16-T2
+  - Owns: desktop/engine admission, query queue, active-project lifecycle, analytical work coordination
+  - Deliverables: Bounded per-client/connection/global queues; fair client scheduling with bounded desktop priority; independent queue and execution deadlines; clone/claim connections at execution time; revalidate immutable SafeRead authority/catalog/source revision before execution; cancellation for queued and running work.
+  - Acceptance: heavy execution initially serial within the active project; imports and approved mutations remain exclusive; desktop queries, exports, Profile, Quality, and MCP work participate in resource admission without introducing deadlocks; status/cancel/cached paging remain responsive. Shared 8 GiB/4-thread settings do not become allocations per query. Stale snapshots fail clearly instead of being silently refreshed.
+  - Tests: fairness/starvation, concurrent enqueue, queue timeout, claim-time DDL/source/grant drift, cancellation races, connection cleanup, import/export/mutation coexistence and shutdown.
+  - Commit: `feat(engine): schedule bounded agent query queues`
+
+- [ ] **E16-T4 Teach hosts multi-result workflow and recovery**
+  - Depends on: E16-T1 through E16-T3
+  - Owns: MCP tool descriptions/instructions/prompts, packaged skill, user guide, relevant desktop status surfaces
+  - Deliverables: Guidance for submit/status/page/list/release; truthful queue state and distinct queue/execution timing; clear expired/quota/stale errors; recovery without guessing IDs; explicit independence of browse results and full-query export snapshots.
+  - Acceptance: real Claude Desktop can compare retained results, discover forgotten IDs, queue another query, and clean up without reconnecting; guidance changes never expand authority or allow self-approval.
+  - Tests: tool/schema allowlist, prompt contract, real-host workflow, accessibility/manual review for any visible UI changes.
+  - Commit: `docs(mcp): explain queued queries and result leases`
+
+- [ ] **E16-T5 Benchmark, validate, and obtain cross-platform acceptance**
+  - Depends on: E16-T1 through E16-T4
+  - Owns: deterministic performance fixtures, `docs/review/E16-MULTI-QUERY.md`, native Windows/Linux evidence
+  - Deliverables: Compare serial versus two concurrent scans on representative large Parquet and physical DuckDB tables; measure total completion time, individual latency, desktop responsiveness, CPU, peak working set, disk/spill/cache bytes, and cleanup residue under equal resource settings. Exercise multiple hosts, one host with multiple connections, and mixed query/import/export workloads.
+  - Acceptance: do not enable higher execution concurrency without measured benefit and a separately approved graph delta; preserve fail-closed SQL and approvals, bounded memory/storage, native Windows locking/shutdown behavior, and all prior regressions. User signs off the EPIC; unrun evidence remains unchecked.
+  - Tests: full Rust/Node/UI/type/build/docs/format/diff gates, native package/runtime tests, real Claude workflow, fairness and leak stress.
+  - Commit: `docs(review): record multi-query performance acceptance`
+
+**Out of scope:** Unrestricted parallelism, cross-client result sharing, arbitrary SQL batch execution, automatic expired-query reruns, silent eviction of unexpired results, agent approvals, and expanded write/export authority.
+
+---
+
 # Cross-cutting test matrix
 
 | Layer                  | Required coverage                                                          |
