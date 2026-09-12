@@ -1,6 +1,6 @@
 # E15 Local Agent Gateway review packet
 
-**Status:** implementation candidate; manual sign-off required. Linux automated evidence is recorded below. Native Windows runtime, host-specific launches, accessibility, DPI, and visual approval remain user-owned gates and are not claimed.
+**Status:** E15 product scope accepted by the user on September 12, 2026 after real Claude Desktop use. Linux automated evidence is recorded below. Native Windows package/WebView2/DPI/mixed-monitor, complete accessibility, and final process-lifecycle evidence remain user-owned release gates and are not claimed. Observed query/result lifecycle and possible duplicate-process defects are explicitly retained as approved E16 follow-ups, not erased by this acceptance.
 
 ## What is implemented
 
@@ -121,6 +121,7 @@ Review Agent Access and approval content at minimum supported viewport in light,
 
 ## Known truthful limitations
 
+- Real Claude Desktop use exposed reconnect-fragile SafeRead ownership, missing active-state discovery, terminal no-result records that can block later starts, and a possible duplicate/orphan `tarik-mcp` process symptom. The approved E16 lifecycle delta owns `tarik_list_active`, profile+project SafeRead leases, explicit slot cleanup, heartbeat reaping, blocking IDs, transactional snapshot consumption, monitoring, and native process diagnosis.
 - Tarik Desktop must already be running and the project must already be active.
 - No remote/HTTP transport, daemon, embedded model, credentials, arbitrary paths, or headless project ownership exists.
 - Quality and saved-query mutation workflows are blocked in v1 rather than exposed through broad CRUD commands.
@@ -134,4 +135,4 @@ Review Agent Access and approval content at minimum supported viewport in light,
 - [ ] Standard and critical mutation approval UX approved.
 - [ ] Light/dark/system, keyboard, screen reader, reduced motion, minimum viewport approved.
 - [ ] Native Windows x64 MSVC package, WebView2, DPI, mixed-monitor, and process lifecycle approved.
-- [ ] E15 accepted by the user.
+- [x] E15 product scope accepted by the user on September 12, 2026; E16 lifecycle follow-ups and unrun cross-platform evidence remain explicit.
