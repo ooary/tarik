@@ -499,8 +499,9 @@ mod tests {
     use super::*;
 
     fn write_test_descriptor(root: &Path, instance_id: &str) {
+        let path = root.join("bridge.json");
         fs::write(
-            root.join("bridge.json"),
+            &path,
             serde_json::to_vec(&serde_json::json!({
                 "protocolVersion": tarik_agent_protocol::BRIDGE_PROTOCOL_VERSION,
                 "endpoint": "test-endpoint",
@@ -514,6 +515,11 @@ mod tests {
             .unwrap(),
         )
         .unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(path, fs::Permissions::from_mode(0o600)).unwrap();
+        }
     }
 
     #[test]
