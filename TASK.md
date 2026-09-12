@@ -2556,65 +2556,66 @@ Blocked
 
 ## EPIC E16 — Bounded Multi-Query MCP Sessions
 
-**Status:** `PLANNED` — user approved recording the proposed multi-result and queued-query design as a new EPIC. No implementation or manual acceptance is claimed.
+**Status:** `PLANNED` — user approved recording the proposed multi-result/queued-query EPIC and explicitly approved the observed lifecycle insight delta on September 12, 2026. Durable delta: `docs/design/E16-LIFECYCLE-INSIGHT-DELTA.md`. No production implementation or manual acceptance is claimed.
 
 **Outcome:** Each authenticated agent connection can retain several completed results and submit multiple immutable SafeRead queries without unbounded execution, cache growth, or authority drift.
 
 **Delivery order:** Finish and review the current E4.1 large-import improvement first. Preserve E15-T9, E15.1, and existing Windows/release acceptance gates; this plan does not waive them. Render the detailed implementation graph and resolve task-level boundary questions before editing production code.
 
-**Design direction:** Separate query admission, execution permits, and retained result leases. Multiple retained results and a bounded fair queue are the baseline; unrestricted parallel execution is not. Completed results retain bounded page files and metadata, not live DuckDB workers/connections. Heavy work initially runs serially within the active project under one shared engine resource budget.
+**Design direction:** Separate query admission, execution permits, and retained result leases. Multiple retained results and a bounded fair queue are the baseline; unrestricted parallel execution is not. Completed results retain bounded page files and metadata, not live DuckDB workers/connections. Heavy work initially runs serially within the active project under one shared engine resource budget. SafeRead query/result authority is paired `clientProfileId + projectId`, while `connectionId` remains origin attribution; approval, mutation, and guarded-export ownership do not change implicitly.
 
 ### Candidate budgets — benchmark before finalizing
 
-| Resource | Initial candidate |
-| --- | --- |
-| Retained results | 8 per connection; 32 globally |
-| Outstanding queries | 4 per connection (1 running plus up to 3 queued); 16 globally |
-| Heavy execution | 1 analytical job at a time for the active project |
-| Browse limits | Existing 5,000 rows/result; 500 rows/page; 1 MiB/page response |
-| Result cache storage | 32 MiB/result; 128 MiB/connection; 512 MiB globally |
-| Result expiration | 10 minutes idle; maximum lifetime 30 minutes |
-| Execution deadline | 60 seconds from actual execution start |
-| Queue deadline | Separate 60-second maximum wait |
+| Resource             | Initial candidate                                                                                              |
+| -------------------- | -------------------------------------------------------------------------------------------------------------- |
+| Retained results     | 8 per paired client across its connections; 32 globally                                                        |
+| Outstanding queries  | 4 per paired client across its connections (1 running plus up to 3 queued); 16 globally                        |
+| Heavy execution      | 1 analytical job at a time for the active project                                                              |
+| Browse limits        | Existing 5,000 rows/result; 500 rows/page; 1 MiB/page response                                                 |
+| Result cache storage | 32 MiB/result; 128 MiB/connection; 512 MiB globally                                                            |
+| Result expiration    | 10 minutes idle; maximum lifetime 30 minutes                                                                   |
+| Execution deadline   | Standard 60 seconds from actual execution start; candidate desktop-enabled extended SafeRead up to 300 seconds |
+| Queue deadline       | Separate 60-second maximum wait                                                                                |
+| Heartbeat lease      | Candidate heartbeat every 30 seconds; stale after 2 minutes, subject to native host/sleep validation           |
 
 Apply aggregate paired-client quotas across its connections so additional connections cannot bypass limits. T0 must pin exact client-wide budgets, staging reservations, terminal-history bounds, and cleanup-backlog admission policy. These numbers are candidate guardrails, not measured performance claims, and do not implicitly resolve existing D4.
 
 - [ ] **E16-T0 Define lifecycle, budgets, and scheduler delta graph**
   - Depends on: E4.1 completion/review and explicit scheduling of E16; existing E15 authority and E15.1 export contracts
   - Owns: `docs/design/E16-DESIGN-GRAPH.md`, protocol contracts, budget decisions
-  - Deliverables: Separate queued/running jobs from retained-result leases; specify atomic admission/reservation, client/connection/global bounds, fair scheduling, monotonic deadlines, cancellation races, terminal retention, byte accounting, and restart cleanup. Audit engine queue/catalog visibility and all analytical work admission paths.
-  - Acceptance: source/catalog/capability revalidation occurs at worker claim; snapshot consumption and reservation failure are deterministic; result expiry never reruns SQL; protocol/tool compatibility changes are explicit.
+  - Deliverables: Separate queued/running/cancellation-requested execution slots from retained-result leases; specify atomic admission/reservation, paired-client/connection/global bounds, fair scheduling, monotonic deadlines, cancellation races, terminal retention, byte accounting, and restart cleanup. Audit engine queue/catalog visibility and all analytical work admission paths. Incorporate the approved lifecycle delta: heartbeat leases and stale reaping, profile+project SafeRead ownership with connection attribution, independent deadline watchdogs, snapshot available→reserved→consumed transitions, actionable blocking IDs, explicit slot/cleanup state, and desktop-controlled extended SafeRead authority.
+  - Acceptance: source/catalog/capability revalidation occurs at worker claim; failed/cancelled terminal work releases its execution slot independently from result retention; snapshot is consumed only after engine acceptance and restored after eligible pre-accept failures; result expiry never reruns SQL; protocol/tool compatibility changes are explicit. T0 verifies the reported current-code findings rather than generalizing them: result-limit admission precedes current snapshot removal, but later failures can still consume it; transport disconnect cleanup exists, while authenticated heartbeat TTL does not.
   - Tests: design completeness and adversarial lifecycle matrix.
   - Commit: `docs(design): define bounded multi-query MCP sessions`
 
 - [ ] **E16-T1 Add bounded owner-scoped result leases and discovery**
   - Depends on: E16-T0
   - Owns: agent result registry, engine page writer/cache, protocol DTOs, MCP result tools
-  - Deliverables: Multiple retained results; atomic count/byte reservations including staging; writer-side byte enforcement; bounded `tarik_list_results`; caller-owned idempotent release; summaries with IDs, sizes, and expiry; explicit quota errors with bounded actionable caller-owned result information.
-  - Acceptance: retained results do not block new queries below quota; wide values cannot bypass byte limits; existing row/page caps remain; no live worker is retained for completed pages; unexpired results are not silently evicted to admit new work; foreign IDs and private paths never leak.
+  - Deliverables: Multiple retained results; atomic count/byte reservations including staging; writer-side byte enforcement; bounded `tarik_list_active` (including current-profile connections, queries, execution-slot state, results, expiry, and cleanup state) plus result discovery; profile-owned idempotent release after current Analyze revalidation; summaries with opaque IDs, sizes, and expiry; explicit quota errors carrying bounded caller-owned blocking IDs and an exact next tool/action.
+  - Acceptance: reconnecting the same paired profile can recover its SafeRead query/result leases for the same currently granted project; another paired profile cannot. Retained results do not block new queries below quota; wide values cannot bypass byte limits; existing row/page caps remain; no live worker is retained for completed pages; unexpired results are not silently evicted to admit new work; foreign IDs, SQL values, rows, credentials, and private paths never leak through MCP.
   - Tests: concurrent admission, oversized rows, count/byte boundaries, failed publication, unknown/foreign/repeated release, bounded discovery.
   - Commit: `feat(mcp): retain bounded multiple query results`
 
 - [ ] **E16-T2 Add lease expiry and race-safe cleanup**
   - Depends on: E16-T1
   - Owns: background expiry, cache read leases, disconnect/revocation cleanup, startup recovery
-  - Deliverables: Idle and absolute expiry independent of agent polling; release on lifecycle invalidation; protect in-flight page reads; bounded retry for Windows file locks; cleanup-pending files remain charged until deletion; bounded cleanup backlog with admission backpressure.
-  - Acceptance: abandoned results expire without host activity; release/expiry cannot delete files during active reads; restart never treats stale results as valid or reruns their SQL; completed user exports remain untouched.
+  - Deliverables: Explicit bridge heartbeat and authenticated connection leases; stale-connection reaping independent of ordinary conversational/tool inactivity; idle and absolute result expiry independent of agent polling; release on lifecycle invalidation; protect in-flight page reads; bounded retry for Windows file locks; cleanup-pending files remain charged until deletion; bounded cleanup backlog with admission backpressure; desktop Release all scoped to a selected profile or connection.
+  - Acceptance: bridge loss or stale heartbeat cancels connection-owned live work and frees reservations; profile-owned retained results remain recoverable only until result TTL/revoke/release. Windows sleep/resume and reconnect do not create a false active lease or silently kill a valid session. Release/expiry cannot delete files during active reads; restart never treats stale results as valid or reruns their SQL; Release all and expiry preserve tables, sources, projects, and completed exports.
   - Tests: fake clock expiry, read/release races, disconnect/revoke/disable/project-close, locked-file retry, crash/startup cleanup and budget conservation.
   - Commit: `feat(mcp): expire result leases safely`
 
 - [ ] **E16-T3 Queue queries fairly under shared execution admission**
   - Depends on: E16-T0, E16-T2
   - Owns: desktop/engine admission, query queue, active-project lifecycle, analytical work coordination
-  - Deliverables: Bounded per-client/connection/global queues; fair client scheduling with bounded desktop priority; independent queue and execution deadlines; clone/claim connections at execution time; revalidate immutable SafeRead authority/catalog/source revision before execution; cancellation for queued and running work.
-  - Acceptance: heavy execution initially serial within the active project; imports and approved mutations remain exclusive; desktop queries, exports, Profile, Quality, and MCP work participate in resource admission without introducing deadlocks; status/cancel/cached paging remain responsive. Shared 8 GiB/4-thread settings do not become allocations per query. Stale snapshots fail clearly instead of being silently refreshed.
+  - Deliverables: Bounded per-client/connection/global queues; fair client scheduling with bounded desktop priority; independent queue and execution deadline watchdogs that do not depend on agent polling; clone/claim connections at execution time; revalidate immutable SafeRead authority/catalog/source revision before execution; cancellation for queued and running work; explicit `slotHeld`, `slotAvailable`, `cancellationRequested`, and `cleanupPending` truth.
+  - Acceptance: heavy execution initially serial within the active project; imports and approved mutations remain exclusive; desktop queries, exports, Profile, Quality, and MCP work participate in resource admission without introducing deadlocks; status/cancel/cached paging remain responsive. Shared 8 GiB/4-thread settings do not become allocations per query. A cancelled status is not called slot-free until authoritative cleanup confirms it; failed/cancelled no-result records cannot block starts indefinitely. Stale snapshots fail clearly instead of being silently refreshed. Standard 60-second and any desktop-authorized extended deadline are enforced independently.
   - Tests: fairness/starvation, concurrent enqueue, queue timeout, claim-time DDL/source/grant drift, cancellation races, connection cleanup, import/export/mutation coexistence and shutdown.
   - Commit: `feat(engine): schedule bounded agent query queues`
 
 - [ ] **E16-T4 Teach hosts multi-result workflow and recovery**
   - Depends on: E16-T1 through E16-T3
   - Owns: MCP tool descriptions/instructions/prompts, packaged skill, user guide, relevant desktop status surfaces
-  - Deliverables: Guidance for submit/status/page/list/release; truthful queue state and distinct queue/execution timing; clear expired/quota/stale errors; recovery without guessing IDs; explicit independence of browse results and full-query export snapshots.
+  - Deliverables: Guidance for submit/status/page/`tarik_list_active`/release; truthful queue state and distinct queue/execution timing; clear expired/quota/stale errors with blocking IDs and exact next actions; recovery without guessing IDs; heartbeat/reconnect expectations; explicit independence of browse results and full-query export snapshots.
   - Acceptance: real Claude Desktop can compare retained results, discover forgotten IDs, queue another query, and clean up without reconnecting; guidance changes never expand authority or allow self-approval.
   - Tests: tool/schema allowlist, prompt contract, real-host workflow, accessibility/manual review for any visible UI changes.
   - Commit: `docs(mcp): explain queued queries and result leases`
@@ -2626,10 +2627,10 @@ Apply aggregate paired-client quotas across its connections so additional connec
   - Deliverables:
     - Monitor active-project queries from the desktop editor and all agent connections using authoritative lifecycle registries, not a second execution registry or an additional DuckDB connection.
     - Show the actual immutable submitted SQL in a bounded, selectable details view with a readable row summary. Identify the agent/client or desktop origin, short connection identifier where relevant, project, execution ID, and query state.
-    - Show meaningful execution parameters and observations: queue wait separately from running elapsed time, final duration, effective shared memory/thread settings, applicable row/page caps, queue/execution deadlines, returned rows with exact/limited meaning, and retained-result cache bytes/expiry when available. Do not invent percentage progress, per-query CPU/RAM, throughput, ETA, or bind values the execution contract does not supply.
+    - Show meaningful execution parameters and observations: queue wait separately from running elapsed time, final duration, effective shared memory/thread settings, standard or desktop-authorized extended deadline, deadline remaining/approaching, applicable row/page caps, explicit slot held/available and cleanup state, returned rows with exact/limited meaning, and retained-result cache bytes/expiry when available. Do not invent `willExceedDeadline`, percentage progress, rows scanned, current operator/pipeline, per-query CPU/RAM, throughput, ETA, or bind values the execution contract does not supply. Show optional native DuckDB progress only if T0/T5 prove its API integration truthful and safe; otherwise display `progress unavailable`.
     - Distinguish queued, running, cancellation requested, succeeded with retained result, failed, cancelled, expired/released result, and cleanup pending. A completed result must never appear as an active query simply because its pages remain cached.
     - Provide a clearly labelled **Cancel query** or **Stop query** action for running work and **Cancel queued query** for waiting work. Request cancellation through the existing coordinator; show pending cancellation until the engine confirms a terminal state. Never terminate the whole engine merely to stop one query.
-    - Provide a separate **Release result** action with a clear explanation that the agent loses further page access but tables, sources, and completed exports remain unchanged. Handle concurrent completion, expiry, and release idempotently.
+    - Provide separate **Release result** and bounded **Release all** actions with a clear explanation that the selected profile/connection loses further page access but tables, sources, projects, and completed exports remain unchanged. Handle reconnect ownership, concurrent completion, page reads, expiry, and release idempotently.
     - Keep SQL/details desktop-only and on demand; routine polling carries bounded summaries, not repeated full SQL or result rows. Do not add cross-client MCP discovery or put SQL/bind values into diagnostic logs.
     - Poll/coalesce at approximately 500 ms only while visible, with no overlapping requests; release timers on leaving/unmount. Show stale/unavailable states and locally scoped action errors rather than fabricated live status. Bound retained rows, SQL details, and aggregate counters; use existing durable history where applicable.
   - Acceptance: Activity is visibly adjacent to Agent access and opens the right workspace; users can identify which SQL Claude is running, see elapsed and queue time and meaningful settings, and stop only that query. Returning restores the prior workspace. Query work cannot block monitoring, cancellation, or cached-result reads. Labels, keyboard navigation, focus return, accessible SQL details, light/dark themes, reduced motion, and minimum viewport remain usable.
@@ -2643,7 +2644,7 @@ Apply aggregate paired-client quotas across its connections so additional connec
   - User report: after opening Tarik and its workspace, then opening Claude Desktop, Task Manager sometimes shows two `tarik-mcp` processes where the user expects one. This is a reported symptom, not a confirmed root cause or proof that all multiple-process cases are invalid.
   - Deliverables:
     - Add an **Agent Monitor** panel showing genuinely active agent sessions separately from paired clients and historical/disconnected sessions. Reuse the Activity monitoring workspace with a distinct Agent Monitor view; confirm final navigation in the implementation graph before UI edits.
-    - Show client/host label, short client and connection identifiers, authenticated/connected state, connected duration, last observed activity, active project/grant summary, queued/running query counts, and retained-result count/cache bytes where authoritative data is available. Do not infer connectivity from pairing alone or equate idle activity with disconnection.
+    - Show client/host label, `clientProfileId`, full copyable connection ID in details plus a short row identifier, authenticated/connected/heartbeat-stale state, connected duration, last heartbeat and observed activity, active project/grant summary, queued/running query counts, held execution slots, and retained-result count/cache bytes where authoritative data is available. If two live connections belong to one client profile, show both explicitly. Do not infer connectivity from pairing alone or equate ordinary agent inactivity with disconnection.
     - Show verified adapter PID/parent-process identity only when independently observed or authenticated reliably; otherwise label unavailable. Never trust a self-reported PID as authority to terminate a process. Do not expose credentials, pairing proofs, private endpoint paths, or cross-client monitoring through MCP.
     - Reproduce Claude Desktop launch/relaunch, Tarik-first and Claude-first startup, bridge reconnect, host restart, workspace switching, Agent Access disable/re-enable, portable move, and app shutdown on native Windows. Check duplicate host configuration entries, overlapping host-owned adapter launches, transient reconnect overlap, and orphaned adapters without presuming which caused the report.
     - Define the expected topology: one host-managed stdio child per configured host transport instance. Multiple hosts or intentional transport instances may legitimately create multiple processes; do not enforce a machine-wide singleton that breaks independent stdio sessions.
@@ -2662,7 +2663,7 @@ Apply aggregate paired-client quotas across its connections so additional connec
   - Tests: full Rust/Node/UI/type/build/docs/format/diff gates, native package/runtime tests, real Claude workflow, fairness and leak stress.
   - Commit: `docs(review): record multi-query performance acceptance`
 
-**Out of scope:** Unrestricted parallelism, cross-client result sharing, arbitrary SQL batch execution, automatic expired-query reruns, silent eviction of unexpired results, agent approvals, and expanded write/export authority.
+**Out of scope:** Unrestricted parallelism, cross-profile result sharing, implicit ownership changes for approvals/mutations/guarded exports, arbitrary SQL batch execution, automatic expired-query reruns, silent eviction of unexpired results, agent-chosen deadlines, fabricated progress/ETA, agent approvals, and expanded write/export authority.
 
 ---
 
