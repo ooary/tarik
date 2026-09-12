@@ -2556,7 +2556,7 @@ Blocked
 
 ## EPIC E16 — Bounded Multi-Query MCP Sessions
 
-**Status:** `PLANNED` — user approved recording the proposed multi-result/queued-query EPIC and explicitly approved the observed lifecycle insight delta on September 12, 2026. Durable delta: `docs/design/E16-LIFECYCLE-INSIGHT-DELTA.md`. No production implementation or manual acceptance is claimed.
+**Status:** `IN PROGRESS` — user approved the complete implementation graph, Activity Queries/Agents navigation, desktop-owned customizable analysis limits, extended-analysis policy, and large-result handoff on September 12, 2026. Durable graph: `docs/design/E16-DESIGN-GRAPH.md`; lifecycle delta: `docs/design/E16-LIFECYCLE-INSIGHT-DELTA.md`. Production implementation is authorized; manual/native acceptance remains unclaimed.
 
 **Outcome:** Each authenticated agent connection can retain several completed results and submit multiple immutable SafeRead queries without unbounded execution, cache growth, or authority drift.
 
@@ -2582,13 +2582,14 @@ The default target assumes a 16 GiB RAM/i5-class workstation but does not treat 
 
 **Approved large-result handoff:** The packaged skill and MCP contract should guide raw-row exploration toward selected columns plus an explicit `LIMIT 100`, unless aggregation naturally bounds result cardinality. When collection confirms output beyond the effective browse-row cap, publish only the bounded result with `browseLimitReached=true`, `rowTotalExact=false`, `completeResultAvailable=false`, `limitReason=browse_row_cap`, the effective cap, and structured next actions: refine/aggregate, open the exact SQL in Tarik, or use guarded complete-query export. Never call the capped count exact. If the byte ceiling is reached first, fail without publishing an arbitrary partial result and provide the same safe next actions. Activity may offer **Copy SQL** and **Open in editor**; opening creates a draft tab containing the immutable SQL and never executes it. Agents receive no tool that opens or runs this desktop draft automatically.
 
-- [ ] **E16-T0 Define lifecycle, budgets, and scheduler delta graph**
+- [x] **E16-T0 Define lifecycle, budgets, and scheduler delta graph**
   - Depends on: E4.1 completion/review and explicit scheduling of E16; existing E15 authority and E15.1 export contracts
   - Owns: `docs/design/E16-DESIGN-GRAPH.md`, protocol contracts, budget decisions
   - Deliverables: Separate queued/running/cancellation-requested execution slots from retained-result leases; specify atomic admission/reservation, paired-client/connection/global bounds, fair scheduling, monotonic deadlines, cancellation races, terminal retention, byte accounting, and restart cleanup. Audit engine queue/catalog visibility and all analytical work admission paths. Incorporate the approved lifecycle delta: heartbeat leases and stale reaping, profile+project SafeRead ownership with connection attribution, independent deadline watchdogs, snapshot available→reserved→consumed transitions, actionable blocking IDs, explicit slot/cleanup state, and desktop-controlled extended SafeRead authority. Pin desktop-owned Conservative/Balanced/Large/Custom analysis-limit presets or an equivalently understandable control model, hard ceilings, combination validation, persistence/revocation, and admission-record snapshots; the MCP client may observe effective limits but cannot raise them.
   - Acceptance: source/catalog/capability revalidation occurs at worker claim; failed/cancelled terminal work releases its execution slot independently from result retention; snapshot is consumed only after engine acceptance and restored after eligible pre-accept failures; result expiry never reruns SQL; protocol/tool compatibility changes are explicit. T0 verifies the reported current-code findings rather than generalizing them: result-limit admission precedes current snapshot removal, but later failures can still consume it; transport disconnect cleanup exists, while authenticated heartbeat TTL does not.
   - Tests: design completeness and adversarial lifecycle matrix.
   - Commit: `docs(design): define bounded multi-query MCP sessions`
+  - Notes: Approved and recorded September 12, 2026 in `docs/design/E16-DESIGN-GRAPH.md`. The graph pins paired-profile SafeRead authority, reserve/accept/consume snapshots, explicit query slots versus result leases, bounded fair serial heavy execution, heartbeat/reaping, independent watchdogs, cache/read/cleanup leases, Activity Queries/Agents navigation, desktop-owned configurable limits, truthful capped-result handoff, and non-singleton host-owned MCP topology. Native benchmark and lifecycle evidence remains a T5 gate.
 
 - [ ] **E16-T1 Add bounded owner-scoped result leases and discovery**
   - Depends on: E16-T0
