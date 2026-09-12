@@ -277,6 +277,7 @@ pub fn run() {
             agent_access::deny_agent_pairing,
             agent_access::set_agent_project_grant,
             agent_access::revoke_agent_client,
+            agent_access::release_agent_results,
             agent_access::list_agent_approvals,
             agent_access::decide_agent_approval,
             agent_setup::get_agent_setup_status,

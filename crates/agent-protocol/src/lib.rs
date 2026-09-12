@@ -81,6 +81,7 @@ impl BridgeRequest {
                 }
             }
             BridgeAction::Status { connection_id }
+            | BridgeAction::Heartbeat { connection_id }
             | BridgeAction::ListProjects { connection_id }
             | BridgeAction::ListActive { connection_id }
             | BridgeAction::QueryStatus { connection_id, .. }
@@ -263,6 +264,9 @@ pub enum BridgeAction {
         proof: String,
     },
     Status {
+        connection_id: String,
+    },
+    Heartbeat {
         connection_id: String,
     },
     ListProjects {
@@ -468,6 +472,13 @@ pub struct ConnectionStatusResult {
     pub authenticated: bool,
     pub client_profile_id: Option<String>,
     pub grants: Vec<ProjectGrant>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HeartbeatResult {
+    pub connection_id: String,
+    pub lease_seconds: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

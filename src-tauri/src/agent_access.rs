@@ -12,7 +12,7 @@ use tarik_agent_protocol::{
     AgentActiveConnection, AgentActiveList, AgentActiveQuery, AgentAnalysisLimits,
     AgentExecutionResult, AgentResultPage, ApprovalResult, ApprovalState, AuthenticationResult,
     CatalogPageResult, CatalogRelationSummary, ConnectionStatusResult, GrantedProject,
-    GrantedProjectsResult, HelloResult, HelloState, ProjectGrant, RelationColumn,
+    GrantedProjectsResult, HeartbeatResult, HelloResult, HelloState, ProjectGrant, RelationColumn,
     RelationDescriptionResult, SqlSnapshotResult, CHALLENGE_BYTES, MAX_AGENT_PAGE_RESPONSE_BYTES,
     MAX_AGENT_QUERIES_GLOBAL, MAX_AGENT_RESULTS_GLOBAL, MAX_DISCOVERY_RESPONSE_BYTES, PROOF_BYTES,
 };
@@ -38,6 +38,14 @@ const CHALLENGE_LIFETIME: Duration = Duration::from_secs(60);
 const AGENT_ACCESS_ENABLED_KEY: &str = "agent.access.enabled";
 const MAX_SQL_SNAPSHOTS: usize = 32;
 const SQL_SNAPSHOT_LIFETIME: Duration = Duration::from_secs(120);
+const CONNECTION_LEASE: Duration = Duration::from_secs(120);
+const MAINTENANCE_INTERVAL: Duration = Duration::from_secs(5);
+const RESUME_SAFE_GRACE: Duration = Duration::from_secs(30);
+const RESULT_IDLE_LIFETIME: Duration = Duration::from_secs(10 * 60);
+const RESULT_ABSOLUTE_LIFETIME: Duration = Duration::from_secs(30 * 60);
+const MAX_CLEANUP_PENDING: usize = 16;
+const CLEANUP_RETRY_BASE: Duration = Duration::from_secs(2);
+const CLEANUP_RETRY_MAX: Duration = Duration::from_secs(60);
 const MAX_PENDING_APPROVALS: usize = 16;
 const MAX_PENDING_APPROVALS_PER_CLIENT: usize = 4;
 const APPROVAL_LIFETIME: Duration = Duration::from_secs(120);
@@ -79,6 +87,13 @@ pub struct AgentAccessChange {
     pub endpoint_ready: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentResultReleaseScope {
+    pub client_profile_id: Option<String>,
+    pub connection_id: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ApprovalRequestView {
@@ -111,6 +126,8 @@ struct ConnectionRecord {
     profile_id: String,
     challenge: [u8; CHALLENGE_BYTES],
     created_at: Instant,
+    last_heartbeat: Instant,
+    resume_grace_until: Option<Instant>,
     authenticated: bool,
 }
 
@@ -149,6 +166,11 @@ struct AgentQuery {
     cache_bytes: Option<u64>,
     cancellation_requested: bool,
     cleanup_pending: bool,
+    active_readers: u32,
+    published_at: Option<Instant>,
+    last_accessed_at: Option<Instant>,
+    cleanup_attempts: u32,
+    cleanup_retry_at: Option<Instant>,
     error: Option<tarik_engine_protocol::ErrorEnvelope>,
     limits: AgentAnalysisLimits,
 }
@@ -176,6 +198,7 @@ struct PendingApproval {
 #[derive(Default)]
 struct AccessState {
     enabled: bool,
+    last_maintenance: Option<Instant>,
     endpoint_ready: bool,
     pending: HashMap<String, PendingPairing>,
     connections: HashMap<String, ConnectionRecord>,
@@ -274,29 +297,36 @@ impl AgentAccessManager {
         self.settings
             .set(AGENT_ACCESS_ENABLED_KEY, &enabled)
             .map_err(|error| error.to_string())?;
-        let mut state = self.lock()?;
-        state.enabled = enabled;
-        if !enabled {
-            state.endpoint_ready = false;
-            state.pending.clear();
-            state.connections.clear();
-            state.sql_snapshots.clear();
-            state.agent_queries.clear();
-            state.profiles.clear();
-            for approval in state
-                .approvals
-                .values_mut()
-                .filter(|approval| approval.state == ApprovalState::Pending)
-            {
-                approval.state = ApprovalState::Denied;
-            }
-        }
-        let change = AgentAccessChange {
-            enabled: state.enabled,
-            endpoint_ready: state.endpoint_ready,
+        let (change, invalidated_queries) = {
+            let mut state = self.lock()?;
+            state.enabled = enabled;
+            let invalidated_queries = if !enabled {
+                state.endpoint_ready = false;
+                state.pending.clear();
+                state.connections.clear();
+                state.sql_snapshots.clear();
+                state.profiles.clear();
+                for approval in state
+                    .approvals
+                    .values_mut()
+                    .filter(|approval| approval.state == ApprovalState::Pending)
+                {
+                    approval.state = ApprovalState::Denied;
+                }
+                state.agent_queries.keys().cloned().collect::<Vec<_>>()
+            } else {
+                Vec::new()
+            };
+            (
+                AgentAccessChange {
+                    enabled: state.enabled,
+                    endpoint_ready: state.endpoint_ready,
+                },
+                invalidated_queries,
+            )
         };
-        drop(state);
         if !enabled {
+            self.invalidate_queries(invalidated_queries);
             self.resource_cleaner().cleanup_all();
         }
         self.logger.record(
@@ -419,6 +449,8 @@ impl AgentAccessManager {
                     profile_id: profile_id.clone(),
                     challenge,
                     created_at: Instant::now(),
+                    last_heartbeat: Instant::now(),
+                    resume_grace_until: None,
                     authenticated: false,
                 },
             );
@@ -446,6 +478,8 @@ impl AgentAccessManager {
                     profile_id: requested_profile_id.to_string(),
                     challenge,
                     created_at: Instant::now(),
+                    last_heartbeat: Instant::now(),
+                    resume_grace_until: None,
                     authenticated: false,
                 },
             );
@@ -477,6 +511,8 @@ impl AgentAccessManager {
                 profile_id: requested_profile_id.to_string(),
                 challenge,
                 created_at: Instant::now(),
+                last_heartbeat: Instant::now(),
+                resume_grace_until: None,
                 authenticated: false,
             },
         );
@@ -598,10 +634,30 @@ impl AgentAccessManager {
                 "agent.connection_stale: Authentication connection is gone.".to_string()
             })?;
         connection.authenticated = true;
+        connection.last_heartbeat = Instant::now();
+        connection.resume_grace_until = None;
         Ok(AuthenticationResult {
             client_profile_id: profile_id.to_string(),
             connection_id: connection_id.to_string(),
             grants,
+        })
+    }
+
+    pub fn heartbeat(&self, connection_id: &str) -> Result<HeartbeatResult, String> {
+        let mut state = self.lock()?;
+        prune(&mut state);
+        let connection = state
+            .connections
+            .get_mut(connection_id)
+            .filter(|connection| connection.authenticated)
+            .ok_or_else(|| {
+                "agent.authentication_required: Reconnect and authenticate.".to_string()
+            })?;
+        connection.last_heartbeat = Instant::now();
+        connection.resume_grace_until = None;
+        Ok(HeartbeatResult {
+            connection_id: connection_id.to_string(),
+            lease_seconds: CONNECTION_LEASE.as_secs(),
         })
     }
 
@@ -1066,6 +1122,18 @@ impl AgentAccessManager {
                 .values()
                 .map(query_charged_bytes)
                 .sum::<u64>();
+            if state
+                .agent_queries
+                .values()
+                .filter(|query| query.cleanup_pending)
+                .count()
+                >= MAX_CLEANUP_PENDING
+            {
+                return Err(
+                    "agent.cleanup_backlog: Result cleanup is waiting on file locks; close result-file readers and retry after cleanup completes."
+                        .into(),
+                );
+            }
             if profile_charged_bytes.saturating_add(limits.maximum_result_bytes)
                 > limits.profile_cache_bytes
                 || global_charged_bytes.saturating_add(limits.maximum_result_bytes)
@@ -1172,6 +1240,11 @@ impl AgentAccessManager {
                     cache_bytes: None,
                     cancellation_requested: false,
                     cleanup_pending: false,
+                    active_readers: 0,
+                    published_at: None,
+                    last_accessed_at: None,
+                    cleanup_attempts: 0,
+                    cleanup_retry_at: None,
                     error: None,
                     limits: limits.clone(),
                 },
@@ -1213,6 +1286,167 @@ impl AgentAccessManager {
                 .get(&execution_id)
                 .expect("query inserted before engine admission"),
         ))
+    }
+
+    pub fn maintain(&self) {
+        let now = Instant::now();
+        let (stale_connections, active_queries, expired_results, cleanup_results) = {
+            let mut state = match self.state.lock() {
+                Ok(state) => state,
+                Err(_) => return,
+            };
+            let resume_gap = state.last_maintenance.is_some_and(|last| {
+                now.duration_since(last) > MAINTENANCE_INTERVAL + RESUME_SAFE_GRACE
+            });
+            state.last_maintenance = Some(now);
+            if resume_gap {
+                for connection in state
+                    .connections
+                    .values_mut()
+                    .filter(|connection| connection.authenticated)
+                {
+                    connection.resume_grace_until = Some(now + RESUME_SAFE_GRACE);
+                }
+            }
+            let stale_connections = state
+                .connections
+                .iter()
+                .filter(|(_, connection)| {
+                    connection.authenticated
+                        && connection
+                            .resume_grace_until
+                            .is_none_or(|grace_until| grace_until <= now)
+                        && now.duration_since(connection.last_heartbeat) >= CONNECTION_LEASE
+                })
+                .map(|(id, _)| id.clone())
+                .collect::<Vec<_>>();
+            let active_queries = state
+                .agent_queries
+                .values()
+                .filter(|query| {
+                    matches!(
+                        query.state,
+                        tarik_engine_protocol::ExecutionState::Queued
+                            | tarik_engine_protocol::ExecutionState::Running
+                    )
+                })
+                .map(|query| query.execution_id.clone())
+                .collect::<Vec<_>>();
+            let expired_results = state
+                .agent_queries
+                .values()
+                .filter(|query| {
+                    query.result_id.is_some()
+                        && result_expired(now, query.published_at, query.last_accessed_at)
+                })
+                .map(|query| query.execution_id.clone())
+                .collect::<Vec<_>>();
+            let cleanup_results = state
+                .agent_queries
+                .values()
+                .filter(|query| {
+                    query.cleanup_pending
+                        && query.active_readers == 0
+                        && query
+                            .cleanup_retry_at
+                            .is_none_or(|retry_at| retry_at <= now)
+                })
+                .map(|query| query.execution_id.clone())
+                .take(MAX_CLEANUP_PENDING)
+                .collect::<Vec<_>>();
+            (
+                stale_connections,
+                active_queries,
+                expired_results,
+                cleanup_results,
+            )
+        };
+        for id in active_queries {
+            if let Ok(Some(status)) = self.engine.query_status(&id) {
+                self.apply_engine_status(&id, status);
+            }
+        }
+        for id in stale_connections {
+            let _ = self.disconnect(&id);
+        }
+        for id in &expired_results {
+            if let Ok(mut state) = self.state.lock() {
+                if let Some(query) = state.agent_queries.get_mut(id) {
+                    query.result_id = None;
+                    query.cleanup_pending = true;
+                    query.cleanup_retry_at = None;
+                }
+            }
+        }
+        let cleanup_candidates = {
+            let state = match self.state.lock() {
+                Ok(state) => state,
+                Err(_) => return,
+            };
+            cleanup_results
+                .into_iter()
+                .chain(expired_results)
+                .filter(|id| {
+                    state
+                        .agent_queries
+                        .get(id)
+                        .is_some_and(|query| query.active_readers == 0)
+                })
+                .collect::<Vec<_>>()
+        };
+        for id in cleanup_candidates {
+            match self.engine.release_result(&id) {
+                Ok(()) => {
+                    if let Ok(mut state) = self.state.lock() {
+                        state.agent_queries.remove(&id);
+                    }
+                }
+                Err(error) if error.contains("result.missing") => {
+                    if let Ok(mut state) = self.state.lock() {
+                        state.agent_queries.remove(&id);
+                    }
+                }
+                Err(_) => {
+                    if let Ok(mut state) = self.state.lock() {
+                        if let Some(query) = state.agent_queries.get_mut(&id) {
+                            query.cleanup_attempts = query.cleanup_attempts.saturating_add(1);
+                            query.cleanup_retry_at =
+                                Some(Instant::now() + cleanup_retry_delay(query.cleanup_attempts));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn apply_engine_status(
+        &self,
+        execution_id: &str,
+        status: tarik_engine_protocol::ExecutionStatus,
+    ) {
+        let Ok(mut state) = self.state.lock() else {
+            return;
+        };
+        let Some(query) = state.agent_queries.get_mut(execution_id) else {
+            return;
+        };
+        query.state = status.state;
+        if status.state == tarik_engine_protocol::ExecutionState::Running
+            && query.running_at.is_none()
+        {
+            query.running_at = Some(Instant::now());
+        }
+        query.rows = status.rows_produced;
+        query.error = status.error;
+        if let Some(result) = status.result {
+            let now = Instant::now();
+            query.result_id = Some(result.result_id);
+            query.row_total_exact = Some(result.row_count_exact);
+            query.browse_limit_reached = result.browse_limit_reached;
+            query.cache_bytes = Some(result.cache_bytes);
+            query.published_at.get_or_insert(now);
+            query.last_accessed_at.get_or_insert(now);
+        }
     }
 
     pub fn list_active(&self, connection_id: &str) -> Result<AgentActiveList, String> {
@@ -1266,25 +1500,12 @@ impl AgentAccessManager {
         let status = self.engine.query_status(execution_id)?.ok_or_else(|| {
             "agent.execution_missing: The engine no longer tracks this query.".to_string()
         })?;
-        let mut state = self.lock()?;
+        self.apply_engine_status(execution_id, status);
+        let state = self.lock()?;
         let query = state
             .agent_queries
-            .get_mut(execution_id)
+            .get(execution_id)
             .ok_or_else(|| "agent.execution_missing: Refresh tarik_list_active.".to_string())?;
-        query.state = status.state;
-        if status.state == tarik_engine_protocol::ExecutionState::Running
-            && query.running_at.is_none()
-        {
-            query.running_at = Some(Instant::now());
-        }
-        query.rows = status.rows_produced;
-        query.error = status.error;
-        if let Some(result) = &status.result {
-            query.result_id = Some(result.result_id.clone());
-            query.row_total_exact = Some(result.row_count_exact);
-            query.browse_limit_reached = result.browse_limit_reached;
-            query.cache_bytes = Some(result.cache_bytes);
-        }
         Ok(agent_execution_view(query))
     }
 
@@ -1328,7 +1549,23 @@ impl AgentAccessManager {
             |grant| grant.analyze,
             "Analyze",
         )?;
-        let page = self.engine.result_page(result_id, offset, max_rows)?;
+        {
+            let mut state = self.lock()?;
+            let tracked = state.agent_queries.get_mut(result_id).ok_or_else(|| {
+                "agent.result_missing: Use tarik_list_active to refresh results.".to_string()
+            })?;
+            tracked.active_readers = tracked.active_readers.saturating_add(1);
+        }
+        let page = self.engine.result_page(result_id, offset, max_rows);
+        if let Ok(mut state) = self.state.lock() {
+            if let Some(tracked) = state.agent_queries.get_mut(result_id) {
+                tracked.active_readers = tracked.active_readers.saturating_sub(1);
+                if page.is_ok() {
+                    tracked.last_accessed_at = Some(Instant::now());
+                }
+            }
+        }
+        let page = page?;
         if serde_json::to_vec(&page)
             .map_err(|error| error.to_string())?
             .len()
@@ -1380,10 +1617,28 @@ impl AgentAccessManager {
             |grant| grant.analyze,
             "Analyze",
         )?;
+        {
+            let mut state = self.lock()?;
+            let tracked = state.agent_queries.get_mut(result_id).ok_or_else(|| {
+                "agent.result_missing: Use tarik_list_active to refresh results.".to_string()
+            })?;
+            tracked.result_id = None;
+            tracked.cleanup_pending = true;
+            tracked.cleanup_retry_at = None;
+            if tracked.active_readers > 0 {
+                return Ok(true);
+            }
+        }
         match self.engine.release_result(result_id) {
             Ok(()) => {}
             Err(error) if error.contains("result.missing") => {}
-            Err(error) => return Err(error),
+            Err(_) => {
+                if let Some(query) = self.lock()?.agent_queries.get_mut(result_id) {
+                    query.cleanup_attempts = 1;
+                    query.cleanup_retry_at = Some(Instant::now() + CLEANUP_RETRY_BASE);
+                }
+                return Ok(true);
+            }
         }
         self.lock()?.agent_queries.remove(result_id);
         Ok(true)
@@ -2032,12 +2287,39 @@ impl AgentAccessManager {
         Ok(())
     }
 
+    pub fn release_all_results(
+        &self,
+        profile_id: Option<&str>,
+        connection_id: Option<&str>,
+    ) -> Result<u64, String> {
+        if profile_id.is_none() && connection_id.is_none() {
+            return Err("agent.release_scope_required: Select a client or connection.".into());
+        }
+        let result_ids = {
+            let state = self.lock()?;
+            state
+                .agent_queries
+                .values()
+                .filter(|query| query.result_id.is_some())
+                .filter(|query| profile_id.is_none_or(|id| query.profile_id == id))
+                .filter(|query| connection_id.is_none_or(|id| query.origin_connection_id == id))
+                .map(|query| query.execution_id.clone())
+                .collect::<Vec<_>>()
+        };
+        let mut released = 0;
+        for result_id in result_ids {
+            self.remove_result_authority(&result_id);
+            released += 1;
+        }
+        Ok(released)
+    }
+
     pub fn revoke_client(&self, client_id: &str) -> Result<bool, String> {
         let changed = self
             .repository
             .revoke(client_id)
             .map_err(|error| error.to_string())?;
-        let connection_ids = {
+        let (connection_ids, queries) = {
             let mut state = self.lock()?;
             let ids = state
                 .connections
@@ -2053,8 +2335,15 @@ impl AgentAccessManager {
             }) {
                 approval.state = ApprovalState::Denied;
             }
-            ids
+            let queries = state
+                .agent_queries
+                .values()
+                .filter(|query| query.profile_id == client_id)
+                .map(|query| query.execution_id.clone())
+                .collect::<Vec<_>>();
+            (ids, queries)
         };
+        self.invalidate_queries(queries);
         for id in connection_ids {
             self.resource_cleaner().cleanup_connection(&id);
         }
@@ -2074,9 +2363,6 @@ impl AgentAccessManager {
                     .filter(|query| query.project_id == project_id)
                     .map(|query| query.execution_id.clone())
                     .collect::<Vec<_>>();
-                state
-                    .agent_queries
-                    .retain(|_, query| query.project_id != project_id);
                 let profiles = state
                     .profiles
                     .iter()
@@ -2102,10 +2388,7 @@ impl AgentAccessManager {
             }
             Err(_) => return,
         };
-        for query in queries {
-            let _ = self.engine.cancel_query(&query);
-            let _ = self.engine.release_result(&query);
-        }
+        self.invalidate_queries(queries);
         for profile in profiles {
             let _ = self.engine.cancel_profile(&profile);
         }
@@ -2113,17 +2396,64 @@ impl AgentAccessManager {
     }
 
     pub fn shutdown(&self) {
-        if let Ok(mut state) = self.state.lock() {
+        let queries = if let Ok(mut state) = self.state.lock() {
             state.enabled = false;
             state.endpoint_ready = false;
             state.pending.clear();
             state.connections.clear();
             state.sql_snapshots.clear();
-            state.agent_queries.clear();
             state.profiles.clear();
             state.approvals.clear();
-        }
+            state.agent_queries.keys().cloned().collect()
+        } else {
+            Vec::new()
+        };
+        self.invalidate_queries(queries);
         self.resource_cleaner().cleanup_all();
+    }
+
+    fn remove_result_authority(&self, result_id: &str) {
+        let can_delete = if let Ok(mut state) = self.state.lock() {
+            if let Some(query) = state.agent_queries.get_mut(result_id) {
+                query.result_id = None;
+                query.cleanup_pending = true;
+                query.cleanup_retry_at = None;
+                query.active_readers == 0
+            } else {
+                false
+            }
+        } else {
+            false
+        };
+        if can_delete {
+            match self.engine.release_result(result_id) {
+                Ok(()) => {
+                    if let Ok(mut state) = self.state.lock() {
+                        state.agent_queries.remove(result_id);
+                    }
+                }
+                Err(error) if error.contains("result.missing") => {
+                    if let Ok(mut state) = self.state.lock() {
+                        state.agent_queries.remove(result_id);
+                    }
+                }
+                Err(_) => {
+                    if let Ok(mut state) = self.state.lock() {
+                        if let Some(query) = state.agent_queries.get_mut(result_id) {
+                            query.cleanup_attempts = query.cleanup_attempts.saturating_add(1);
+                            query.cleanup_retry_at = Some(Instant::now() + CLEANUP_RETRY_BASE);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn invalidate_queries(&self, query_ids: Vec<String>) {
+        for query_id in query_ids {
+            let _ = self.engine.cancel_query(&query_id);
+            self.remove_result_authority(&query_id);
+        }
     }
 
     fn authenticated_connection(
@@ -2383,6 +2713,24 @@ fn sql_snapshot_hash(
     hash.update(classification.catalog_revision.as_bytes());
     hash.update([classification.decision as u8]);
     hex(&hash.finalize())
+}
+
+fn result_expired(
+    now: Instant,
+    published_at: Option<Instant>,
+    last_accessed_at: Option<Instant>,
+) -> bool {
+    published_at.is_some_and(|published| {
+        now.duration_since(published) >= RESULT_ABSOLUTE_LIFETIME
+            || now.duration_since(last_accessed_at.unwrap_or(published)) >= RESULT_IDLE_LIFETIME
+    })
+}
+
+fn cleanup_retry_delay(attempts: u32) -> Duration {
+    let shift = attempts.saturating_sub(1).min(5);
+    CLEANUP_RETRY_BASE
+        .saturating_mul(1u32 << shift)
+        .min(CLEANUP_RETRY_MAX)
 }
 
 fn query_charged_bytes(query: &AgentQuery) -> u64 {
@@ -2685,6 +3033,17 @@ pub fn revoke_agent_client(
 }
 
 #[tauri::command]
+pub fn release_agent_results(
+    scope: AgentResultReleaseScope,
+    manager: tauri::State<'_, Arc<AgentAccessManager>>,
+) -> Result<u64, String> {
+    manager.release_all_results(
+        scope.client_profile_id.as_deref(),
+        scope.connection_id.as_deref(),
+    )
+}
+
+#[tauri::command]
 pub fn list_agent_approvals(
     manager: tauri::State<'_, Arc<AgentAccessManager>>,
 ) -> Result<Vec<ApprovalRequestView>, String> {
@@ -2783,6 +3142,83 @@ mod tests {
         manager.set_enabled(true).unwrap();
         manager.set_enabled(false).unwrap();
         assert_eq!(cleaner.0.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn result_expiry_distinguishes_idle_absolute_and_read_lease() {
+        let now = Instant::now();
+        assert!(!result_expired(now, Some(now), Some(now)));
+        assert!(result_expired(
+            now,
+            Some(now - RESULT_ABSOLUTE_LIFETIME),
+            Some(now)
+        ));
+        assert!(result_expired(
+            now,
+            Some(now - RESULT_IDLE_LIFETIME),
+            Some(now - RESULT_IDLE_LIFETIME)
+        ));
+    }
+
+    #[test]
+    fn maintenance_sleep_gap_adds_grace_without_refreshing_heartbeat() {
+        let (manager, _) = fixture();
+        let (_, connection_id) = pair_and_authenticate(&manager);
+        let stale_heartbeat = Instant::now() - CONNECTION_LEASE - Duration::from_secs(1);
+        {
+            let mut state = manager.lock().unwrap();
+            state.last_maintenance = Some(
+                Instant::now() - MAINTENANCE_INTERVAL - RESUME_SAFE_GRACE - Duration::from_secs(1),
+            );
+            state
+                .connections
+                .get_mut(&connection_id)
+                .unwrap()
+                .last_heartbeat = stale_heartbeat;
+        }
+        manager.maintain();
+        let state = manager.lock().unwrap();
+        let connection = state.connections.get(&connection_id).unwrap();
+        assert_eq!(connection.last_heartbeat, stale_heartbeat);
+        assert!(connection
+            .resume_grace_until
+            .is_some_and(|grace_until| grace_until > Instant::now()));
+    }
+
+    #[test]
+    fn cleanup_retry_backoff_is_bounded() {
+        assert_eq!(cleanup_retry_delay(1), Duration::from_secs(2));
+        assert_eq!(cleanup_retry_delay(2), Duration::from_secs(4));
+        assert_eq!(cleanup_retry_delay(6), Duration::from_secs(60));
+        assert_eq!(cleanup_retry_delay(u32::MAX), Duration::from_secs(60));
+    }
+
+    #[test]
+    fn authenticated_heartbeat_refreshes_the_connection_lease() {
+        let (manager, _) = fixture();
+        let (_, connection_id) = pair_and_authenticate(&manager);
+        {
+            let mut state = manager.lock().unwrap();
+            state
+                .connections
+                .get_mut(&connection_id)
+                .unwrap()
+                .last_heartbeat = Instant::now() - Duration::from_secs(90);
+        }
+        let heartbeat = manager.heartbeat(&connection_id).unwrap();
+        assert_eq!(heartbeat.connection_id, connection_id);
+        assert_eq!(heartbeat.lease_seconds, CONNECTION_LEASE.as_secs());
+        assert!(
+            manager
+                .lock()
+                .unwrap()
+                .connections
+                .get(&connection_id)
+                .unwrap()
+                .last_heartbeat
+                .elapsed()
+                < Duration::from_secs(1)
+        );
     }
 
     #[test]
@@ -3037,6 +3473,7 @@ mod tests {
             Some(result_id.as_str())
         );
 
+        manager.disconnect(&connection_id).unwrap();
         let reconnect = manager.hello(&profile_id, "Pi reconnect", None).unwrap();
         let stored = manager
             .repository
@@ -3069,6 +3506,7 @@ mod tests {
             .release_result(&reconnect.connection_id, &result_id)
             .unwrap());
 
+        let connection_id = reconnect.connection_id;
         let critical = manager
             .classify_sql(&connection_id, &project.id, "DELETE FROM orders")
             .unwrap();

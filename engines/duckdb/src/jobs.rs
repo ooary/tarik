@@ -360,16 +360,18 @@ impl JobRegistry {
         Ok((clone_result_meta(result), page))
     }
 
-    /// Delete a published result and its page artifacts.
+    /// Delete a published result and its page artifacts. The registry keeps the
+    /// result authoritative when deletion fails so a bounded caller can retry.
     pub fn release_result(&self, result_id: &str) -> Result<(), EngineError> {
         let page_dir = {
-            let mut inner = self.lock()?;
-            let Some(result) = inner.results.remove(result_id) else {
+            let inner = self.lock()?;
+            let Some(result) = inner.results.get(result_id) else {
                 return Err(EngineError::ResultMissing(result_id.to_string()));
             };
-            result.page_dir
+            result.page_dir.clone()
         };
-        pages::discard_dir(&page_dir);
+        pages::release_dir(&page_dir)?;
+        self.lock()?.results.remove(result_id);
         Ok(())
     }
 

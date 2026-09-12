@@ -319,6 +319,21 @@ impl TarikMcpServer {
         }
         status
     }
+
+    pub fn heartbeat(&self) {
+        if let Ok(mut state) = self.state.lock() {
+            if ensure_authenticated_bridge(&mut state).is_ok() {
+                if let Some(bridge) = state.bridge.as_mut() {
+                    if bridge.heartbeat().is_err() {
+                        state.bridge = None;
+                        state.status = unavailable_status(
+                            "The Tarik desktop connection closed. Retry a tool to reconnect.",
+                        );
+                    }
+                }
+            }
+        }
+    }
 }
 
 #[tool_router]

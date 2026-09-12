@@ -24,15 +24,25 @@ async fn run() -> Result<(), String> {
     let options = parse_options(std::env::args().skip(1))?;
     let server = TarikMcpServer::new(options.profile, options.label);
     let _ = server.connect();
+    let heartbeat_server = server.clone();
+    let heartbeat = tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
+        loop {
+            interval.tick().await;
+            heartbeat_server.heartbeat();
+        }
+    });
     let service = server
         .serve(rmcp::transport::stdio())
         .await
         .map_err(|error| format!("could not start MCP stdio transport: {error}"))?;
-    service
+    let result = service
         .waiting()
         .await
-        .map_err(|error| format!("MCP stdio transport stopped: {error}"))?;
-    Ok(())
+        .map(|_| ())
+        .map_err(|error| format!("MCP stdio transport stopped: {error}"));
+    heartbeat.abort();
+    result
 }
 
 fn parse_options(arguments: impl IntoIterator<Item = String>) -> Result<Options, String> {

@@ -32,6 +32,7 @@ use crate::{
 const DESCRIPTOR_FILE: &str = "bridge.json";
 const SOCKET_FILE: &str = "bridge.sock";
 const MAX_TRANSPORT_CONNECTIONS: usize = 4;
+const REAPER_INTERVAL: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -54,6 +55,7 @@ pub struct AgentBridge {
 struct BridgeRuntime {
     stop: Arc<AtomicBool>,
     thread: Option<JoinHandle<()>>,
+    reaper: Option<JoinHandle<()>>,
 }
 
 impl AgentBridge {
@@ -101,6 +103,16 @@ impl AgentBridge {
         let stop = Arc::new(AtomicBool::new(false));
         let stop_thread = stop.clone();
         let access = self.access.clone();
+        let reaper_stop = stop.clone();
+        let reaper_access = access.clone();
+        let reaper = thread::Builder::new()
+            .name("tarik-agent-reaper".into())
+            .spawn(move || {
+                while !sleep_until_stopped(&reaper_stop, REAPER_INTERVAL) {
+                    reaper_access.maintain();
+                }
+            })
+            .map_err(|error| format!("agent.bridge_start_failed: {error}"))?;
         let destinations = self.destinations.clone();
         let exports = self.exports.clone();
         let logger = self.logger.clone();
@@ -122,6 +134,7 @@ impl AgentBridge {
         *runtime = Some(BridgeRuntime {
             stop,
             thread: Some(thread),
+            reaper: Some(reaper),
         });
         self.access.set_endpoint_ready(true);
         Ok(descriptor)
@@ -138,10 +151,25 @@ impl AgentBridge {
             if let Some(thread) = runtime.thread.take() {
                 let _ = thread.join();
             }
+            if let Some(reaper) = runtime.reaper.take() {
+                let _ = reaper.join();
+            }
         }
         self.access.set_endpoint_ready(false);
         cleanup_runtime(&self.runtime_dir);
     }
+}
+
+fn sleep_until_stopped(stop: &AtomicBool, duration: Duration) -> bool {
+    let step = Duration::from_millis(50);
+    let started = std::time::Instant::now();
+    while started.elapsed() < duration {
+        if stop.load(Ordering::Acquire) {
+            return true;
+        }
+        thread::sleep(step.min(duration.saturating_sub(started.elapsed())));
+    }
+    stop.load(Ordering::Acquire)
 }
 
 impl Drop for AgentBridge {
@@ -456,6 +484,10 @@ fn dispatch(
             .map_err(|error| error.to_string()),
         BridgeAction::Status { connection_id } => {
             serde_json::to_value(access.connection_status(&connection_id)?)
+                .map_err(|error| error.to_string())
+        }
+        BridgeAction::Heartbeat { connection_id } => {
+            serde_json::to_value(access.heartbeat(&connection_id)?)
                 .map_err(|error| error.to_string())
         }
         BridgeAction::ListProjects { connection_id } => {

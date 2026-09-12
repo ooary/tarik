@@ -18,7 +18,8 @@ use tarik_agent_protocol::{
     AgentActiveList, AgentExecutionResult, AgentExportIntent, AgentExportReleaseResult,
     AgentExportView, AgentResultPage, ApprovalResult, AuthenticationResult, BridgeAction,
     BridgeRequest, BridgeResponse, CatalogPageResult, ExportDestinationList, GrantedProjectsResult,
-    HelloResult, RelationDescriptionResult, SqlSnapshotResult, MAX_BRIDGE_MESSAGE_BYTES,
+    HeartbeatResult, HelloResult, RelationDescriptionResult, SqlSnapshotResult,
+    MAX_BRIDGE_MESSAGE_BYTES,
 };
 use zeroize::Zeroizing;
 
@@ -107,6 +108,12 @@ impl BridgeClient {
 
     pub fn list_projects(&mut self) -> Result<GrantedProjectsResult, String> {
         self.request(BridgeAction::ListProjects {
+            connection_id: self.connection_id()?,
+        })
+    }
+
+    pub fn heartbeat(&mut self) -> Result<HeartbeatResult, String> {
+        self.request(BridgeAction::Heartbeat {
             connection_id: self.connection_id()?,
         })
     }

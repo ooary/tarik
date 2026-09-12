@@ -187,6 +187,18 @@ pub fn discard_dir(dir: &Path) {
     let _ = fs::remove_dir_all(dir);
 }
 
+/// Discard a published result directory and report file-lock or permission failures.
+pub fn release_dir(dir: &Path) -> Result<(), EngineError> {
+    match fs::remove_dir_all(dir) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(EngineError::CacheIo {
+            path: dir.to_path_buf(),
+            source: error.into(),
+        }),
+    }
+}
+
 /// Read the page file covering `offset` and convert up to `max_rows` rows of
 /// the window into JSON-safe cells.
 pub struct PageRead {
