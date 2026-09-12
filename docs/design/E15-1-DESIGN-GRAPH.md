@@ -253,7 +253,8 @@ D1 choose_destination_in_tarik (1)
 └→ D2 canonicalize_destination (1)
    │ A: trusted local destination identity
    │ R: filesystem/platform path policy
-   │ E: root/network/reparse/app/project/cache path ↯escape(DestinationUnsafe)
+   │ E: root/network/reparse/app/cache/managed-project path ↯escape(DestinationUnsafe)
+   │ A: custom folders containing external DuckDB project files remain selectable
    └→ D3 configure_delegation (1)
       │ A: bounded formats/chunk/byte policy
       │ R: visible Tarik policy editor

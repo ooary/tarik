@@ -2,11 +2,11 @@
 
 ## Verdict and evidence boundary
 
-**Status:** implementation candidate; manual sign-off required. Do not mark E15.1 complete from this packet alone.
+**Status:** Linux real-Tauri Agent Access and custom-destination workflow accepted September 12, 2026; native Windows and final cross-platform sign-off remain required. Do not mark E15.1 complete from this packet alone.
 
 This packet consolidates the E15.1 connection assistant, portable workflow guidance, private reusable export destinations, and guarded complete-query CSV/Parquet exports. Automated Linux evidence is recorded below. Native Windows host/configuration/filesystem/runtime evidence and real-Tauri visual/accessibility approval were explicitly postponed and are not claimed.
 
-The local artifacts described here are **review artifacts**, not publication artifacts. They were built while the intentionally uncommitted Agent Access UI candidate was present. Their manifest must record `sourceDirty: true`. Final publication requires a clean tagged tree and a regenerated manifest with `sourceDirty: false`.
+The local artifacts described here are **historical review artifacts**, not publication artifacts. They were built before the accepted Agent Access UI was committed, so their manifest correctly records `sourceDirty: true`. Final publication requires a clean tagged tree and regenerated artifacts with `sourceDirty: false`.
 
 E15 remains independently in review. E12/E13 Windows, E6/E7/E10, clean-machine, signing, and final release gates are not inherited or closed by E15.1.
 
@@ -20,6 +20,8 @@ E15 remains independently in review. E12/E13 Windows, E6/E7/E10, clean-machine, 
 | Portable MCP guidance                | `ec2bc61`                  |
 | Delegated destinations               | `d3862f5`                  |
 | Guarded chunked exports              | `8b9fce6`                  |
+| Custom external-project-folder fix   | `c0e1cf0`                  |
+| Accepted Linux Agent Access UI       | `389345b`                  |
 | Metadata schema                      | 11                         |
 | Private desktop ↔ `tarik-mcp` bridge | 3                          |
 | Desktop ↔ DuckDB engine protocol     | 2                          |
@@ -54,7 +56,7 @@ Bridge protocol 3 is intentionally incompatible with an older `tarik-mcp`. Engin
 - Stores canonical path and directory identity privately in schema 11; the path-bearing record has no serialization surface.
 - Binds each opaque destination ID to one paired client, one active project, and Analyze authority; caps at eight per client/project.
 - Allows only CSV/Parquet, 1–1,000,000 rows per part, and 1 byte–100 GiB total quota.
-- Rejects roots, files, symlinks/reparse ancestors, non-user ownership, remote/network filesystem classes, and Tarik/project overlap.
+- Rejects roots, files, symlinks/reparse ancestors, non-user ownership, remote/network filesystem classes, Tarik data/cache/log overlap, and managed-project storage overlap. A custom folder may also contain an externally opened DuckDB file; typed output names and collision controls still govern publication.
 - Separates readiness from enabled state and revalidates folder identity before use.
 - Deletes grants when Analyze/project authority is removed or the client is revoked.
 - MCP can list only ID, label, formats, quota, create-new-only, enabled/readiness, and revision. It has no destination mutation/path tool.
@@ -201,7 +203,7 @@ Use a disposable project and destination. Start from freshly built/package-match
 - [ ] Create a destination with a non-sensitive label, CSV/Parquet formats, rows-per-part, and byte quota.
 - [ ] Confirm no absolute path appears in MCP listing, UI rows, logs, audit, or copied status.
 - [ ] Disable and re-enable. Move/replace the folder and confirm **Repair required** before choosing a replacement directly in Tarik.
-- [ ] Try root, file, symlink/reparse, non-owned, remote/network, Tarik data/cache/log, project parent, and excessive-entry paths; confirm fail-closed behavior.
+- [ ] Try root, file, symlink/reparse, non-owned, remote/network, Tarik data/cache/log, managed-project storage, and excessive-entry paths; confirm fail-closed behavior. Confirm a custom folder containing an external DuckDB project remains allowed.
 
 ### F. Delegated CSV and Parquet
 
@@ -273,7 +275,7 @@ Review light/dark/system themes, minimum 680x520 viewport, keyboard-only navigat
 - [ ] Connection assistant behavior approved.
 - [ ] MCP prompts/instructions and optional Agent Skill approved.
 - [ ] Pairing/project-grant authority and path redaction approved.
-- [ ] Destination policy and repair/revoke workflow approved.
+- [x] Linux native-picker destination creation, custom external-project-parent folder policy, validation presentation, and destination UI approved September 12, 2026. Native Windows repair/revoke/filesystem evidence remains separately open below.
 - [ ] Complete CSV/Parquet export, quota, cancellation, release, and recovery approved.
 - [ ] Ordinary export approval and critical replacement UX approved.
 - [ ] Light/dark/system, minimum viewport, keyboard, screen reader, and reduced motion approved.
