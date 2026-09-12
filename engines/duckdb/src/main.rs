@@ -4,6 +4,7 @@ mod catalog;
 mod error;
 pub mod export;
 mod export_jobs;
+mod import_jobs;
 mod jobs;
 mod pages;
 mod profile;
@@ -60,8 +61,19 @@ fn dispatch(
     jobs: &std::sync::Arc<jobs::JobRegistry>,
     exports: &std::sync::Arc<export_jobs::ExportRegistry>,
     profiles: &std::sync::Arc<profile::ProfileRegistry>,
+    imports: &std::sync::Arc<import_jobs::ImportRegistry>,
 ) -> Result<Value, EngineError> {
     let params = &request.params;
+    if let Some(session_id) = params.get("sessionId").and_then(Value::as_str) {
+        if imports.has_active_session(session_id)?
+            && !matches!(
+                request.method.as_str(),
+                "session.resources" | "session.close"
+            )
+        {
+            return Err(EngineError::ImportBusy);
+        }
+    }
     match request.method.as_str() {
         "engine.handshake" => Ok(serde_json::to_value(engine_info())?),
         "engine.shutdown" => {
@@ -185,6 +197,38 @@ fn dispatch(
                 &view_name,
             )?)?)
         }
+        "import.execute" => {
+            let session_id = required_string(params, "sessionId")?;
+            if jobs.has_active_session(&session_id)?
+                || exports.has_active_session(&session_id)?
+                || profiles.has_active_session(&session_id)?
+            {
+                return Err(EngineError::ImportBusy);
+            }
+            let import_id = required_string(params, "importId")?;
+            let request = serde_json::from_value(
+                params
+                    .get("request")
+                    .cloned()
+                    .ok_or_else(|| EngineError::MissingField("request".into()))?,
+            )?;
+            imports.execute(
+                &session_id,
+                &import_id,
+                request,
+                sessions.get(&session_id)?.try_clone()?,
+                sessions.resources(&session_id)?,
+            )?;
+            Ok(serde_json::to_value(imports.status(&import_id)?)?)
+        }
+        "import.status" => {
+            let id = required_string(params, "importId")?;
+            Ok(serde_json::to_value(imports.status(&id)?)?)
+        }
+        "import.cancel" => {
+            let id = required_string(params, "importId")?;
+            Ok(serde_json::to_value(imports.cancel(&id)?)?)
+        }
         "duckdb.source.import_table" => {
             let session_id = required_string(params, "sessionId")?;
             let project_id = required_string(params, "projectId")?;
@@ -256,6 +300,10 @@ fn dispatch(
         "session.close" => {
             let session_id = required_string(params, "sessionId")?;
             // Cancel queued/running jobs first so closing cannot strand work.
+            imports.cancel_session(&session_id);
+            if imports.has_active_session(&session_id)? {
+                return Err(EngineError::ImportBusy);
+            }
             jobs.cancel_session(&session_id);
             exports.cancel_session(&session_id);
             profiles.cancel_session(&session_id);
@@ -423,6 +471,7 @@ fn main() {
     let jobs = std::sync::Arc::new(jobs::JobRegistry::new());
     let exports = std::sync::Arc::new(export_jobs::ExportRegistry::new());
     let profiles = std::sync::Arc::new(profile::ProfileRegistry::new());
+    let imports = std::sync::Arc::new(import_jobs::ImportRegistry::new());
     let stdin = std::io::stdin();
     let stdout = std::io::stdout();
     let mut out = stdout.lock();
@@ -437,7 +486,14 @@ fn main() {
         }
 
         let response = match serde_json::from_str::<RequestEnvelope>(&line) {
-            Ok(request) => match dispatch(&request, &mut sessions, &jobs, &exports, &profiles) {
+            Ok(request) => match dispatch(
+                &request,
+                &mut sessions,
+                &jobs,
+                &exports,
+                &profiles,
+                &imports,
+            ) {
                 Ok(result) => ResponseEnvelope::ok(request.id, result),
                 Err(error) => ResponseEnvelope::err(
                     request.id.clone(),
@@ -490,6 +546,7 @@ mod tests {
             &std::sync::Arc::new(jobs::JobRegistry::new()),
             &std::sync::Arc::new(export_jobs::ExportRegistry::new()),
             &std::sync::Arc::new(profile::ProfileRegistry::new()),
+            &std::sync::Arc::new(import_jobs::ImportRegistry::new()),
         )
         .unwrap_err();
         assert_eq!(error.code(), "method.not_found");
@@ -514,6 +571,7 @@ mod tests {
             &std::sync::Arc::new(jobs::JobRegistry::new()),
             &std::sync::Arc::new(export_jobs::ExportRegistry::new()),
             &std::sync::Arc::new(profile::ProfileRegistry::new()),
+            &std::sync::Arc::new(import_jobs::ImportRegistry::new()),
         )
         .unwrap_err();
         assert_eq!(error.code(), "source.invalid_options");

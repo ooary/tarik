@@ -244,8 +244,16 @@ pub async fn import_source_table(
 }
 
 #[tauri::command]
-pub fn cancel_source_operation(manager: State<'_, ProjectManager>) -> Result<bool, String> {
-    manager.interrupt().map_err(|error| error.to_string())
+pub async fn cancel_source_operation(manager: State<'_, ProjectManager>) -> Result<bool, String> {
+    let manager = manager.inner().clone();
+    blocking(move || manager.interrupt()).await
+}
+
+#[tauri::command]
+pub fn get_source_import_status(
+    manager: State<'_, ProjectManager>,
+) -> Option<tarik_engine_protocol::ImportStatus> {
+    manager.source_import_status()
 }
 
 #[tauri::command]

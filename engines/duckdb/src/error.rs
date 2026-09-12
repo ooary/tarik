@@ -81,6 +81,18 @@ pub enum EngineError {
     },
     #[error("export writer failed at {path}: {message}")]
     ExportWrite { path: PathBuf, message: String },
+    #[error("import already exists: {0}")]
+    ImportExists(String),
+    #[error("import does not exist: {0}")]
+    ImportMissing(String),
+    #[error("an import is already active for this session")]
+    ImportBusy,
+    #[error("the source changed after it was inspected")]
+    ImportSourceChanged,
+    #[error("import was cancelled")]
+    ImportCancelled,
+    #[error("import failed and rollback could not be confirmed: {0}")]
+    ImportRecoveryRequired(String),
     #[error("source file does not exist: {0}")]
     Missing(PathBuf),
     #[error("unsupported source type: {0}")]
@@ -146,6 +158,12 @@ impl EngineError {
             Self::ExportCollision(_) => "export.collision",
             Self::ExportIo { .. } => "export.io",
             Self::ExportWrite { .. } => "export.write",
+            Self::ImportExists(_) => "import.exists",
+            Self::ImportMissing(_) => "import.missing",
+            Self::ImportBusy => "import.busy",
+            Self::ImportSourceChanged => "import.source_changed",
+            Self::ImportCancelled => "import.cancelled",
+            Self::ImportRecoveryRequired(_) => "import.recovery_required",
             Self::Missing(_) => "source.missing",
             Self::Unsupported(_) => "source.unsupported",
             Self::InvalidPath(_) => "source.invalid_path",

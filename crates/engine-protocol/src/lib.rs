@@ -855,6 +855,47 @@ pub struct ImportOptions {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct ImportRequest {
+    pub project_id: String,
+    pub path: String,
+    pub expected_file_size_bytes: u64,
+    pub options: ImportOptions,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ImportState {
+    Queued,
+    Running,
+    Succeeded,
+    Failed,
+    Cancelled,
+    RecoveryRequired,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ImportStage {
+    Queued,
+    Validating,
+    ReadingAndWriting,
+    Finalizing,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportStatus {
+    pub import_id: String,
+    pub state: ImportState,
+    pub stage: ImportStage,
+    pub duration_ms: u64,
+    pub effective_resources: EffectiveEngineResources,
+    pub source: Option<SourceRecord>,
+    pub error: Option<ErrorEnvelope>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SourceRecord {
     pub id: String,
     pub project_id: String,

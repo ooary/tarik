@@ -389,6 +389,22 @@ export interface SourceRecord {
   updatedAt: string;
 }
 
+export interface SourceImportStatus {
+  importId: string;
+  state: "queued" | "running" | "succeeded" | "failed" | "cancelled" | "recovery_required";
+  stage: "queued" | "validating" | "reading_and_writing" | "finalizing";
+  durationMs: number;
+  effectiveResources: { memoryLimitMib: number; threads: number };
+  source: SourceRecord | null;
+  error: { code: string; message: string } | null;
+}
+
+export function getSourceImportStatus(
+  invokeCommand: InvokeCommand = invoke,
+): Promise<SourceImportStatus | null> {
+  return invokeCommand<SourceImportStatus | null>("get_source_import_status");
+}
+
 export interface SourceMutationResult {
   source: SourceRecord;
   inspection: SourceInspection;

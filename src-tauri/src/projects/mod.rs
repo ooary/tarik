@@ -36,6 +36,7 @@ pub struct ProjectManager {
     projects_root: PathBuf,
     engine: Arc<EngineManager>,
     active: Arc<Mutex<Option<ActiveProject>>>,
+    source_import: Arc<Mutex<Option<tarik_engine_protocol::ImportStatus>>>,
 }
 
 impl ProjectManager {
@@ -45,6 +46,7 @@ impl ProjectManager {
             projects_root,
             engine,
             active: Arc::new(Mutex::new(None)),
+            source_import: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -116,14 +118,13 @@ impl ProjectManager {
     }
 
     pub fn close(&self) -> Result<bool, ProjectError> {
-        let project = self.lock()?.take();
-        match project {
-            Some(_) => {
-                self.engine.close_session().map_err(ProjectError::Engine)?;
-                Ok(true)
-            }
-            None => Ok(false),
+        let mut active = self.lock()?;
+        if active.is_none() {
+            return Ok(false);
         }
+        self.engine.close_session().map_err(ProjectError::Engine)?;
+        *active = None;
+        Ok(true)
     }
 
     pub fn rename(&self, project_id: &str, new_name: &str) -> Result<RecentProject, ProjectError> {
@@ -306,14 +307,73 @@ impl ProjectManager {
         options: ImportOptions,
     ) -> Result<SourceRecord, ProjectError> {
         let active = self.require_active()?;
-        self.engine
-            .import_table(
-                &active.id,
-                path.to_str()
-                    .ok_or_else(|| ProjectError::InvalidPath(path.clone()))?,
-                options,
+        let request = tarik_engine_protocol::ImportRequest {
+            project_id: active.id,
+            path: path
+                .to_str()
+                .ok_or_else(|| ProjectError::InvalidPath(path.clone()))?
+                .into(),
+            expected_file_size_bytes: path
+                .metadata()
+                .map_err(|error| ProjectError::Engine(error.to_string()))?
+                .len(),
+            options,
+        };
+        let id = Uuid::new_v4().to_string();
+        let mut tracked = self.source_import.lock().map_err(|_| ProjectError::Lock)?;
+        if tracked.as_ref().is_some_and(|status| {
+            matches!(
+                status.state,
+                tarik_engine_protocol::ImportState::Queued
+                    | tarik_engine_protocol::ImportState::Running
             )
-            .map_err(ProjectError::Engine)
+        }) {
+            return Err(ProjectError::Engine(
+                "import.busy: an import is already active".into(),
+            ));
+        }
+        *tracked = Some(
+            self.engine
+                .start_import(&id, &request)
+                .map_err(ProjectError::Engine)?,
+        );
+        drop(tracked);
+        loop {
+            std::thread::sleep(std::time::Duration::from_millis(300));
+            let status = self
+                .engine
+                .import_status(&id)
+                .map_err(ProjectError::Engine)?;
+            *self.source_import.lock().map_err(|_| ProjectError::Lock)? = Some(status.clone());
+            match status.state {
+                tarik_engine_protocol::ImportState::Queued
+                | tarik_engine_protocol::ImportState::Running => {}
+                tarik_engine_protocol::ImportState::Succeeded => {
+                    return status.source.ok_or_else(|| {
+                        ProjectError::Engine(
+                            "import.recovery_required: missing source record".into(),
+                        )
+                    })
+                }
+                _ => {
+                    return Err(ProjectError::Engine(
+                        status
+                            .error
+                            .map(|error| format!("{}: {}", error.code, error.message))
+                            .unwrap_or_else(|| {
+                                "import.cancelled: Import cancelled; no table was created.".into()
+                            }),
+                    ))
+                }
+            }
+        }
+    }
+
+    pub fn source_import_status(&self) -> Option<tarik_engine_protocol::ImportStatus> {
+        self.source_import
+            .lock()
+            .ok()
+            .and_then(|status| status.clone())
     }
 
     pub fn repair_link(
@@ -378,6 +438,19 @@ impl ProjectManager {
 
     pub fn interrupt(&self) -> Result<bool, ProjectError> {
         self.require_active()?;
+        let status = self.source_import_status();
+        if let Some(status) = status {
+            if matches!(
+                status.state,
+                tarik_engine_protocol::ImportState::Queued
+                    | tarik_engine_protocol::ImportState::Running
+            ) {
+                self.engine
+                    .cancel_import(&status.import_id)
+                    .map_err(ProjectError::Engine)?;
+                return Ok(true);
+            }
+        }
         Ok(false)
     }
 

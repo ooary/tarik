@@ -1,6 +1,7 @@
 import { XIcon } from "@phosphor-icons/react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { getSourceImportStatus, type SourceImportStatus } from "../../lib/commands";
 import type { CsvOptions, ImportOptions, SourceInspection } from "../../lib/commands";
 import { formatCompactCount, formatFileSize } from "./format";
 
@@ -53,6 +54,27 @@ export function ImportDialog({
     },
   );
   const [overrides, setOverrides] = useState<Record<string, string>>({});
+  const [progress, setProgress] = useState<SourceImportStatus | null>(null);
+  const [cancelling, setCancelling] = useState(false);
+  useEffect(() => {
+    if (!busy || action !== "import") return;
+    let disposed = false;
+    let timer: ReturnType<typeof setTimeout>;
+    async function poll() {
+      try {
+        const status = await getSourceImportStatus();
+        if (!disposed) setProgress(status);
+      } catch {
+        /* The submit command owns terminal errors. */
+      }
+      if (!disposed) timer = setTimeout(() => void poll(), 400);
+    }
+    void poll();
+    return () => {
+      disposed = true;
+      clearTimeout(timer);
+    };
+  }, [busy, action]);
 
   const importOptions = useMemo<ImportOptions>(
     () => ({
@@ -87,6 +109,27 @@ export function ImportDialog({
           </header>
 
           <div className="import-dialog-body">
+            {busy && (
+              <section aria-label="Import progress" role="status" aria-live="polite">
+                <strong>
+                  {cancelling
+                    ? "Cancelling import…"
+                    : progress?.stage === "finalizing"
+                      ? "Finalizing table…"
+                      : "Reading and writing source…"}
+                </strong>
+                <p>
+                  {progress
+                    ? `${Math.floor(progress.durationMs / 1000)} seconds elapsed · ${progress.effectiveResources.memoryLimitMib / 1024} GiB limit · ${progress.effectiveResources.threads} threads`
+                    : "Preparing operation…"}
+                </p>
+                <p>
+                  {cancelling
+                    ? "Waiting for DuckDB to finish rollback."
+                    : "DuckDB does not provide an exact percentage for this operation."}
+                </p>
+              </section>
+            )}
             <div className="import-file-summary">
               <strong>{inspection.path.split(/[\\/]/).pop()}</strong>
               <span>{inspection.path}</span>
@@ -283,7 +326,15 @@ export function ImportDialog({
 
           <footer className="import-dialog-footer">
             {busy ? (
-              <button className="toolbar-button" onClick={onCancel} type="button">
+              <button
+                className="toolbar-button"
+                disabled={cancelling}
+                onClick={() => {
+                  setCancelling(true);
+                  onCancel();
+                }}
+                type="button"
+              >
                 Cancel operation
               </button>
             ) : (

@@ -9,8 +9,7 @@ use tarik_engine_client::EngineProcess;
 use tarik_engine_protocol::{
     AgentMutationResult, AgentSqlClassification, CatalogSnapshot, CreateTableDefinition,
     CsvOptions, EffectiveEngineResources, EngineResourceSettings, ExportOptions, ExportStatus,
-    ImportOptions, ProfileRequest, ProfileStatus, ProjectLocator, SourceInspection, SourceRecord,
-    SqlValidation,
+    ProfileRequest, ProfileStatus, ProjectLocator, SourceInspection, SourceRecord, SqlValidation,
 };
 
 pub struct EngineManager {
@@ -392,21 +391,40 @@ impl EngineManager {
         serde_json::from_value(value).map_err(|error| format!("source decode failed: {error}"))
     }
 
-    pub fn import_table(
+    pub fn start_import(
         &self,
-        project_id: &str,
-        path: &str,
-        options: ImportOptions,
-    ) -> Result<SourceRecord, String> {
+        import_id: &str,
+        request: &tarik_engine_protocol::ImportRequest,
+    ) -> Result<tarik_engine_protocol::ImportStatus, String> {
         let value = self.session_request(
-            "duckdb.source.import_table",
+            "import.execute",
             serde_json::json!({
-                "projectId": project_id,
-                "path": path,
-                "options": options,
+                "importId": import_id, "request": request,
             }),
         )?;
-        serde_json::from_value(value).map_err(|error| format!("source decode failed: {error}"))
+        serde_json::from_value(value).map_err(|error| error.to_string())
+    }
+
+    pub fn import_status(
+        &self,
+        import_id: &str,
+    ) -> Result<tarik_engine_protocol::ImportStatus, String> {
+        let value = self.raw_request(
+            "import.status",
+            serde_json::json!({ "importId": import_id }),
+        )?;
+        serde_json::from_value(value).map_err(|error| error.to_string())
+    }
+
+    pub fn cancel_import(
+        &self,
+        import_id: &str,
+    ) -> Result<tarik_engine_protocol::ImportStatus, String> {
+        let value = self.raw_request(
+            "import.cancel",
+            serde_json::json!({ "importId": import_id }),
+        )?;
+        serde_json::from_value(value).map_err(|error| error.to_string())
     }
 
     pub fn repair_link(

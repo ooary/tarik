@@ -89,10 +89,13 @@ fn get_runtime_info() -> RuntimeInfo {
 }
 
 #[tauri::command]
-fn get_engine_status(
+async fn get_engine_status(
     engine: State<'_, Arc<engine_manager::EngineManager>>,
-) -> engine_manager::EngineStatus {
-    engine.status()
+) -> Result<engine_manager::EngineStatus, String> {
+    let engine = engine.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || engine.status())
+        .await
+        .map_err(|error| error.to_string())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -334,6 +337,7 @@ pub fn run() {
             projects::commands::link_parquet_source,
             projects::commands::import_source_table,
             projects::commands::cancel_source_operation,
+            projects::commands::get_source_import_status,
             projects::commands::repair_linked_source,
             projects::commands::create_table,
             projects::commands::drop_catalog_object,

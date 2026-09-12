@@ -159,51 +159,119 @@ pub fn import_table(
     path: &Path,
     options: &ImportOptions,
 ) -> Result<SourceRecord, EngineError> {
+    let expected_file_size_bytes = source_size(path)?;
+    import_table_checked(
+        connection,
+        project_id,
+        path,
+        expected_file_size_bytes,
+        options,
+        || {},
+    )
+}
+
+pub fn import_table_checked(
+    connection: &Connection,
+    project_id: &str,
+    path: &Path,
+    expected_file_size_bytes: u64,
+    options: &ImportOptions,
+    mut finalizing: impl FnMut(),
+) -> Result<SourceRecord, EngineError> {
     let format = detect_format(path)?;
     validate_import_options(options)?;
-    let inspection = inspect(path, options.csv.as_ref())?;
+    let file_size_bytes = source_size(path)?;
+    if file_size_bytes != expected_file_size_bytes {
+        return Err(EngineError::ImportSourceChanged);
+    }
     let identifier = quote_identifier(&options.table_name)?;
     let relation = relation_sql(path, format, options.csv.as_ref())?;
+    let projection = import_projection(connection, &relation, options)?;
+
     connection.execute_batch("BEGIN TRANSACTION")?;
-    let import_result = (|| -> Result<(), EngineError> {
+    let import_result = (|| -> Result<SourceRecord, EngineError> {
         connection.execute_batch(&format!(
-            "CREATE TABLE {identifier} AS SELECT * FROM {relation}"
+            "CREATE TABLE {identifier} AS SELECT {projection} FROM {relation}"
         ))?;
-        for override_column in &options.column_overrides {
-            let column = quote_identifier(&override_column.column)?;
-            validate_type(&override_column.data_type)?;
-            connection.execute_batch(&format!(
-                "ALTER TABLE {identifier} ALTER COLUMN {column} SET DATA TYPE {}",
-                override_column.data_type
-            ))?;
-        }
-        Ok(())
+        finalizing();
+        let exact_imported_rows: u64 = connection.query_row(
+            &format!("SELECT count(*)::UBIGINT FROM {identifier}"),
+            [],
+            |row| row.get(0),
+        )?;
+        Ok(source_record(
+            project_id,
+            &options.table_name,
+            SourceKind::DuckdbTable,
+            Some(path.to_path_buf()),
+            serde_json::json!({
+                "mode": "import",
+                "format": format,
+                "rowCount": exact_imported_rows,
+                "rowCountExact": true,
+                "fileSizeBytes": file_size_bytes
+            }),
+        ))
     })();
     match import_result {
-        Ok(()) => connection.execute_batch("COMMIT")?,
+        Ok(source) => {
+            connection.execute_batch("COMMIT").map_err(|error| {
+                EngineError::ImportRecoveryRequired(format!(
+                    "commit outcome requires review: {error}"
+                ))
+            })?;
+            Ok(source)
+        }
         Err(error) => {
-            let _ = connection.execute_batch("ROLLBACK");
-            return Err(error);
+            connection.execute_batch("ROLLBACK").map_err(|rollback| {
+                EngineError::ImportRecoveryRequired(format!(
+                    "{error}; transaction rollback failed: {rollback}"
+                ))
+            })?;
+            Err(error)
         }
     }
-    let exact_imported_rows: u64 = connection.query_row(
-        &format!("SELECT count(*)::UBIGINT FROM {identifier}"),
-        [],
-        |row| row.get(0),
-    )?;
-    Ok(source_record(
-        project_id,
-        &options.table_name,
-        SourceKind::DuckdbTable,
-        Some(path.to_path_buf()),
-        serde_json::json!({
-            "mode": "import",
-            "format": format,
-            "rowCount": exact_imported_rows,
-            "rowCountExact": true,
-            "fileSizeBytes": inspection.file_size_bytes
-        }),
-    ))
+}
+
+fn import_projection(
+    connection: &Connection,
+    relation: &str,
+    options: &ImportOptions,
+) -> Result<String, EngineError> {
+    if options.column_overrides.is_empty() {
+        return Ok("*".into());
+    }
+    let description = format!("DESCRIBE SELECT * FROM {relation}");
+    let mut statement = connection.prepare(&description)?;
+    let columns = statement
+        .query_map([], |row| row.get::<_, String>(0))?
+        .collect::<Result<Vec<_>, _>>()?;
+    let available = columns
+        .iter()
+        .map(|column| column.to_lowercase())
+        .collect::<std::collections::HashSet<_>>();
+    let mut observed = std::collections::HashSet::new();
+    let mut replacements = Vec::with_capacity(options.column_overrides.len());
+    for override_column in &options.column_overrides {
+        let folded = override_column.column.trim().to_lowercase();
+        if !observed.insert(folded.clone()) {
+            return Err(EngineError::InvalidOptions(
+                "column type overrides must be unique",
+            ));
+        }
+        if !available.contains(&folded) {
+            return Err(EngineError::InvalidOptions(
+                "column type override does not match the source schema",
+            ));
+        }
+        let column = quote_identifier(&override_column.column)?;
+        validate_type(&override_column.data_type)?;
+        replacements.push(format!(
+            "CAST({column} AS {}) AS {column}",
+            override_column.data_type
+        ));
+    }
+    Ok(format!("* REPLACE ({})", replacements.join(", ")))
 }
 
 pub fn repair_link(
