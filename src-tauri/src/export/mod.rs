@@ -627,7 +627,13 @@ mod tests {
 
         fn cancel(&self, _export_id: &str) -> Result<Option<ExportStatus>, String> {
             *self.cancel_called.lock().unwrap() = true;
-            Ok(self.last.lock().unwrap().clone())
+            let status = self
+                .last
+                .lock()
+                .unwrap()
+                .clone()
+                .or_else(|| self.statuses.lock().unwrap().front().cloned());
+            Ok(status)
         }
     }
 
