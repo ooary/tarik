@@ -43,6 +43,8 @@ const MAINTENANCE_INTERVAL: Duration = Duration::from_secs(5);
 const RESUME_SAFE_GRACE: Duration = Duration::from_secs(30);
 const RESULT_IDLE_LIFETIME: Duration = Duration::from_secs(10 * 60);
 const RESULT_ABSOLUTE_LIFETIME: Duration = Duration::from_secs(30 * 60);
+const AGENT_QUEUE_DEADLINE: Duration = Duration::from_secs(60);
+const AGENT_EXECUTION_DEADLINE: Duration = Duration::from_secs(60);
 const MAX_CLEANUP_PENDING: usize = 16;
 const CLEANUP_RETRY_BASE: Duration = Duration::from_secs(2);
 const CLEANUP_RETRY_MAX: Duration = Duration::from_secs(60);
@@ -156,6 +158,11 @@ struct AgentQuery {
     origin_connection_id: String,
     project_id: String,
     execution_id: String,
+    sql: String,
+    catalog_revision: String,
+    snapshot_id: Option<String>,
+    engine_accepted: bool,
+    scheduler_claimed: bool,
     admitted_at: Instant,
     running_at: Option<Instant>,
     state: tarik_engine_protocol::ExecutionState,
@@ -199,6 +206,7 @@ struct PendingApproval {
 struct AccessState {
     enabled: bool,
     last_maintenance: Option<Instant>,
+    last_scheduled_profile: Option<String>,
     endpoint_ready: bool,
     pending: HashMap<String, PendingPairing>,
     connections: HashMap<String, ConnectionRecord>,
@@ -1230,6 +1238,11 @@ impl AgentAccessManager {
                     origin_connection_id: connection_id.to_string(),
                     project_id: values.0.clone(),
                     execution_id: execution_id.clone(),
+                    sql: values.1.clone(),
+                    catalog_revision: values.2.clone(),
+                    snapshot_id: Some(snapshot_id.to_string()),
+                    engine_accepted: false,
+                    scheduler_claimed: false,
                     admitted_at: Instant::now(),
                     running_at: None,
                     state: tarik_engine_protocol::ExecutionState::Queued,
@@ -1251,46 +1264,30 @@ impl AgentAccessManager {
             );
             values
         };
-        let admission = (|| {
-            self.require_capability(connection_id, &project_id, |grant| grant.analyze, "Analyze")?;
-            let current = self
-                .engine
-                .classify_agent_sql(&sql, &self.registered_sources(&project_id)?)?;
-            if current.decision != tarik_engine_protocol::AgentSqlDecision::SafeRead
-                || current.catalog_revision != expected_revision
-            {
-                return Err(
-                    "agent.snapshot_stale: Catalog policy changed; classify the SQL again."
-                        .to_string(),
-                );
-            }
-            self.engine.execute_query_with_limits(
-                &execution_id,
-                &sql,
-                Some(limits.browse_row_cap),
-                Some(limits.maximum_result_bytes),
-            )
-        })();
-        if let Err(error) = admission {
-            let mut state = self.lock()?;
-            state.agent_queries.remove(&execution_id);
-            if let Some(snapshot) = state.sql_snapshots.get_mut(snapshot_id) {
-                snapshot.reserved = false;
-            }
-            return Err(error);
-        }
-        self.lock()?.sql_snapshots.remove(snapshot_id);
+        let _ = (project_id, sql, expected_revision);
+        self.schedule_next_query();
+        let state = self.lock()?;
         Ok(agent_execution_view(
-            self.lock()?
+            state
                 .agent_queries
                 .get(&execution_id)
-                .expect("query inserted before engine admission"),
+                .expect("query inserted before scheduler admission"),
         ))
     }
 
     pub fn maintain(&self) {
-        let now = Instant::now();
-        let (stale_connections, active_queries, expired_results, cleanup_results) = {
+        self.maintain_at(Instant::now());
+    }
+
+    fn maintain_at(&self, now: Instant) {
+        let (
+            stale_connections,
+            active_queries,
+            queued_timeouts,
+            running_timeouts,
+            expired_results,
+            cleanup_results,
+        ) = {
             let mut state = match self.state.lock() {
                 Ok(state) => state,
                 Err(_) => return,
@@ -1323,12 +1320,39 @@ impl AgentAccessManager {
             let active_queries = state
                 .agent_queries
                 .values()
+                .filter(|query| query.engine_accepted)
                 .filter(|query| {
                     matches!(
                         query.state,
                         tarik_engine_protocol::ExecutionState::Queued
                             | tarik_engine_protocol::ExecutionState::Running
                     )
+                })
+                .map(|query| query.execution_id.clone())
+                .collect::<Vec<_>>();
+            let queued_timeouts = state
+                .agent_queries
+                .values()
+                .filter(|query| {
+                    !query.engine_accepted
+                        && query.state == tarik_engine_protocol::ExecutionState::Queued
+                        && now.duration_since(query.admitted_at) >= AGENT_QUEUE_DEADLINE
+                })
+                .map(|query| query.execution_id.clone())
+                .collect::<Vec<_>>();
+            let running_timeouts = state
+                .agent_queries
+                .values()
+                .filter(|query| {
+                    query.engine_accepted
+                        && matches!(
+                            query.state,
+                            tarik_engine_protocol::ExecutionState::Queued
+                                | tarik_engine_protocol::ExecutionState::Running
+                        )
+                        && query.running_at.is_some_and(|started| {
+                            now.duration_since(started) >= AGENT_EXECUTION_DEADLINE
+                        })
                 })
                 .map(|query| query.execution_id.clone())
                 .collect::<Vec<_>>();
@@ -1357,6 +1381,8 @@ impl AgentAccessManager {
             (
                 stale_connections,
                 active_queries,
+                queued_timeouts,
+                running_timeouts,
                 expired_results,
                 cleanup_results,
             )
@@ -1366,6 +1392,22 @@ impl AgentAccessManager {
                 self.apply_engine_status(&id, status);
             }
         }
+        for id in queued_timeouts {
+            self.fail_queued_query(
+                &id,
+                "agent.queue_deadline",
+                "Query exceeded its queue deadline before engine acceptance.",
+            );
+        }
+        for id in running_timeouts {
+            if let Ok(mut state) = self.state.lock() {
+                if let Some(query) = state.agent_queries.get_mut(&id) {
+                    query.cancellation_requested = true;
+                }
+            }
+            let _ = self.engine.cancel_query(&id);
+        }
+        self.schedule_next_query();
         for id in stale_connections {
             let _ = self.disconnect(&id);
         }
@@ -1415,6 +1457,137 @@ impl AgentAccessManager {
                         }
                     }
                 }
+            }
+        }
+    }
+
+    fn schedule_next_query(&self) {
+        let candidate = {
+            let mut state = match self.state.lock() {
+                Ok(state) => state,
+                Err(_) => return,
+            };
+            if state.agent_queries.values().any(|query| {
+                query.engine_accepted
+                    && matches!(
+                        query.state,
+                        tarik_engine_protocol::ExecutionState::Queued
+                            | tarik_engine_protocol::ExecutionState::Running
+                    )
+            }) {
+                return;
+            }
+            let mut profiles = state
+                .agent_queries
+                .values()
+                .filter(|query| {
+                    !query.engine_accepted
+                        && !query.scheduler_claimed
+                        && query.state == tarik_engine_protocol::ExecutionState::Queued
+                })
+                .map(|query| query.profile_id.clone())
+                .collect::<Vec<_>>();
+            profiles.sort();
+            profiles.dedup();
+            let profile = match &state.last_scheduled_profile {
+                Some(last) => profiles
+                    .iter()
+                    .find(|profile| *profile > last)
+                    .or_else(|| profiles.first())
+                    .cloned(),
+                None => profiles.first().cloned(),
+            };
+            profile.and_then(|profile| {
+                let query = state
+                    .agent_queries
+                    .values()
+                    .filter(|query| {
+                        query.profile_id == profile
+                            && !query.engine_accepted
+                            && !query.scheduler_claimed
+                            && query.state == tarik_engine_protocol::ExecutionState::Queued
+                    })
+                    .min_by_key(|query| query.admitted_at)
+                    .cloned();
+                if let Some(query) = &query {
+                    if let Some(tracked) = state.agent_queries.get_mut(&query.execution_id) {
+                        tracked.scheduler_claimed = true;
+                    }
+                }
+                state.last_scheduled_profile = Some(profile);
+                query
+            })
+        };
+        let Some(query) = candidate else {
+            return;
+        };
+        let admission = (|| {
+            self.require_capability(
+                &query.origin_connection_id,
+                &query.project_id,
+                |grant| grant.analyze,
+                "Analyze",
+            )?;
+            let current = self
+                .engine
+                .classify_agent_sql(&query.sql, &self.registered_sources(&query.project_id)?)?;
+            if current.decision != tarik_engine_protocol::AgentSqlDecision::SafeRead
+                || current.catalog_revision != query.catalog_revision
+            {
+                return Err(
+                    "agent.snapshot_stale: Catalog policy changed; classify the SQL again."
+                        .to_string(),
+                );
+            }
+            self.engine.execute_query_with_limits(
+                &query.execution_id,
+                &query.sql,
+                Some(query.limits.browse_row_cap),
+                Some(query.limits.maximum_result_bytes),
+            )
+        })();
+        match admission {
+            Ok(()) => {
+                if let Ok(mut state) = self.state.lock() {
+                    let snapshot_id =
+                        state
+                            .agent_queries
+                            .get_mut(&query.execution_id)
+                            .and_then(|tracked| {
+                                tracked.engine_accepted = true;
+                                tracked.scheduler_claimed = false;
+                                tracked.snapshot_id.take()
+                            });
+                    if let Some(snapshot_id) = snapshot_id {
+                        state.sql_snapshots.remove(&snapshot_id);
+                    }
+                }
+            }
+            Err(error) => self.fail_queued_query(
+                &query.execution_id,
+                if error.contains("snapshot_stale") {
+                    "agent.snapshot_stale"
+                } else {
+                    "agent.engine_admission"
+                },
+                &error,
+            ),
+        }
+    }
+
+    fn fail_queued_query(&self, execution_id: &str, code: &str, message: &str) {
+        let Ok(mut state) = self.state.lock() else {
+            return;
+        };
+        let snapshot_id = state.agent_queries.get_mut(execution_id).and_then(|query| {
+            query.state = tarik_engine_protocol::ExecutionState::Failed;
+            query.scheduler_claimed = false;
+            query.error = Some(tarik_engine_protocol::ErrorEnvelope::new(code, message));
+            query.snapshot_id.take()
+        });
+        if let Some(snapshot_id) = snapshot_id {
+            if let Some(snapshot) = state.sql_snapshots.get_mut(&snapshot_id) {
+                snapshot.reserved = false;
             }
         }
     }
@@ -1497,10 +1670,13 @@ impl AgentAccessManager {
             |grant| grant.analyze,
             "Analyze",
         )?;
-        let status = self.engine.query_status(execution_id)?.ok_or_else(|| {
-            "agent.execution_missing: The engine no longer tracks this query.".to_string()
-        })?;
-        self.apply_engine_status(execution_id, status);
+        if query.engine_accepted {
+            let status = self.engine.query_status(execution_id)?.ok_or_else(|| {
+                "agent.execution_missing: The engine no longer tracks this query.".to_string()
+            })?;
+            self.apply_engine_status(execution_id, status);
+        }
+        self.schedule_next_query();
         let state = self.lock()?;
         let query = state
             .agent_queries
@@ -1521,6 +1697,22 @@ impl AgentAccessManager {
             |grant| grant.analyze,
             "Analyze",
         )?;
+        if !query.engine_accepted {
+            let mut state = self.lock()?;
+            let snapshot_id = state.agent_queries.get_mut(execution_id).and_then(|query| {
+                query.cancellation_requested = true;
+                query.state = tarik_engine_protocol::ExecutionState::Cancelled;
+                query.snapshot_id.take()
+            });
+            if let Some(snapshot_id) = snapshot_id {
+                if let Some(snapshot) = state.sql_snapshots.get_mut(&snapshot_id) {
+                    snapshot.reserved = false;
+                }
+            }
+            drop(state);
+            self.schedule_next_query();
+            return self.query_status(connection_id, execution_id);
+        }
         if let Some(query) = self.lock()?.agent_queries.get_mut(execution_id) {
             query.cancellation_requested = true;
         }
@@ -2802,7 +2994,13 @@ fn active_query_view(query: &AgentQuery) -> AgentActiveQuery {
         queue_wait_ms: query
             .running_at
             .map(|started| started.duration_since(query.admitted_at).as_millis() as u64)
-            .unwrap_or_else(|| query.admitted_at.elapsed().as_millis() as u64),
+            .unwrap_or_else(|| {
+                if query.engine_accepted {
+                    0
+                } else {
+                    query.admitted_at.elapsed().as_millis() as u64
+                }
+            }),
         running_ms: query
             .running_at
             .map(|started| started.elapsed().as_millis() as u64)
@@ -3219,6 +3417,78 @@ mod tests {
                 .elapsed()
                 < Duration::from_secs(1)
         );
+    }
+
+    #[test]
+    fn scheduler_rotates_profiles_and_restores_timed_out_snapshots() {
+        let (manager, project_id) = fixture();
+        let now = Instant::now();
+        let limits = AgentAnalysisLimits::default();
+        let queued = |id: &str, profile: &str, snapshot: &str, admitted_at: Instant| AgentQuery {
+            profile_id: profile.into(),
+            origin_connection_id: format!("connection-{profile}"),
+            project_id: project_id.clone(),
+            execution_id: id.into(),
+            sql: "SELECT 1".into(),
+            catalog_revision: "revision".into(),
+            snapshot_id: Some(snapshot.into()),
+            engine_accepted: false,
+            scheduler_claimed: false,
+            admitted_at,
+            running_at: None,
+            state: tarik_engine_protocol::ExecutionState::Queued,
+            result_id: None,
+            rows: None,
+            row_total_exact: None,
+            browse_limit_reached: false,
+            cache_bytes: None,
+            cancellation_requested: false,
+            cleanup_pending: false,
+            active_readers: 0,
+            published_at: None,
+            last_accessed_at: None,
+            cleanup_attempts: 0,
+            cleanup_retry_at: None,
+            error: None,
+            limits: limits.clone(),
+        };
+        {
+            let mut state = manager.lock().unwrap();
+            state.last_scheduled_profile = Some("a".into());
+            state.agent_queries.insert(
+                "a-old".into(),
+                queued("a-old", "a", "snapshot-a", now - Duration::from_secs(2)),
+            );
+            state.agent_queries.insert(
+                "b-old".into(),
+                queued("b-old", "b", "snapshot-b", now - Duration::from_secs(3)),
+            );
+            state.sql_snapshots.insert(
+                "snapshot-b".into(),
+                SqlSnapshot {
+                    connection_id: "connection-b".into(),
+                    project_id,
+                    sql: "SELECT 1".into(),
+                    classification: tarik_engine_protocol::AgentSqlClassification {
+                        decision: tarik_engine_protocol::AgentSqlDecision::SafeRead,
+                        reason_code: "agent.safe_read".into(),
+                        statement_type: "SELECT".into(),
+                        affected_objects: Vec::new(),
+                        has_top_level_filter: None,
+                        catalog_revision: "revision".into(),
+                    },
+                    created_at: now,
+                    reserved: true,
+                },
+            );
+        }
+        manager.maintain_at(now + AGENT_QUEUE_DEADLINE + Duration::from_secs(1));
+        let state = manager.lock().unwrap();
+        assert_eq!(
+            state.agent_queries.get("b-old").unwrap().state,
+            tarik_engine_protocol::ExecutionState::Failed
+        );
+        assert!(!state.sql_snapshots.get("snapshot-b").unwrap().reserved);
     }
 
     #[test]

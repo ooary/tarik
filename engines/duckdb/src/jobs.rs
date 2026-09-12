@@ -1,7 +1,8 @@
 //! Asynchronous query jobs.
 //!
-//! `query.execute` clones the session's DuckDB connection, spawns one worker
-//! thread per execution, and returns immediately. `query.status` and
+//! `query.execute` records immutable work and a session identity. The serial
+//! worker clones the current session connection only when it claims a job, so
+//! queued work observes catalog changes made by preceding work. `query.status` and
 //! `query.cancel` stay short so the protocol loop can always service them.
 //! Cancellation uses DuckDB's thread-safe `InterruptHandle`; the DuckDB Arrow
 //! iterator reports an interrupt by panicking during fetch, which the worker
@@ -21,7 +22,7 @@ use duckdb::Connection;
 use serde_json::{Map, Value};
 use tarik_engine_protocol::{ErrorEnvelope, ExecutionState, ExecutionStatus, ResultInfo};
 
-use crate::{error::EngineError, pages, sql::split_statements};
+use crate::{error::EngineError, pages, session::SessionManager, sql::split_statements};
 
 /// Terminal job snapshots kept for `query.status` before pruning.
 const TERMINAL_HISTORY_LIMIT: usize = 32;
@@ -29,7 +30,6 @@ const TERMINAL_HISTORY_LIMIT: usize = 32;
 struct JobRecord {
     session_id: String,
     sql: String,
-    connection: Option<Connection>,
     result_root: Option<PathBuf>,
     row_limit: Option<u64>,
     maximum_result_bytes: Option<u64>,
@@ -96,12 +96,14 @@ pub struct QueryJobOptions {
 /// Registry of asynchronous engine jobs keyed by execution id.
 pub struct JobRegistry {
     inner: Mutex<Registry>,
+    sessions: SessionManager,
 }
 
 impl JobRegistry {
-    pub fn new() -> Self {
+    pub fn new(sessions: SessionManager) -> Self {
         Self {
             inner: Mutex::new(Registry::default()),
+            sessions,
         }
     }
 
@@ -116,7 +118,6 @@ impl JobRegistry {
         session_id: &str,
         execution_id: &str,
         sql: &str,
-        connection: Connection,
         options: QueryJobOptions,
     ) -> Result<(), EngineError> {
         if sql.trim().is_empty() {
@@ -134,7 +135,6 @@ impl JobRegistry {
             JobRecord {
                 session_id: session_id.to_string(),
                 sql: sql.to_string(),
-                connection: Some(connection),
                 result_root: options.result_root,
                 row_limit: options.row_limit,
                 maximum_result_bytes: options.maximum_result_bytes,
@@ -439,14 +439,12 @@ fn worker_loop(registry: Arc<JobRegistry>, session_id: &str) {
                     job.state = ExecutionState::Running;
                     job.started_at = Some(Instant::now());
                     let sql = job.sql.clone();
-                    let connection = job.connection.take();
                     let result_root = job.result_root.clone();
                     let row_limit = job.row_limit;
                     let maximum_result_bytes = job.maximum_result_bytes;
                     (
                         execution_id,
                         sql,
-                        connection,
                         result_root,
                         row_limit,
                         maximum_result_bytes,
@@ -455,20 +453,20 @@ fn worker_loop(registry: Arc<JobRegistry>, session_id: &str) {
                 None => continue,
             }
         };
-        let (execution_id, sql, connection, result_root, row_limit, maximum_result_bytes) = claimed;
-        let Some(mut connection) = connection else {
-            registry.mark_terminal(
-                &execution_id,
-                ExecutionState::Failed,
-                Some(ErrorEnvelope::new(
-                    "query.rejected",
-                    "engine lost the query connection",
-                )),
-                None,
-                None,
-                None,
-            );
-            continue;
+        let (execution_id, sql, result_root, row_limit, maximum_result_bytes) = claimed;
+        let mut connection = match registry.sessions.clone_connection(session_id) {
+            Ok(connection) => connection,
+            Err(error) => {
+                registry.mark_terminal(
+                    &execution_id,
+                    ExecutionState::Failed,
+                    Some(ErrorEnvelope::new(error.code(), error.to_string())),
+                    None,
+                    None,
+                    None,
+                );
+                continue;
+            }
         };
         run_job(
             &registry,

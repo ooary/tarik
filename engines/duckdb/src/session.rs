@@ -1,4 +1,7 @@
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex, MutexGuard},
+};
 
 use duckdb::Connection;
 use tarik_engine_protocol::{EffectiveEngineResources, EngineResourceSettings};
@@ -10,8 +13,9 @@ struct Session {
     effective_resources: EffectiveEngineResources,
 }
 
+#[derive(Clone)]
 pub struct SessionManager {
-    sessions: HashMap<String, Session>,
+    sessions: Arc<Mutex<HashMap<String, Session>>>,
 }
 
 impl Default for SessionManager {
@@ -23,7 +27,7 @@ impl Default for SessionManager {
 impl SessionManager {
     pub fn new() -> Self {
         Self {
-            sessions: HashMap::new(),
+            sessions: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -33,12 +37,13 @@ impl SessionManager {
         path: &str,
         requested: &EngineResourceSettings,
     ) -> Result<EffectiveEngineResources, EngineError> {
-        if self.sessions.contains_key(&session_id) {
+        let mut sessions = self.lock()?;
+        if sessions.contains_key(&session_id) {
             return Err(EngineError::SessionExists(session_id));
         }
         let connection = Connection::open(path)?;
         let effective_resources = resources::apply(&connection, requested)?;
-        self.sessions.insert(
+        sessions.insert(
             session_id,
             Session {
                 connection,
@@ -53,8 +58,8 @@ impl SessionManager {
         session_id: &str,
         requested: &EngineResourceSettings,
     ) -> Result<EffectiveEngineResources, EngineError> {
-        let session = self
-            .sessions
+        let mut sessions = self.lock()?;
+        let session = sessions
             .get_mut(session_id)
             .ok_or_else(|| EngineError::SessionMissing(session_id.to_string()))?;
         let previous = session.effective_resources.clone();
@@ -80,30 +85,38 @@ impl SessionManager {
     }
 
     pub fn resources(&self, session_id: &str) -> Result<EffectiveEngineResources, EngineError> {
-        self.sessions
+        self.lock()?
             .get(session_id)
             .map(|session| session.effective_resources.clone())
             .ok_or_else(|| EngineError::SessionMissing(session_id.to_string()))
     }
 
     pub fn close(&mut self, session_id: &str) -> Result<(), EngineError> {
-        if self.sessions.remove(session_id).is_none() {
+        if self.lock()?.remove(session_id).is_none() {
             return Err(EngineError::SessionMissing(session_id.to_string()));
         }
         Ok(())
     }
 
-    pub fn get(&self, session_id: &str) -> Result<&Connection, EngineError> {
-        self.sessions
+    pub fn with_connection<T>(
+        &self,
+        session_id: &str,
+        operation: impl FnOnce(&Connection) -> Result<T, EngineError>,
+    ) -> Result<T, EngineError> {
+        let sessions = self.lock()?;
+        let session = sessions
             .get(session_id)
-            .map(|session| &session.connection)
-            .ok_or_else(|| EngineError::SessionMissing(session_id.to_string()))
+            .ok_or_else(|| EngineError::SessionMissing(session_id.to_string()))?;
+        operation(&session.connection)
     }
 
-    pub fn get_mut(&mut self, session_id: &str) -> Result<&mut Connection, EngineError> {
+    pub fn clone_connection(&self, session_id: &str) -> Result<Connection, EngineError> {
+        self.with_connection(session_id, |connection| Ok(connection.try_clone()?))
+    }
+
+    fn lock(&self) -> Result<MutexGuard<'_, HashMap<String, Session>>, EngineError> {
         self.sessions
-            .get_mut(session_id)
-            .map(|session| &mut session.connection)
-            .ok_or_else(|| EngineError::SessionMissing(session_id.to_string()))
+            .lock()
+            .map_err(|_| EngineError::RegistryPoisoned)
     }
 }

@@ -423,6 +423,45 @@ fn query_execute_reaches_terminal_state_and_persists_rows() {
 }
 
 #[test]
+fn queued_query_claims_a_connection_after_preceding_catalog_changes() {
+    let mut engine = spawn_engine();
+    let database = temp_path("claim-catalog", ".duckdb");
+    engine.assert_ok(
+        "session.open",
+        json!({
+            "sessionId": "claim-catalog",
+            "locator": { "engineId": "duckdb", "payload": { "path": database } }
+        }),
+    );
+    engine.assert_ok(
+        "query.execute",
+        json!({
+            "sessionId": "claim-catalog",
+            "executionId": "catalog-ddl",
+            "sql": "CREATE TABLE claimed_at_run AS SELECT 42 AS answer"
+        }),
+    );
+    engine.assert_ok(
+        "query.execute",
+        json!({
+            "sessionId": "claim-catalog",
+            "executionId": "catalog-reader",
+            "sql": "SELECT answer FROM claimed_at_run"
+        }),
+    );
+    assert_eq!(
+        poll_terminal(&mut engine, "catalog-ddl")["state"],
+        "succeeded"
+    );
+    let reader = poll_terminal(&mut engine, "catalog-reader");
+    assert_eq!(reader["state"], "succeeded", "{reader}");
+    assert_eq!(reader["rowsProduced"], 1);
+
+    engine.child.kill().ok();
+    let _ = std::fs::remove_file(database);
+}
+
+#[test]
 fn quality_read_only_validation_binds_without_executing_or_allowing_external_effects() {
     let mut engine = spawn_engine();
     let database = temp_path("quality-validation", ".duckdb");

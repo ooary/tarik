@@ -103,8 +103,8 @@ fn dispatch(
         }
         "catalog.inspect" => {
             let session_id = required_string(params, "sessionId")?;
-            let connection = sessions.get(&session_id)?;
-            Ok(serde_json::to_value(catalog::inspect(connection)?)?)
+            let connection = sessions.clone_connection(&session_id)?;
+            Ok(serde_json::to_value(catalog::inspect(&connection)?)?)
         }
         "agent.mutation.execute" => {
             let session_id = required_string(params, "sessionId")?;
@@ -123,9 +123,9 @@ fn dispatch(
                         .cloned()
                         .unwrap_or_else(|| Value::Array(Vec::new())),
                 )?;
-            let connection = sessions.get_mut(&session_id)?;
+            let mut connection = sessions.clone_connection(&session_id)?;
             Ok(serde_json::to_value(agent_mutation::execute(
-                connection,
+                &mut connection,
                 &sql,
                 &expected_revision,
                 &registered_sources,
@@ -141,9 +141,9 @@ fn dispatch(
                         .cloned()
                         .unwrap_or_else(|| Value::Array(Vec::new())),
                 )?;
-            let connection = sessions.get(&session_id)?;
+            let connection = sessions.clone_connection(&session_id)?;
             Ok(serde_json::to_value(agent_policy::classify(
-                connection,
+                &connection,
                 &sql,
                 &registered_sources,
             )?)?)
@@ -156,8 +156,8 @@ fn dispatch(
                     .cloned()
                     .ok_or_else(|| EngineError::MissingField("definition".into()))?,
             )?;
-            let connection = sessions.get(&session_id)?;
-            sources::create_table(connection, &definition)?;
+            let connection = sessions.clone_connection(&session_id)?;
+            sources::create_table(&connection, &definition)?;
             Ok(Value::Null)
         }
         "catalog.drop_object" => {
@@ -166,8 +166,8 @@ fn dispatch(
             let schema = required_string(params, "schema")?;
             let name = required_string(params, "name")?;
             let kind = required_string(params, "kind")?;
-            let connection = sessions.get(&session_id)?;
-            catalog::drop_object(connection, &database, &schema, &name, &kind)?;
+            let connection = sessions.clone_connection(&session_id)?;
+            catalog::drop_object(&connection, &database, &schema, &name, &kind)?;
             Ok(Value::Null)
         }
         "source.inspect" => {
@@ -189,9 +189,9 @@ fn dispatch(
             let project_id = required_string(params, "projectId")?;
             let path = required_string(params, "path")?;
             let view_name = required_string(params, "viewName")?;
-            let connection = sessions.get(&session_id)?;
+            let connection = sessions.clone_connection(&session_id)?;
             Ok(serde_json::to_value(sources::link_parquet(
-                connection,
+                &connection,
                 &project_id,
                 std::path::Path::new(&path),
                 &view_name,
@@ -216,7 +216,7 @@ fn dispatch(
                 &session_id,
                 &import_id,
                 request,
-                sessions.get(&session_id)?.try_clone()?,
+                sessions.clone_connection(&session_id)?,
                 sessions.resources(&session_id)?,
             )?;
             Ok(serde_json::to_value(imports.status(&import_id)?)?)
@@ -239,9 +239,9 @@ fn dispatch(
                     .cloned()
                     .ok_or_else(|| EngineError::MissingField("options".into()))?,
             )?;
-            let connection = sessions.get(&session_id)?;
+            let connection = sessions.clone_connection(&session_id)?;
             Ok(serde_json::to_value(sources::import_table(
-                connection,
+                &connection,
                 &project_id,
                 std::path::Path::new(&path),
                 &options,
@@ -256,9 +256,9 @@ fn dispatch(
                     .ok_or_else(|| EngineError::MissingField("source".into()))?,
             )?;
             let replacement = required_string(params, "replacement")?;
-            let connection = sessions.get(&session_id)?;
+            let connection = sessions.clone_connection(&session_id)?;
             Ok(serde_json::to_value(sources::repair_link(
-                connection,
+                &connection,
                 &source,
                 std::path::Path::new(&replacement),
             )?)?)
@@ -271,8 +271,8 @@ fn dispatch(
                     .cloned()
                     .ok_or_else(|| EngineError::MissingField("source".into()))?,
             )?;
-            let connection = sessions.get(&session_id)?;
-            sources::drop_link(connection, &source)?;
+            let connection = sessions.clone_connection(&session_id)?;
+            sources::drop_link(&connection, &source)?;
             Ok(Value::Null)
         }
         "session.configure" => {
@@ -325,7 +325,7 @@ fn dispatch(
                     .cloned()
                     .ok_or_else(|| EngineError::MissingField("request".into()))?,
             )?;
-            let connection = sessions.get(&session_id)?.try_clone()?;
+            let connection = sessions.clone_connection(&session_id)?;
             profiles.execute(&session_id, &profile_id, profile_request, connection)?;
             Ok(serde_json::json!({
                 "profileId": profile_id,
@@ -345,7 +345,7 @@ fn dispatch(
             let sql = required_string(params, "sql")?;
             let statement = sql::validate_quality_read_only(&sql)
                 .map_err(|message| EngineError::QualitySqlUnsafe(message.into()))?;
-            let connection = sessions.get(&session_id)?;
+            let connection = sessions.clone_connection(&session_id)?;
             connection.prepare(&format!("EXPLAIN (FORMAT JSON) {statement}"))?;
             Ok(serde_json::json!({ "readOnly": true }))
         }
@@ -356,9 +356,11 @@ fn dispatch(
                 .get("revision")
                 .and_then(Value::as_u64)
                 .ok_or_else(|| EngineError::MissingField("revision".into()))?;
-            let connection = sessions.get(&session_id)?;
+            let connection = sessions.clone_connection(&session_id)?;
             Ok(serde_json::to_value(validation::validate(
-                connection, &sql, revision,
+                &connection,
+                &sql,
+                revision,
             ))?)
         }
         "query.execute" => {
@@ -371,12 +373,10 @@ fn dispatch(
             let cache_dir = params.get("cacheDir").and_then(Value::as_str);
             let row_limit = params.get("rowLimit").and_then(Value::as_u64);
             let maximum_result_bytes = params.get("maximumResultBytes").and_then(Value::as_u64);
-            let connection = sessions.get(&session_id)?.try_clone()?;
             jobs.execute(
                 &session_id,
                 &execution_id,
                 &sql,
-                connection,
                 jobs::QueryJobOptions {
                     result_root: cache_dir.map(std::path::PathBuf::from),
                     row_limit,
@@ -402,7 +402,7 @@ fn dispatch(
                     .ok_or_else(|| EngineError::MissingField("options".into()))?,
             )?;
             let maximum_total_bytes = params.get("maximumTotalBytes").and_then(Value::as_u64);
-            let connection = sessions.get(&session_id)?.try_clone()?;
+            let connection = sessions.clone_connection(&session_id)?;
             match maximum_total_bytes {
                 Some(maximum) => exports.execute_bounded(
                     &session_id,
@@ -472,7 +472,7 @@ fn dispatch(
 
 fn main() {
     let mut sessions = session::SessionManager::new();
-    let jobs = std::sync::Arc::new(jobs::JobRegistry::new());
+    let jobs = std::sync::Arc::new(jobs::JobRegistry::new(sessions.clone()));
     let exports = std::sync::Arc::new(export_jobs::ExportRegistry::new());
     let profiles = std::sync::Arc::new(profile::ProfileRegistry::new());
     let imports = std::sync::Arc::new(import_jobs::ImportRegistry::new());
@@ -547,7 +547,7 @@ mod tests {
         let error = dispatch(
             &request,
             &mut session::SessionManager::new(),
-            &std::sync::Arc::new(jobs::JobRegistry::new()),
+            &std::sync::Arc::new(jobs::JobRegistry::new(session::SessionManager::new())),
             &std::sync::Arc::new(export_jobs::ExportRegistry::new()),
             &std::sync::Arc::new(profile::ProfileRegistry::new()),
             &std::sync::Arc::new(import_jobs::ImportRegistry::new()),
@@ -572,7 +572,7 @@ mod tests {
         let error = dispatch(
             &request,
             &mut session::SessionManager::new(),
-            &std::sync::Arc::new(jobs::JobRegistry::new()),
+            &std::sync::Arc::new(jobs::JobRegistry::new(session::SessionManager::new())),
             &std::sync::Arc::new(export_jobs::ExportRegistry::new()),
             &std::sync::Arc::new(profile::ProfileRegistry::new()),
             &std::sync::Arc::new(import_jobs::ImportRegistry::new()),
