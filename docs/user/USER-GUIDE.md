@@ -152,7 +152,7 @@ or `.parquet`. Row boundaries are exact even when an Arrow batch crosses them. Z
 
 ## 9. Agent access and delegated export destinations
 
-Tarik can expose the active project to a local MCP host through the packaged `tarik-mcp` process. Open **Agent access**, enable the local bridge, approve the visible pairing request, and grant only the project capabilities the client needs. New clients receive no project access. See [`MCP-AGENT-SETUP.md`](MCP-AGENT-SETUP.md) for host setup and the full safety model.
+Tarik can expose the active project to a local MCP host through the packaged `tarik-mcp` process. Open **Agent access**, enable the local bridge, approve the visible pairing request, and grant only the project capabilities the client needs. New clients receive no project access. SafeRead work may queue, and one paired profile may retain multiple bounded results. The host can use `tarik_list_active` to recover only its own IDs after reconnecting. Tarik owns analysis limits and expiry; an MCP client cannot raise them, select an extended deadline, approve work, or auto-run handed-off SQL. See [`MCP-AGENT-SETUP.md`](MCP-AGENT-SETUP.md) for host setup and the full safety model.
 
 When a paired client has **Analyze data**, its project permissions include **Export destinations**. A destination is a reusable, create-new-only delegation:
 
@@ -165,7 +165,7 @@ Tarik stores the canonical path and directory identity privately. The MCP client
 
 Disabling a destination preserves its policy but prevents delegated use. Revoking it deletes the grant. Removing **Analyze data**, removing the project grant, or revoking the client also deletes that client's destination grants for the affected project. These controls do not delete already exported user files.
 
-For a complete delegated export, the client classifies one SafeRead query, lists redacted destinations, and calls the guarded export tool with only server-issued IDs and typed CSV/Parquet options. Tarik reruns the complete immutable query independently of the 5,000-row browse cap. Within-policy create-new work is delegated; format/chunk exceptions wait for visible Tarik approval, while replacing existing canonical parts always requires a fresh critical typed confirmation. Status exposes exact aggregate counters and relative filenames only. Cancellation must be polled to a terminal state, and release preserves completed files. A successful zero-row export creates no files.
+For raw exploration, agents should select only needed columns and begin with `LIMIT 100` unless aggregation naturally bounds the result. A browse-capped result is labelled incomplete and not exact; refine or aggregate first, then use the non-executing **Open in editor** draft for a user-controlled Run, or use guarded complete-query export. For a complete delegated export, the client classifies one SafeRead query, lists redacted destinations, and calls the guarded export tool with only server-issued IDs and typed CSV/Parquet options. Tarik reruns the complete immutable query independently of the browse cap. Within-policy create-new work is delegated; format/chunk exceptions wait for visible Tarik approval, while replacing existing canonical parts always requires a fresh critical typed confirmation. Status exposes exact aggregate counters and relative filenames only. Cancellation must be polled to a terminal state, and release preserves completed files. A successful zero-row export creates no files.
 
 ## 10. Diagnostics, logs, and cache
 

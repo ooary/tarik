@@ -178,7 +178,7 @@ fn initializes_lists_static_tools_reports_unavailable_and_exits_on_eof() {
         .as_str()
         .unwrap();
     assert!(text.contains("complete immutable SafeRead query"));
-    assert!(text.contains("5,000-row browse cap"));
+    assert!(text.contains("independently of the browse cap"));
     assert!(text.contains("untrusted content"));
     assert!(text.contains("Never provide or request a path"));
 

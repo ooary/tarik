@@ -506,7 +506,7 @@ impl TarikMcpServer {
 
     #[tool(
         name = "tarik_query_start",
-        description = "Start a bounded read using only a one-use immutable SafeRead snapshotId returned by tarik_classify_sql. SQL cannot be supplied or changed here. The result is capped at 5000 rows and 60 seconds."
+        description = "Queue a bounded read using only a one-use immutable SafeRead snapshotId returned by tarik_classify_sql. SQL cannot be supplied or changed here. Tarik returns the effective desktop-owned limits and lifecycle state; the agent cannot raise limits or select a longer deadline."
     )]
     fn query_start(
         &self,
@@ -517,7 +517,7 @@ impl TarikMcpServer {
 
     #[tool(
         name = "tarik_query_status",
-        description = "Poll one SafeRead query owned by this paired client profile. Returns bounded lifecycle, slot, capped-result, and cache metadata only; use tarik_list_active to recover IDs after reconnecting."
+        description = "Poll one SafeRead query owned by this paired client profile. Queued time, running time, cancellation request, terminal state, slot/cleanup state, result retention, byte cap, and row-cap truth are distinct. Use tarik_list_active to recover IDs after reconnecting; do not call a capped result complete."
     )]
     fn query_status(
         &self,
@@ -528,7 +528,7 @@ impl TarikMcpServer {
 
     #[tool(
         name = "tarik_query_cancel",
-        description = "Request cancellation of one query owned by this authenticated MCP connection."
+        description = "Request cancellation of one caller-profile SafeRead query. A queued query may become terminal immediately; a running query remains cancellation-requested until Tarik confirms terminal state. Poll status rather than assuming cancellation."
     )]
     fn query_cancel(
         &self,
@@ -539,7 +539,7 @@ impl TarikMcpServer {
 
     #[tool(
         name = "tarik_result_page",
-        description = "Read at most 500 rows and 1 MiB from a bounded result owned by this paired client profile for the currently granted project. NULL and truncated-cell metadata are preserved."
+        description = "Read at most 500 rows and 1 MiB from one unexpired retained result owned by this paired client profile for the currently granted project. NULL and truncated-cell metadata are preserved. Page only rows needed for analysis; use capped-result handoff rather than paging bulk raw output."
     )]
     fn result_page(
         &self,
