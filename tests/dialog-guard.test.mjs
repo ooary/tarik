@@ -37,4 +37,5 @@ test("native operating-system file and folder pickers remain wired", async () =>
   assert.match(commands, /function chooseSourceFile/);
   assert.match(commands, /function chooseDuckDbFile/);
   assert.match(commands, /function chooseExportDirectory/);
+  assert.match(commands, /function chooseAgentExportDirectory/);
 });

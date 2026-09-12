@@ -30,6 +30,7 @@ import {
 } from "./features/profile/ProfileWorkspace";
 import { ChecksWorkspace } from "./features/quality/ChecksWorkspace";
 import { SupportIncidentNotice } from "./app/SupportIncidentNotice";
+import { AgentAccessDialog } from "./features/agent-access/AgentAccessDialog";
 import { StartupScreen, type StartupPhase } from "./app/StartupScreen";
 import {
   createWorkbenchPreferencesRepository,
@@ -789,6 +790,7 @@ function App() {
               <button className="text-button" onClick={openLocalProject} type="button">Open</button>
             </>
           )}
+          <AgentAccessDialog project={project} />
           <Dialog
             description="Choose how Tarik appears on this device. This setting is stored locally."
             title="Appearance"

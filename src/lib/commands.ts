@@ -36,6 +36,164 @@ export interface CleanupSummary {
   warnings: string[];
 }
 
+export interface AgentProjectGrant {
+  projectId: string;
+  inspect: boolean;
+  analyze: boolean;
+  modifyWorkspace: boolean;
+  modifyData: boolean;
+}
+
+export interface AgentClient {
+  id: string;
+  displayName: string;
+  connected: boolean;
+  lastConnectedAt: string | null;
+  grants: AgentProjectGrant[];
+}
+
+export interface AgentPairingRequest {
+  id: string;
+  displayName: string;
+  expiresInSeconds: number;
+}
+
+export interface AgentAccessStatus {
+  enabled: boolean;
+  endpointReady: boolean;
+  pairedClients: AgentClient[];
+  pendingPairings: AgentPairingRequest[];
+  connectedClients: number;
+}
+
+export interface AgentAccessChange {
+  enabled: boolean;
+  endpointReady: boolean;
+}
+
+export type AgentHostKind =
+  "claude_desktop" | "claude_code" | "codex" | "pi" | "cursor" | "vs_code" | "generic";
+
+export type AgentSetupMethod = "official_cli" | "managed_json" | "guided";
+export type AgentHostState =
+  | "not_installed"
+  | "unsupported"
+  | "not_configured"
+  | "configured"
+  | "restart_required"
+  | "repair_required"
+  | "conflict";
+export type AgentSetupOperation = "configure" | "repair" | "remove";
+
+export interface AgentHostInstallation {
+  kind: AgentHostKind;
+  displayName: string;
+  setupMethod: AgentSetupMethod;
+  state: AgentHostState;
+  version: string | null;
+  detail: string;
+  canConfigure: boolean;
+  canRemove: boolean;
+}
+
+export interface AgentSetupStatus {
+  platform: string;
+  packagedServerReady: boolean;
+  hosts: AgentHostInstallation[];
+}
+
+export interface AgentSetupPlan {
+  planId: string;
+  hostKind: AgentHostKind;
+  hostName: string;
+  operation: AgentSetupOperation;
+  setupMethod: AgentSetupMethod;
+  summary: string;
+  commandPreview: string | null;
+  configTarget: string | null;
+  expiresInSeconds: number;
+}
+
+export interface AgentSetupResult {
+  hostKind: AgentHostKind;
+  operation: AgentSetupOperation;
+  state: AgentHostState;
+  message: string;
+}
+
+export type AgentSkillHost = "pi";
+export type AgentSkillOperation = "install" | "remove";
+export type AgentSkillState = "available" | "installed" | "conflict" | "unsupported";
+
+export interface AgentSkillStatus {
+  host: AgentSkillHost;
+  hostName: string;
+  state: AgentSkillState;
+  detail: string;
+  canInstall: boolean;
+  canRemove: boolean;
+}
+
+export interface AgentSkillPlan {
+  planId: string;
+  host: AgentSkillHost;
+  hostName: string;
+  operation: AgentSkillOperation;
+  summary: string;
+  target: string;
+  expiresInSeconds: number;
+}
+
+export interface AgentSkillResult {
+  host: AgentSkillHost;
+  operation: AgentSkillOperation;
+  state: AgentSkillState;
+  message: string;
+}
+
+export type AgentExportFormat = "csv" | "parquet";
+
+export interface AgentExportDestination {
+  destinationId: string;
+  label: string;
+  formats: AgentExportFormat[];
+  maximumRowsPerPart: number;
+  maximumTotalBytes: number;
+  createNewOnly: true;
+  enabled: boolean;
+  ready: boolean;
+  revision: number;
+}
+
+export interface AgentExportDestinationList {
+  projectId: string;
+  destinations: AgentExportDestination[];
+}
+
+export interface AgentExportDestinationPolicy {
+  displayLabel: string;
+  allowCsv: boolean;
+  allowParquet: boolean;
+  maximumRowsPerPart: number;
+  maximumTotalBytes: number;
+}
+
+export interface AgentApproval {
+  id: string;
+  action: "sql" | "export";
+  clientName: string;
+  projectId: string;
+  projectName: string;
+  sql: string;
+  decision: "approval_required" | "critical_confirmation";
+  reasonCode: string;
+  affectedObjects: string[];
+  hasTopLevelFilter: boolean | null;
+  snapshotHash: string;
+  criticalPhrase: string | null;
+  expiresInSeconds: number;
+}
+
 export interface ShutdownReport {
   phase: "complete";
   queriesCancelled: number;
@@ -274,6 +432,201 @@ export function getLastSupportIncident(
 
 export function clearCache(invokeCommand: InvokeCommand = invoke): Promise<CleanupSummary> {
   return invokeCommand<CleanupSummary>("clear_cache");
+}
+
+export function getAgentAccessStatus(
+  invokeCommand: InvokeCommand = invoke,
+): Promise<AgentAccessStatus> {
+  return invokeCommand<AgentAccessStatus>("get_agent_access_status");
+}
+
+export function setAgentAccessEnabled(
+  enabled: boolean,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<AgentAccessChange> {
+  return invokeCommand<AgentAccessChange>("set_agent_access_enabled", { enabled });
+}
+
+export function getAgentSetupStatus(
+  invokeCommand: InvokeCommand = invoke,
+): Promise<AgentSetupStatus> {
+  return invokeCommand<AgentSetupStatus>("get_agent_setup_status");
+}
+
+export function planAgentSetup(
+  hostKind: AgentHostKind,
+  operation: AgentSetupOperation,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<AgentSetupPlan> {
+  return invokeCommand<AgentSetupPlan>("plan_agent_setup", { hostKind, operation });
+}
+
+export function applyAgentSetup(
+  planId: string,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<AgentSetupResult> {
+  return invokeCommand<AgentSetupResult>("apply_agent_setup", { planId });
+}
+
+export function getAgentSkillStatus(
+  invokeCommand: InvokeCommand = invoke,
+): Promise<AgentSkillStatus> {
+  return invokeCommand<AgentSkillStatus>("get_agent_skill_status");
+}
+
+export function planAgentSkill(
+  host: AgentSkillHost,
+  operation: AgentSkillOperation,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<AgentSkillPlan> {
+  return invokeCommand<AgentSkillPlan>("plan_agent_skill", { host, operation });
+}
+
+export function applyAgentSkill(
+  planId: string,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<AgentSkillResult> {
+  return invokeCommand<AgentSkillResult>("apply_agent_skill", { planId });
+}
+
+export function chooseAgentExportDirectory(): Promise<string | null> {
+  return openFileDialog({
+    multiple: false,
+    directory: true,
+    title: "Choose delegated export folder",
+  });
+}
+
+export function listAgentExportDestinations(
+  clientId: string,
+  projectId: string,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<AgentExportDestinationList> {
+  return invokeCommand<AgentExportDestinationList>("list_agent_export_destinations", {
+    clientId,
+    projectId,
+  });
+}
+
+export function createAgentExportDestination(
+  clientId: string,
+  projectId: string,
+  selectedDirectory: string,
+  policy: AgentExportDestinationPolicy,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<AgentExportDestination> {
+  return invokeCommand<AgentExportDestination>("create_agent_export_destination", {
+    clientId,
+    projectId,
+    selectedDirectory,
+    policy,
+  });
+}
+
+export function updateAgentExportDestination(
+  clientId: string,
+  projectId: string,
+  destinationId: string,
+  policy: AgentExportDestinationPolicy,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<AgentExportDestination> {
+  return invokeCommand<AgentExportDestination>("update_agent_export_destination", {
+    clientId,
+    projectId,
+    destinationId,
+    policy,
+  });
+}
+
+export function setAgentExportDestinationEnabled(
+  clientId: string,
+  projectId: string,
+  destinationId: string,
+  enabled: boolean,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<AgentExportDestination> {
+  return invokeCommand<AgentExportDestination>("set_agent_export_destination_enabled", {
+    clientId,
+    projectId,
+    destinationId,
+    enabled,
+  });
+}
+
+export function repairAgentExportDestination(
+  clientId: string,
+  projectId: string,
+  destinationId: string,
+  selectedDirectory: string,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<AgentExportDestination> {
+  return invokeCommand<AgentExportDestination>("repair_agent_export_destination", {
+    clientId,
+    projectId,
+    destinationId,
+    selectedDirectory,
+  });
+}
+
+export function revokeAgentExportDestination(
+  clientId: string,
+  projectId: string,
+  destinationId: string,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<boolean> {
+  return invokeCommand<boolean>("revoke_agent_export_destination", {
+    clientId,
+    projectId,
+    destinationId,
+  });
+}
+
+export function approveAgentPairing(
+  pairingId: string,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<string> {
+  return invokeCommand<string>("approve_agent_pairing", { pairingId });
+}
+
+export function denyAgentPairing(
+  pairingId: string,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<boolean> {
+  return invokeCommand<boolean>("deny_agent_pairing", { pairingId });
+}
+
+export function setAgentProjectGrant(
+  clientId: string,
+  grant: AgentProjectGrant,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<void> {
+  return invokeCommand<void>("set_agent_project_grant", { clientId, grant });
+}
+
+export function revokeAgentClient(
+  clientId: string,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<boolean> {
+  return invokeCommand<boolean>("revoke_agent_client", { clientId });
+}
+
+export function listAgentApprovals(
+  invokeCommand: InvokeCommand = invoke,
+): Promise<AgentApproval[]> {
+  return invokeCommand<AgentApproval[]>("list_agent_approvals");
+}
+
+export function decideAgentApproval(
+  approvalId: string,
+  approve: boolean,
+  typedPhrase: string | null,
+  invokeCommand: InvokeCommand = invoke,
+): Promise<boolean> {
+  return invokeCommand<boolean>("decide_agent_approval", {
+    approvalId,
+    approve,
+    typedPhrase,
+  });
 }
 
 export function registerShutdownReady(invokeCommand: InvokeCommand = invoke): Promise<void> {

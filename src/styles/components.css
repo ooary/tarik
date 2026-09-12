@@ -74,6 +74,34 @@
   color: var(--status-error);
 }
 
+.ui-inline-error {
+  display: grid;
+  gap: 3px;
+  padding: 9px 11px;
+  border: 1px solid var(--status-error-border);
+  border-radius: var(--radius-control);
+  color: var(--status-error);
+  background: var(--status-error-surface);
+  font-size: 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.ui-inline-error strong,
+.ui-inline-error span {
+  color: inherit;
+}
+
+input[aria-invalid="true"],
+fieldset[aria-invalid="true"] {
+  border-color: var(--status-error-border);
+}
+
+input[aria-invalid="true"]:focus {
+  border-color: var(--status-error);
+  outline-color: color-mix(in srgb, var(--status-error) 32%, transparent);
+}
+
 .ui-dialog-overlay {
   position: fixed;
   z-index: 20;

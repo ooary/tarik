@@ -33,6 +33,166 @@ test("getRuntimeInfo invokes the typed Tauri command", async () => {
   assert.deepEqual(result, expected);
 });
 
+test("agent connection and guidance setup use reviewed typed commands", async () => {
+  const {
+    getAgentSetupStatus,
+    planAgentSetup,
+    applyAgentSetup,
+    getAgentSkillStatus,
+    planAgentSkill,
+    applyAgentSkill,
+  } = await loadCommandsModule();
+  const calls = [];
+  const status = { platform: "windows", packagedServerReady: true, hosts: [] };
+  const plan = {
+    planId: "plan-1",
+    hostKind: "claude_code",
+    operation: "configure",
+    setupMethod: "official_cli",
+  };
+  const result = {
+    hostKind: "claude_code",
+    operation: "configure",
+    state: "restart_required",
+  };
+  const skillStatus = {
+    host: "pi",
+    hostName: "Pi",
+    state: "available",
+    canInstall: true,
+    canRemove: false,
+  };
+  const skillPlan = { planId: "skill-plan-1", host: "pi", operation: "install" };
+  const skillResult = { host: "pi", operation: "install", state: "installed" };
+  const invoke = async (command, args) => {
+    calls.push({ command, args });
+    if (command === "get_agent_setup_status") return status;
+    if (command === "plan_agent_setup") return plan;
+    if (command === "apply_agent_setup") return result;
+    if (command === "get_agent_skill_status") return skillStatus;
+    if (command === "plan_agent_skill") return skillPlan;
+    return skillResult;
+  };
+
+  assert.deepEqual(await getAgentSetupStatus(invoke), status);
+  assert.deepEqual(await planAgentSetup("claude_code", "configure", invoke), plan);
+  assert.deepEqual(await applyAgentSetup("plan-1", invoke), result);
+  assert.deepEqual(await getAgentSkillStatus(invoke), skillStatus);
+  assert.deepEqual(await planAgentSkill("pi", "install", invoke), skillPlan);
+  assert.deepEqual(await applyAgentSkill("skill-plan-1", invoke), skillResult);
+  assert.equal(
+    JSON.stringify(calls),
+    JSON.stringify([
+      { command: "get_agent_setup_status" },
+      {
+        command: "plan_agent_setup",
+        args: { hostKind: "claude_code", operation: "configure" },
+      },
+      { command: "apply_agent_setup", args: { planId: "plan-1" } },
+      { command: "get_agent_skill_status" },
+      { command: "plan_agent_skill", args: { host: "pi", operation: "install" } },
+      { command: "apply_agent_skill", args: { planId: "skill-plan-1" } },
+    ]),
+  );
+});
+
+test("delegated export destinations use explicit owner-bound commands", async () => {
+  const {
+    listAgentExportDestinations,
+    createAgentExportDestination,
+    updateAgentExportDestination,
+    setAgentExportDestinationEnabled,
+    repairAgentExportDestination,
+    revokeAgentExportDestination,
+  } = await loadCommandsModule();
+  const calls = [];
+  const policy = {
+    displayLabel: "Exports",
+    allowCsv: true,
+    allowParquet: false,
+    maximumRowsPerPart: 1000,
+    maximumTotalBytes: 1024,
+  };
+  const invoke = async (command, args) => {
+    calls.push({ command, args });
+    if (command === "revoke_agent_export_destination") return true;
+    if (command === "list_agent_export_destinations") {
+      return { projectId: "project-1", destinations: [] };
+    }
+    return { destinationId: "destination-1" };
+  };
+
+  await listAgentExportDestinations("client-1", "project-1", invoke);
+  await createAgentExportDestination(
+    "client-1",
+    "project-1",
+    "/direct-picker-only",
+    policy,
+    invoke,
+  );
+  await updateAgentExportDestination("client-1", "project-1", "destination-1", policy, invoke);
+  await setAgentExportDestinationEnabled("client-1", "project-1", "destination-1", false, invoke);
+  await repairAgentExportDestination(
+    "client-1",
+    "project-1",
+    "destination-1",
+    "/replacement-from-picker",
+    invoke,
+  );
+  await revokeAgentExportDestination("client-1", "project-1", "destination-1", invoke);
+
+  assert.deepEqual(JSON.parse(JSON.stringify(calls)), [
+    {
+      command: "list_agent_export_destinations",
+      args: { clientId: "client-1", projectId: "project-1" },
+    },
+    {
+      command: "create_agent_export_destination",
+      args: {
+        clientId: "client-1",
+        projectId: "project-1",
+        selectedDirectory: "/direct-picker-only",
+        policy,
+      },
+    },
+    {
+      command: "update_agent_export_destination",
+      args: {
+        clientId: "client-1",
+        projectId: "project-1",
+        destinationId: "destination-1",
+        policy,
+      },
+    },
+    {
+      command: "set_agent_export_destination_enabled",
+      args: {
+        clientId: "client-1",
+        projectId: "project-1",
+        destinationId: "destination-1",
+        enabled: false,
+      },
+    },
+    {
+      command: "repair_agent_export_destination",
+      args: {
+        clientId: "client-1",
+        projectId: "project-1",
+        destinationId: "destination-1",
+        selectedDirectory: "/replacement-from-picker",
+      },
+    },
+    {
+      command: "revoke_agent_export_destination",
+      args: {
+        clientId: "client-1",
+        projectId: "project-1",
+        destinationId: "destination-1",
+      },
+    },
+  ]);
+});
+
 test("startup progress reads the backend cleanup lifecycle", async () => {
   const { getStartupStatus } = await loadCommandsModule();
   const calls = [];
