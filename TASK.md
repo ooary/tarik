@@ -2619,8 +2619,26 @@ Apply aggregate paired-client quotas across its connections so additional connec
   - Tests: tool/schema allowlist, prompt contract, real-host workflow, accessibility/manual review for any visible UI changes.
   - Commit: `docs(mcp): explain queued queries and result leases`
 
+- [ ] **E16-T6 Add right-workspace Query Activity monitoring**
+  - Depends on: E16-T1 through E16-T3
+  - Owns: `src/App.tsx`, Activity workspace components/styles/tests, bounded desktop monitoring commands and DTOs
+  - Placement approved by user: put an **Activity** button beside **Agent access** in the header. Clicking it switches the right-hand workspace to query monitoring; do not use the previously proposed bottom panel or a modal. Preserve the left Explorer and provide a clear return to the previous workspace without losing editor drafts, tabs, results, or focus context.
+  - Deliverables:
+    - Monitor active-project queries from the desktop editor and all agent connections using authoritative lifecycle registries, not a second execution registry or an additional DuckDB connection.
+    - Show the actual immutable submitted SQL in a bounded, selectable details view with a readable row summary. Identify the agent/client or desktop origin, short connection identifier where relevant, project, execution ID, and query state.
+    - Show meaningful execution parameters and observations: queue wait separately from running elapsed time, final duration, effective shared memory/thread settings, applicable row/page caps, queue/execution deadlines, returned rows with exact/limited meaning, and retained-result cache bytes/expiry when available. Do not invent percentage progress, per-query CPU/RAM, throughput, ETA, or bind values the execution contract does not supply.
+    - Distinguish queued, running, cancellation requested, succeeded with retained result, failed, cancelled, expired/released result, and cleanup pending. A completed result must never appear as an active query simply because its pages remain cached.
+    - Provide a clearly labelled **Cancel query** or **Stop query** action for running work and **Cancel queued query** for waiting work. Request cancellation through the existing coordinator; show pending cancellation until the engine confirms a terminal state. Never terminate the whole engine merely to stop one query.
+    - Provide a separate **Release result** action with a clear explanation that the agent loses further page access but tables, sources, and completed exports remain unchanged. Handle concurrent completion, expiry, and release idempotently.
+    - Keep SQL/details desktop-only and on demand; routine polling carries bounded summaries, not repeated full SQL or result rows. Do not add cross-client MCP discovery or put SQL/bind values into diagnostic logs.
+    - Poll/coalesce at approximately 500 ms only while visible, with no overlapping requests; release timers on leaving/unmount. Show stale/unavailable states and locally scoped action errors rather than fabricated live status. Bound retained rows, SQL details, and aggregate counters; use existing durable history where applicable.
+  - Acceptance: Activity is visibly adjacent to Agent access and opens the right workspace; users can identify which SQL Claude is running, see elapsed and queue time and meaningful settings, and stop only that query. Returning restores the prior workspace. Query work cannot block monitoring, cancellation, or cached-result reads. Labels, keyboard navigation, focus return, accessible SQL details, light/dark themes, reduced motion, and minimum viewport remain usable.
+  - Tests: authoritative state mapping, multi-client isolation from MCP, large SQL truncation/details, no result-payload polling, timer cleanup, queued/running cancel races, final-state truth, release/file-lock cleanup, workspace restoration, keyboard/focus and native Windows responsiveness.
+  - Design gate: E16-T0 must include this user-approved right-workspace placement and the snapshot → monitoring → cancel/release delta graph before implementation. UI candidate remains uncommitted until explicit real-Tauri approval.
+  - Commit: `feat(activity): monitor and cancel desktop and agent queries`
+
 - [ ] **E16-T5 Benchmark, validate, and obtain cross-platform acceptance**
-  - Depends on: E16-T1 through E16-T4
+  - Depends on: E16-T1 through E16-T4, E16-T6
   - Owns: deterministic performance fixtures, `docs/review/E16-MULTI-QUERY.md`, native Windows/Linux evidence
   - Deliverables: Compare serial versus two concurrent scans on representative large Parquet and physical DuckDB tables; measure total completion time, individual latency, desktop responsiveness, CPU, peak working set, disk/spill/cache bytes, and cleanup residue under equal resource settings. Exercise multiple hosts, one host with multiple connections, and mixed query/import/export workloads.
   - Acceptance: do not enable higher execution concurrency without measured benefit and a separately approved graph delta; preserve fail-closed SQL and approvals, bounded memory/storage, native Windows locking/shutdown behavior, and all prior regressions. User signs off the EPIC; unrun evidence remains unchecked.
