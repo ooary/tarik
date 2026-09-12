@@ -19,7 +19,7 @@ use crate::{
         agent_destinations::{
             AgentDestinationRepository, DestinationPolicy, ExportDestinationRecord,
         },
-        projects::ProjectsRepository,
+        projects::{ProjectOwnership, ProjectsRepository},
         MetadataDb,
     },
     projects::ProjectManager,
@@ -326,9 +326,11 @@ impl AgentDestinationManager {
             .list()
             .map_err(metadata_error)?
         {
-            let path = PathBuf::from(project.duckdb_path);
-            if let Some(parent) = path.parent() {
-                protected.push(parent.to_path_buf());
+            if project.ownership == ProjectOwnership::Managed {
+                let path = PathBuf::from(project.duckdb_path);
+                if let Some(parent) = path.parent() {
+                    protected.push(parent.to_path_buf());
+                }
             }
         }
         for path in protected {
@@ -606,7 +608,6 @@ mod tests {
         metadata::{
             agent::AgentRepository,
             agent_destinations::{MAX_DESTINATION_BYTES, MAX_DESTINATION_ROWS_PER_PART},
-            projects::ProjectOwnership,
         },
         projects::ActiveProject,
     };
@@ -614,6 +615,13 @@ mod tests {
     use super::*;
 
     fn fixture(name: &str) -> (AgentDestinationManager, PathBuf, String) {
+        fixture_with_ownership(name, ProjectOwnership::External)
+    }
+
+    fn fixture_with_ownership(
+        name: &str,
+        ownership: ProjectOwnership,
+    ) -> (AgentDestinationManager, PathBuf, String) {
         let root = std::env::temp_dir().join(format!("tarik-dest-{name}-{}", uuid::Uuid::new_v4()));
         fs::create_dir_all(root.join("projects")).unwrap();
         fs::create_dir_all(root.join("data")).unwrap();
@@ -623,11 +631,7 @@ mod tests {
         let project_store = root.join("project-store");
         fs::create_dir(&project_store).unwrap();
         let project = ProjectsRepository::new(database.clone())
-            .upsert(
-                "Test",
-                &project_store.join("project.duckdb"),
-                ProjectOwnership::External,
-            )
+            .upsert("Test", &project_store.join("project.duckdb"), ownership)
             .unwrap();
         let engine = Arc::new(EngineManager::new(
             root.join("missing-engine"),
@@ -696,6 +700,38 @@ mod tests {
         fs::remove_dir(&output).unwrap();
         let listed = manager.list_for_agent("client", &project_id).unwrap();
         assert!(!listed.destinations[0].ready);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn external_project_parent_is_a_valid_custom_destination() {
+        let (manager, root, project_id) = fixture("external-parent");
+        let shared_directory = root.join("project-store");
+        let view = manager
+            .create(
+                "client",
+                &project_id,
+                shared_directory.to_str().unwrap(),
+                policy(),
+            )
+            .unwrap();
+        assert!(view.ready);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn managed_project_directory_remains_protected() {
+        let (manager, root, project_id) =
+            fixture_with_ownership("managed-project", ProjectOwnership::Managed);
+        let project_directory = root.join("project-store");
+        assert!(manager
+            .create(
+                "client",
+                &project_id,
+                project_directory.to_str().unwrap(),
+                policy(),
+            )
+            .is_err());
         fs::remove_dir_all(root).unwrap();
     }
 
