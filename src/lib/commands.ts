@@ -84,6 +84,7 @@ export interface AgentAnalysisLimits {
 
 export interface ActivityDesktopQuery {
   executionId: string;
+  submittedAtMs: number;
   projectId: string;
   tabId: string;
   state: "queued" | "running" | "succeeded" | "failed" | "cancelled";
@@ -99,6 +100,7 @@ export interface ActivityAgentQuery {
   clientProfileId: string;
   clientName: string;
   executionId: string;
+  submittedAtMs: number;
   projectId: string;
   originConnectionId: string;
   state: "queued" | "running" | "succeeded" | "failed" | "cancelled";

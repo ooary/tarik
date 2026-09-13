@@ -937,10 +937,12 @@ function App() {
                       },
                       {
                         label: "Preview rows",
-                        onSelect: () =>
+                        onSelect: () => {
+                          setActivityOpen(false);
                           queryWorkspaceActionsRef.current?.openPreview(
                             previewTableSql(object.schema, object.name),
-                          ),
+                          );
+                        },
                       },
                       {
                         label: "Copy qualified name",

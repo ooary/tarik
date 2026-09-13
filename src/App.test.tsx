@@ -66,6 +66,16 @@ vi.mock("./lib/commands", () => ({
   dropCatalogObject: vi.fn(),
   executeProfile: vi.fn(),
   getActiveProject: vi.fn(),
+  getActivitySnapshot: vi.fn(() =>
+    Promise.resolve({
+      projectId: "project-1",
+      desktopQueries: [],
+      agentQueries: [],
+      agentConnections: [],
+      resources: null,
+      progressAvailable: false,
+    }),
+  ),
   getEngineStatus: vi.fn(),
   getEngineResources: vi.fn(),
   setEngineResources: vi.fn(),
@@ -995,6 +1005,8 @@ describe("Tarik workbench shell", () => {
     render(<App />);
 
     await screen.findByTitle("analytics.order lines");
+    fireEvent.click(screen.getByRole("button", { name: "Activity" }));
+    expect(screen.getByRole("region", { name: "Activity" })).toBeInTheDocument();
     fireEvent.pointerDown(screen.getByRole("button", { name: "order lines table actions" }), {
       button: 0,
       ctrlKey: false,
@@ -1006,6 +1018,7 @@ describe("Tarik workbench shell", () => {
         'FROM "analytics"."order lines"',
       ),
     );
+    expect(screen.queryByRole("region", { name: "Activity" })).not.toBeInTheDocument();
   });
 
   it("collapses and expands the source explorer", () => {

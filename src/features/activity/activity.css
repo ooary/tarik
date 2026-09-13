@@ -86,6 +86,7 @@
 
 .activity-query-layout {
   display: grid;
+  grid-row: 4;
   min-width: 0;
   min-height: 0;
   grid-template-columns: minmax(300px, 0.9fr) minmax(360px, 1.1fr);
@@ -100,6 +101,10 @@
 
 .activity-list {
   border-right: 1px solid var(--border-default);
+}
+
+.activity-agents {
+  grid-row: 4;
 }
 
 .activity-query-row {

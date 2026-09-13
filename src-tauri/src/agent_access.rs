@@ -1,7 +1,7 @@
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex, MutexGuard},
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
@@ -101,6 +101,7 @@ pub struct DesktopAgentQuerySummary {
     pub client_profile_id: String,
     pub client_name: String,
     pub execution_id: String,
+    pub submitted_at_ms: u64,
     pub project_id: String,
     pub origin_connection_id: String,
     pub state: String,
@@ -207,6 +208,7 @@ struct AgentQuery {
     origin_connection_id: String,
     project_id: String,
     execution_id: String,
+    submitted_at_ms: u64,
     sql: String,
     catalog_revision: String,
     snapshot_id: Option<String>,
@@ -1309,6 +1311,10 @@ impl AgentAccessManager {
                     origin_connection_id: connection_id.to_string(),
                     project_id: values.0.clone(),
                     execution_id: execution_id.clone(),
+                    submitted_at_ms: SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_millis() as u64,
                     sql: values.1.clone(),
                     catalog_revision: values.2.clone(),
                     snapshot_id: Some(snapshot_id.to_string()),
@@ -1737,6 +1743,7 @@ impl AgentAccessManager {
                     .cloned()
                     .unwrap_or_else(|| "Unknown client".into()),
                 execution_id: query.execution_id.clone(),
+                submitted_at_ms: query.submitted_at_ms,
                 project_id: query.project_id.clone(),
                 origin_connection_id: query.origin_connection_id.clone(),
                 state: execution_state_name(query.state).into(),
@@ -1757,7 +1764,12 @@ impl AgentAccessManager {
                 limits: query.limits.clone(),
             })
             .collect::<Vec<_>>();
-        queries.sort_by(|left, right| right.execution_id.cmp(&left.execution_id));
+        queries.sort_by(|left, right| {
+            right
+                .submitted_at_ms
+                .cmp(&left.submitted_at_ms)
+                .then_with(|| right.execution_id.cmp(&left.execution_id))
+        });
         queries.truncate(64);
         let mut connections = Vec::new();
         for client in clients {
@@ -3847,6 +3859,7 @@ mod tests {
             origin_connection_id: format!("connection-{profile}"),
             project_id: project_id.clone(),
             execution_id: id.into(),
+            submitted_at_ms: 0,
             sql: "SELECT 1".into(),
             catalog_revision: "revision".into(),
             snapshot_id: Some(snapshot.into()),

@@ -24,6 +24,7 @@ const snapshot = {
       clientProfileId: "client-1",
       clientName: "Claude Desktop",
       executionId: "agent-execution-1",
+      submittedAtMs: 1_000,
       projectId: "project-1",
       originConnectionId: "connection-1",
       state: "succeeded",
@@ -116,6 +117,7 @@ describe("ActivityWorkspace", () => {
       desktopQueries: [
         {
           executionId: "desktop-execution-1",
+          submittedAtMs: 2_000,
           projectId: "project-1",
           tabId: "tab-1",
           state: "running",
@@ -149,5 +151,34 @@ describe("ActivityWorkspace", () => {
     expect(screen.getByText("Unavailable")).toBeInTheDocument();
     expect(screen.getByText("1 · 2 KiB")).toBeInTheDocument();
     await waitFor(() => expect(commands.getActivitySnapshot).toHaveBeenCalled());
+  });
+
+  it("sorts combined desktop and agent queries newest first", async () => {
+    commands.getActivitySnapshot.mockResolvedValue({
+      ...snapshot,
+      desktopQueries: [
+        {
+          executionId: "newest",
+          submittedAtMs: 3_000,
+          projectId: "project-1",
+          tabId: "tab-1",
+          state: "succeeded",
+          durationMs: 10,
+          rowsProduced: 1,
+          rowsAffected: null,
+          error: null,
+          resultId: "newest",
+          rowTotal: 1,
+        },
+      ],
+    });
+
+    render(<ActivityWorkspace onClose={vi.fn()} onOpenSql={vi.fn()} projectId="project-1" />);
+
+    const rows = await screen.findAllByRole("option");
+    expect(rows.map((row) => row.querySelector("strong")?.textContent)).toEqual([
+      "Tarik Desktop",
+      "Claude Desktop",
+    ]);
   });
 });

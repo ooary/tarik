@@ -118,7 +118,11 @@ export function ActivityWorkspace({ projectId, onClose, onOpenSql }: ActivityWor
     return [
       ...snapshot.desktopQueries.map((query) => ({ kind: "desktop" as const, query })),
       ...snapshot.agentQueries.map((query) => ({ kind: "agent" as const, query })),
-    ];
+    ].sort(
+      (left, right) =>
+        right.query.submittedAtMs - left.query.submittedAtMs ||
+        queryKey(right).localeCompare(queryKey(left)),
+    );
   }, [snapshot]);
 
   const selectedSql = sql;

@@ -8,7 +8,7 @@ use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
     thread,
-    time::Duration,
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use serde::Serialize;
@@ -61,6 +61,7 @@ pub struct ExecutionView {
 #[serde(rename_all = "camelCase")]
 pub struct ActivityExecutionSummary {
     pub execution_id: String,
+    pub submitted_at_ms: u64,
     pub project_id: String,
     pub tab_id: String,
     pub state: ExecutionState,
@@ -80,6 +81,7 @@ pub struct DesktopQueryDetail {
 }
 
 struct ExecutionRecord {
+    submitted_at_ms: u64,
     project_id: String,
     tab_id: String,
     sql: String,
@@ -166,6 +168,10 @@ impl QueryCoordinator {
         executions.insert(
             execution_id.clone(),
             ExecutionRecord {
+                submitted_at_ms: SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis() as u64,
                 project_id: project_id.to_string(),
                 tab_id: tab_id.to_string(),
                 sql: sql.to_string(),
@@ -239,6 +245,7 @@ impl QueryCoordinator {
             .filter(|(_, record)| record.project_id == project_id)
             .map(|(id, record)| ActivityExecutionSummary {
                 execution_id: id.clone(),
+                submitted_at_ms: record.submitted_at_ms,
                 project_id: record.project_id.clone(),
                 tab_id: record.tab_id.clone(),
                 state: record.state,
@@ -250,7 +257,12 @@ impl QueryCoordinator {
                 row_total: record.row_total,
             })
             .collect::<Vec<_>>();
-        rows.sort_by(|left, right| right.execution_id.cmp(&left.execution_id));
+        rows.sort_by(|left, right| {
+            right
+                .submitted_at_ms
+                .cmp(&left.submitted_at_ms)
+                .then_with(|| right.execution_id.cmp(&left.execution_id))
+        });
         rows.truncate(64);
         rows
     }
