@@ -181,4 +181,31 @@ describe("ActivityWorkspace", () => {
       "Claude Desktop",
     ]);
   });
+
+  it("formats disconnected timestamps with the computer locale and timezone", async () => {
+    const toLocaleString = vi
+      .spyOn(Date.prototype, "toLocaleString")
+      .mockReturnValue("9/13/2026, 5:47:58 AM");
+    commands.getActivitySnapshot.mockResolvedValue({
+      ...snapshot,
+      agentConnections: [
+        {
+          ...snapshot.agentConnections[0],
+          connected: false,
+          connectionId: null,
+          authenticated: false,
+          connectedForMs: 0,
+          lastHeartbeatMsAgo: 0,
+        },
+      ],
+    });
+
+    render(<ActivityWorkspace onClose={vi.fn()} onOpenSql={vi.fn()} projectId="project-1" />);
+    await screen.findByText("Claude Desktop");
+    fireEvent.click(screen.getByRole("tab", { name: "Agents" }));
+
+    expect(screen.getByText("9/13/2026, 5:47:58 AM")).toBeInTheDocument();
+    expect(toLocaleString).toHaveBeenCalled();
+    toLocaleString.mockRestore();
+  });
 });

@@ -900,7 +900,13 @@ fn connect_state(state: &mut ServerState) -> Result<TarikServerStatus, String> {
     let mut bridge = BridgeClient::connect(&agent_dir)?;
     match existing {
         Some(existing) => {
-            let hello = bridge.hello(Some(&existing), &state.label, None)?;
+            let hello = match bridge.hello(Some(&existing), &state.label, None) {
+                Ok(hello) => hello,
+                Err(error) if revoked_profile(&error) => {
+                    return begin_pairing(state, bridge, profile_dir);
+                }
+                Err(error) => return Err(error),
+            };
             if hello.state == HelloState::PairingRequired {
                 let profile_id = hello.profile_id.clone();
                 state.bridge = Some(bridge);
@@ -916,31 +922,41 @@ fn connect_state(state: &mut ServerState) -> Result<TarikServerStatus, String> {
             state.bridge = Some(bridge);
             Ok(authenticated_status(authenticated))
         }
-        None => {
-            let pairing_key = Zeroizing::new(generate_pairing_key()?);
-            let hello = bridge.hello(None, &state.label, Some(&pairing_key))?;
-            if hello.state != HelloState::PairingRequired {
-                return Err("Tarik did not create a pairing request".into());
-            }
-            profile::save(
-                &profile_dir,
-                &ClientProfile {
-                    profile_id: hello.profile_id.clone(),
-                    client_label: state.label.clone(),
-                    pairing_key: pairing_key.to_string(),
-                },
-            )?;
-            let profile_id = hello.profile_id.clone();
-            state.bridge = Some(bridge);
-            state.pending_pairing = Some(PendingPairing {
-                hello,
-                pairing_key,
-                profile_dir,
-                label: state.label.clone(),
-            });
-            Ok(pairing_status(profile_id))
-        }
+        None => begin_pairing(state, bridge, profile_dir),
     }
+}
+
+fn begin_pairing(
+    state: &mut ServerState,
+    mut bridge: BridgeClient,
+    profile_dir: PathBuf,
+) -> Result<TarikServerStatus, String> {
+    let pairing_key = Zeroizing::new(generate_pairing_key()?);
+    let hello = bridge.hello(None, &state.label, Some(&pairing_key))?;
+    if hello.state != HelloState::PairingRequired {
+        return Err("Tarik did not create a pairing request".into());
+    }
+    profile::save(
+        &profile_dir,
+        &ClientProfile {
+            profile_id: hello.profile_id.clone(),
+            client_label: state.label.clone(),
+            pairing_key: pairing_key.to_string(),
+        },
+    )?;
+    let profile_id = hello.profile_id.clone();
+    state.bridge = Some(bridge);
+    state.pending_pairing = Some(PendingPairing {
+        hello,
+        pairing_key,
+        profile_dir,
+        label: state.label.clone(),
+    });
+    Ok(pairing_status(profile_id))
+}
+
+fn revoked_profile(error: &str) -> bool {
+    error == "agent.authentication_failed: Unknown or revoked profile."
 }
 
 fn pairing_still_pending(error: &str) -> bool {
@@ -1005,6 +1021,19 @@ mod tests {
             info.instructions.as_deref(),
             Some(guidance::SERVER_INSTRUCTIONS)
         );
+    }
+
+    #[test]
+    fn only_unknown_or_revoked_profiles_restart_pairing() {
+        assert!(revoked_profile(
+            "agent.authentication_failed: Unknown or revoked profile."
+        ));
+        assert!(!revoked_profile(
+            "agent.authentication_failed: Invalid stored verifier."
+        ));
+        assert!(!revoked_profile(
+            "agent.disabled: Enable Agent Access first."
+        ));
     }
 
     #[test]

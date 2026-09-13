@@ -19,6 +19,22 @@ describe("SqlEditor", () => {
     expect(container.querySelector(".cm-content")).toHaveAttribute("contenteditable", "true");
   });
 
+  it("passes the Tauri CSP nonce to CodeMirror's generated stylesheet", () => {
+    const tauriStyle = document.createElement("style");
+    tauriStyle.nonce = "tauri-test-nonce";
+    document.head.append(tauriStyle);
+
+    render(<SqlEditor onChange={vi.fn()} value="SELECT 1;" />);
+
+    const codeMirrorStyle = [...document.querySelectorAll("style")].find((element) =>
+      element.textContent?.includes(".cm-scroller"),
+    );
+    expect(codeMirrorStyle).toBeDefined();
+    expect(codeMirrorStyle?.nonce).toBe("tauri-test-nonce");
+
+    tauriStyle.remove();
+  });
+
   it("builds schema, table, and column completion data", () => {
     expect(
       buildSqlCompletionSchema([

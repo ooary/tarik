@@ -62,6 +62,18 @@ const draculaTheme = EditorView.theme(
   { dark: true },
 );
 
+function documentCspNonce() {
+  const elements = document.querySelectorAll<HTMLStyleElement | HTMLScriptElement>(
+    "style[nonce], script[nonce]",
+  );
+  for (const element of elements) {
+    if (element.nonce) return element.nonce;
+    const nonce = element.getAttribute("nonce");
+    if (nonce) return nonce;
+  }
+  return "";
+}
+
 function editorThemeExtensions(theme: EffectiveTheme) {
   return theme === "dark"
     ? [draculaTheme, syntaxHighlighting(draculaHighlightStyle)]
@@ -108,6 +120,7 @@ export function SqlEditor({
           highlightActiveLine(),
           history(),
           bracketMatching(),
+          EditorView.cspNonce.of(documentCspNonce()),
           themeCompartment.current.of(editorThemeExtensions(effectiveTheme)),
           keymap.of([
             {

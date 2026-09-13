@@ -175,7 +175,7 @@ impl AppLogger {
         let error_code = fields.error_code.map(sanitize_token);
         let message = fields.message.map(redact_message);
         let persisted = PersistedEvent {
-            timestamp: chrono::Utc::now().to_rfc3339(),
+            timestamp: chrono::Local::now().to_rfc3339(),
             level,
             target: &target,
             event: &event,

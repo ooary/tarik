@@ -284,7 +284,7 @@ function parseDraft(
     !Number.isSafeInteger(memoryLimitMib) ||
     memoryLimitMib < minimumMemory ||
     memoryLimitMib > maximumMemory
-      ? `Use ${minimumMemory.toLocaleString()}–${maximumMemory.toLocaleString()} MiB.`
+      ? `Use ${minimumMemory.toLocaleString("en-US")}–${maximumMemory.toLocaleString("en-US")} MiB.`
       : undefined;
   const threadsError =
     !Number.isSafeInteger(threads) || threads < minimumThreads || threads > maximumThreads
@@ -337,7 +337,7 @@ function presetName(preset: EngineResourcePreset): string {
 }
 
 function formatMemory(mib: number): string {
-  return mib % 1024 === 0 ? `${mib / 1024} GiB` : `${mib.toLocaleString()} MiB`;
+  return mib % 1024 === 0 ? `${mib / 1024} GiB` : `${mib.toLocaleString("en-US")} MiB`;
 }
 
 function formatThreads(threads: number): string {

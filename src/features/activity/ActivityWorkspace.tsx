@@ -34,6 +34,11 @@ function duration(value: number) {
   return `${(value / 1_000).toFixed(value < 10_000 ? 1 : 0)} s`;
 }
 
+function localTimestamp(value: string) {
+  const timestamp = new Date(value);
+  return Number.isNaN(timestamp.getTime()) ? value : timestamp.toLocaleString();
+}
+
 function bytes(value: number | null) {
   if (value === null) return "Unavailable";
   if (value < 1_024 * 1_024) return `${Math.ceil(value / 1_024)} KiB`;
@@ -427,7 +432,9 @@ export function ActivityWorkspace({ projectId, onClose, onOpenSql }: ActivityWor
                     <dd>
                       {connection.connected
                         ? `${duration(connection.lastHeartbeatMsAgo)} ago`
-                        : (connection.lastConnectedAt ?? "Unavailable")}
+                        : connection.lastConnectedAt
+                          ? localTimestamp(connection.lastConnectedAt)
+                          : "Unavailable"}
                     </dd>
                   </div>
                   <div>
