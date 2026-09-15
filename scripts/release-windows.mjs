@@ -114,6 +114,21 @@ try {
       path.join(root, "docs", "agent-skills", "tarik-mcp", "SKILL.md"),
       "agent-skills/tarik-mcp/SKILL.md",
     ],
+    [
+      path.join(root, "docs", "agent-skills", "tarik-guided-analysis", "SKILL.md"),
+      "agent-skills/tarik-guided-analysis/SKILL.md",
+    ],
+    [
+      path.join(
+        root,
+        "docs",
+        "agent-skills",
+        "tarik-guided-analysis",
+        "agents",
+        "openai.yaml",
+      ),
+      "agent-skills/tarik-guided-analysis/agents/openai.yaml",
+    ],
   ];
   for (const [source, destination] of copies) {
     const target = path.join(portable, destination);

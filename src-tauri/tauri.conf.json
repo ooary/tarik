@@ -34,7 +34,9 @@
     "resources": {
       "../THIRD_PARTY_NOTICES.md": "THIRD_PARTY_NOTICES.md",
       "../docs/release/COMPATIBILITY.md": "COMPATIBILITY.md",
-      "../docs/agent-skills/tarik-mcp/SKILL.md": "agent-skills/tarik-mcp/SKILL.md"
+      "../docs/agent-skills/tarik-mcp/SKILL.md": "agent-skills/tarik-mcp/SKILL.md",
+      "../docs/agent-skills/tarik-guided-analysis/SKILL.md": "agent-skills/tarik-guided-analysis/SKILL.md",
+      "../docs/agent-skills/tarik-guided-analysis/agents/openai.yaml": "agent-skills/tarik-guided-analysis/agents/openai.yaml"
     },
     "icon": [
       "icons/32x32.png",

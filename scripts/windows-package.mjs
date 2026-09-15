@@ -16,6 +16,8 @@ export const PORTABLE_FILES = [
   "THIRD-PARTY-RUST.txt",
   "THIRD-PARTY-NPM.txt",
   "agent-skills/tarik-mcp/SKILL.md",
+  "agent-skills/tarik-guided-analysis/SKILL.md",
+  "agent-skills/tarik-guided-analysis/agents/openai.yaml",
   "SHA256SUMS",
 ];
 

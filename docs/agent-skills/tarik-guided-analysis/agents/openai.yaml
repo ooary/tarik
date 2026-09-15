@@ -1,0 +1,7 @@
+interface:
+  display_name: "Tarik Guided Analysis"
+  short_description: "Explain Tarik analysis step by step"
+  default_prompt: "Use $tarik-guided-analysis to answer my data question with a beginner-friendly, reviewable walkthrough."
+
+policy:
+  allow_implicit_invocation: false
